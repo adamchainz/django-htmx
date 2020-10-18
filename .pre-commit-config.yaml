@@ -1,0 +1,35 @@
+repos:
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v3.2.0
+  hooks:
+  - id: check-added-large-files
+  - id: check-case-conflict
+  - id: check-json
+  - id: check-merge-conflict
+  - id: check-symlinks
+  - id: check-toml
+  - id: end-of-file-fixer
+  - id: trailing-whitespace
+- repo: local
+  hooks:
+  - id: black
+    name: black
+    entry: .tox/py39-codestyle/bin/black
+    language: system
+    types: [python]
+  - id: check-manifest
+    name: check-manifest
+    entry: check-manifest
+    language: system
+    pass_filenames: false
+    files: ^MANIFEST\.in$
+  - id: flake8
+    name: flake8
+    entry: .tox/py39-codestyle/bin/flake8 --config=setup.cfg
+    language: system
+    types: [python]
+  - id: isort
+    name: isort
+    entry: .tox/py39-codestyle/bin/isort
+    language: system
+    types: [python]
