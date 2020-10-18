@@ -65,7 +65,7 @@ The middleware does a few things:
 ``HtmxDetails``
 ^^^^^^^^^^^^^^^
 
-This class provides shortcuts for reading the HTMX-specific `request headers <https://htmx.org/reference/#request_headers`__.
+This class provides shortcuts for reading the HTMX-specific `request headers <https://htmx.org/reference/#request_headers>`__.
 
 ``active_element: Optional[str]``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -80,7 +80,7 @@ The ``name`` of the active element if it exists, or ``None``.
 Based on the ``HX-Active-Element-Name`` header.
 
 ``active_element_value: Optional[str]``
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The ``value`` of the active element if it exists, or ``None``.
 Based on the ``HX-Active-Element-Value`` header.
