@@ -1,5 +1,6 @@
 from django.urls import path
-from example.core.views import index, attribute_test
+
+from example.core.views import attribute_test, index
 
 urlpatterns = [
     path("", index),
