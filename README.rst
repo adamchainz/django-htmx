@@ -65,7 +65,24 @@ The middleware does a few things:
 ``HtmxDetails``
 ^^^^^^^^^^^^^^^
 
-This class provides shortcuts for reading the HTMX-specific `request headers <https://htmx.org/reference/#request_headers>`__.
+This class provides shortcuts for reading the htmx-specific `request headers <https://htmx.org/reference/#request_headers>`__.
+
+``__bool__(): bool``
+~~~~~~~~~~~~~~~~~~~~
+
+``True`` if the request was made with htmx, otherwise ``False``.
+This is based on the presence of the ``HX-Request`` header.
+
+This allows you to switch behaviour for requests made with htmx like so:
+
+.. code-block:: python
+
+    def my_view(request):
+        if request.htmx:
+            template_name = "partial.html"
+        else:
+            template_name = "complete.html"
+        return render(template_name, ...)
 
 ``active_element: Optional[str]``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -96,12 +113,6 @@ Based on the ``HX-Current-URL`` header.
 
 The ``id`` of the original event target element, or ``None``.
 Based on the ``HX-Event-Target`` header.
-
-``is_htmx: bool``
-~~~~~~~~~~~~~~~~~
-
-``True`` if the request was made with htmx, otherwise ``False``.
-This is based on the presence of the ``HX-Request`` header.
 
 ``prompt: Optional[str]``
 ~~~~~~~~~~~~~~~~~~~~~~~~~

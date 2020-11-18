@@ -17,6 +17,9 @@ class HtmxDetails:
     def __init__(self, request):
         self.request = request
 
+    def __bool__(self):
+        return self.request.headers.get("HX-Request", "") == "true"
+
     @cached_property
     def active_element(self):
         return self.request.headers.get("HX-Active-Element") or None
@@ -36,10 +39,6 @@ class HtmxDetails:
     @cached_property
     def event_target(self):
         return self.request.headers.get("HX-Event-Target") or None
-
-    @cached_property
-    def is_htmx(self):
-        return self.request.headers.get("HX-Request", "") == "true"
 
     @cached_property
     def prompt(self):

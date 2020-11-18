@@ -78,20 +78,20 @@ class HtmxMiddlewareTests(SimpleTestCase):
         self.middleware(request)
         assert request.htmx.event_target == "some-element"
 
-    def test_is_htmx_default(self):
+    def test_bool_default(self):
         request = self.request_factory.get("/")
         self.middleware(request)
-        assert request.htmx.is_htmx is False
+        assert bool(request.htmx) is False
 
-    def test_is_htmx_false(self):
+    def test_bool_false(self):
         request = self.request_factory.get("/", HTTP_HX_REQUEST="false")
         self.middleware(request)
-        assert request.htmx.is_htmx is False
+        assert bool(request.htmx) is False
 
-    def test_is_htmx_true(self):
+    def test_bool_true(self):
         request = self.request_factory.get("/", HTTP_HX_REQUEST="true")
         self.middleware(request)
-        assert request.htmx.is_htmx is True
+        assert bool(request.htmx) is True
 
     def test_prompt_default(self):
         request = self.request_factory.get("/")
