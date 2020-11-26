@@ -1,7 +1,7 @@
 from django.http import HttpResponse
 from django.test import RequestFactory, SimpleTestCase
 
-from django_htmx import HtmxMiddleware
+from htmx.middlewares import HtmxMiddleware
 
 
 def dummy_view(request):
