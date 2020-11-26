@@ -8,6 +8,8 @@ Use Python 3.8 to run, with vanilla venv, pip, and Django:
    python -m venv venv
    source venv/bin/activate
    python -m pip install -U pip -r requirements.txt -e ..
+   python manage.py migrate
+   python manage.py generatedata
    DEBUG=1 python manage.py runserver
 
 Open it at http://127.0.0.1:8000/ .

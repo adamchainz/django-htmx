@@ -46,7 +46,7 @@ Installation
 
        MIDDLEWARE = [
            ...,
-           "django_htmx.HtmxMiddleware",
+           "htmx.middlewares.HtmxMiddleware",
            ...,
        ]
 

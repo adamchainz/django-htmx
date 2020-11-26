@@ -1,3 +1,4 @@
+{% load htmx %}
 <!doctype html>
 <html lang="en">
 <head>
@@ -44,7 +45,9 @@
     <section>
       <p id="attribute-test"><em>Awaiting interaction...</em></p>
     </section>
-  </main>
+    <hr>
+      <h3>Paginated list example</h3>
+      {% htmx_include 'partials/person_list.html' %}
   <footer>
     <hr>
     <p>
