@@ -11,17 +11,23 @@ SECRET_KEY = ")w%-67b9lurhzs*o2ow(e=n_^(n2!0_f*2+g+1*9tcn6_k58(f"
 ALLOWED_HOSTS = ["*"]
 
 INSTALLED_APPS = [
+    "htmx",
     "example.core",
     "django.contrib.staticfiles",
 ]
 
 MIDDLEWARE = [
-    "django_htmx.HtmxMiddleware",
+    "htmx.middlewares.HtmxMiddleware",
 ]
 
 ROOT_URLCONF = "example.urls"
 
-DATABASES = {}
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': os.path.join(BASE_DIR.parent, 'db.sqlite3'),
+    }
+}
 
 TEMPLATES = [
     {
