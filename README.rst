@@ -20,7 +20,7 @@ Extensions for using Django with `htmx <https://htmx.org/>`__.
 Requirements
 ------------
 
-Python 3.5 to 3.9 supported.
+Python 3.6 to 3.9 supported.
 
 Django 2.2 to 3.1 supported.
 
