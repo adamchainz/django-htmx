@@ -21,24 +21,8 @@ class HtmxDetails:
         return self.request.headers.get("HX-Request", "") == "true"
 
     @cached_property
-    def active_element(self):
-        return self.request.headers.get("HX-Active-Element") or None
-
-    @cached_property
-    def active_element_name(self):
-        return self.request.headers.get("HX-Active-Element-Name") or None
-
-    @cached_property
-    def active_element_value(self):
-        return self.request.headers.get("HX-Active-Element-Value") or None
-
-    @cached_property
     def current_url(self):
         return self.request.headers.get("HX-Current-URL") or None
-
-    @cached_property
-    def event_target(self):
-        return self.request.headers.get("HX-Event-Target") or None
 
     @cached_property
     def prompt(self):

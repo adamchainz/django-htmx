@@ -22,40 +22,6 @@ class HtmxMiddlewareTests(SimpleTestCase):
         self.middleware(request)
         assert request.method == "DELETE"
 
-    def test_active_element_default(self):
-        request = self.request_factory.get("/")
-        self.middleware(request)
-        assert request.htmx.active_element is None
-
-    def test_active_element_set(self):
-        request = self.request_factory.get("/", HTTP_HX_ACTIVE_ELEMENT="some-element")
-        self.middleware(request)
-        assert request.htmx.active_element == "some-element"
-
-    def test_active_element_name_default(self):
-        request = self.request_factory.get("/")
-        self.middleware(request)
-        assert request.htmx.active_element_name is None
-
-    def test_active_element_name_set(self):
-        request = self.request_factory.get(
-            "/", HTTP_HX_ACTIVE_ELEMENT_NAME="some-element-name"
-        )
-        self.middleware(request)
-        assert request.htmx.active_element_name == "some-element-name"
-
-    def test_active_element_value_default(self):
-        request = self.request_factory.get("/")
-        self.middleware(request)
-        assert request.htmx.active_element_value is None
-
-    def test_active_element_value_set(self):
-        request = self.request_factory.get(
-            "/", HTTP_HX_ACTIVE_ELEMENT_VALUE="some-element-value"
-        )
-        self.middleware(request)
-        assert request.htmx.active_element_value == "some-element-value"
-
     def test_current_url_default(self):
         request = self.request_factory.get("/")
         self.middleware(request)
@@ -67,16 +33,6 @@ class HtmxMiddlewareTests(SimpleTestCase):
         )
         self.middleware(request)
         assert request.htmx.current_url == "https://example.com"
-
-    def test_event_target_default(self):
-        request = self.request_factory.get("/")
-        self.middleware(request)
-        assert request.htmx.event_target is None
-
-    def test_event_target_set(self):
-        request = self.request_factory.get("/", HTTP_HX_EVENT_TARGET="some-element")
-        self.middleware(request)
-        assert request.htmx.event_target == "some-element"
 
     def test_bool_default(self):
         request = self.request_factory.get("/")

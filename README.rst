@@ -87,35 +87,11 @@ This allows you to switch behaviour for requests made with htmx like so:
             template_name = "complete.html"
         return render(template_name, ...)
 
-``active_element: Optional[str]``
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-The ``id`` of the active element if it exists, or ``None``.
-Based on the ``HX-Active-Element`` header.
-
-``active_element_name: Optional[str]``
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-The ``name`` of the active element if it exists, or ``None``.
-Based on the ``HX-Active-Element-Name`` header.
-
-``active_element_value: Optional[str]``
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-The ``value`` of the active element if it exists, or ``None``.
-Based on the ``HX-Active-Element-Value`` header.
-
 ``current_url: Optional[str]``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The current URL of the browser, or ``None`` for non-htmx requests.
 Based on the ``HX-Current-URL`` header.
-
-``event_target: Optional[str]``
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-The ``id`` of the original event target element, or ``None``.
-Based on the ``HX-Event-Target`` header.
 
 ``prompt: Optional[str]``
 ~~~~~~~~~~~~~~~~~~~~~~~~~
