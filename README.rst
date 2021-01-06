@@ -6,7 +6,7 @@ django-htmx
    :target: https://github.com/adamchainz/django-htmx/actions?workflow=CI
 
 .. image:: https://img.shields.io/coveralls/github/adamchainz/django-htmx/master?style=for-the-badge
-  :target: https://coveralls.io/r/adamchainz/django-htmx
+  :target: https://app.codecov.io/gh/adamchainz/django-htmx
 
 .. image:: https://img.shields.io/pypi/v/django-htmx.svg?style=for-the-badge
    :target: https://pypi.org/project/django-htmx/
