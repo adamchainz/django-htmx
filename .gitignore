@@ -42,3 +42,6 @@ output/*/index.html
 
 .cache
 .pytest_cache
+
+.coverage
+.coverage.*
