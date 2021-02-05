@@ -49,24 +49,24 @@ Installation
 
        MIDDLEWARE = [
            ...,
-           "django_htmx.HtmxMiddleware",
+           "django_htmx.middleware.HtmxMiddleware",
            ...,
        ]
 
 API
 ---
 
-``HtmxMiddleware``
-^^^^^^^^^^^^^^^^^^
+``django_htmx.middleware.HtmxMiddleware``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 The middleware does a few things:
 
-* It attaches ``request.htmx``, an instance of ``django_htmx.HtmxDetails`` (see below).
+* It attaches ``request.htmx``, an instance of ``HtmxDetails`` (see below).
 * It modifies ``request.method`` based upon the ``X-HTTP-Method-Override`` header.
   htmx sends this header to set what the method “really is” since the JavaScript ``XMLHttpRequest`` API only allows sending ``GET`` and ``POST`` requests.
 
-``HtmxDetails``
-^^^^^^^^^^^^^^^
+``django_htmx.middleware.HtmxDetails``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 This class provides shortcuts for reading the htmx-specific `request headers <https://htmx.org/reference/#request_headers>`__.
 
