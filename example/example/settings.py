@@ -16,7 +16,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
-    "django_htmx.HtmxMiddleware",
+    "django_htmx.middleware.HtmxMiddleware",
 ]
 
 ROOT_URLCONF = "example.urls"
