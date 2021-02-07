@@ -1,0 +1,44 @@
+{% extends "_base.html" %}
+
+{% block main %}
+  <section>
+    <form action="#">
+      <p>
+        The below form controls implement different patterns with HTMX.
+        Interact with them to trigger requests that will render a table showing the Django request attributes added and changed by <code>HtmxMiddleware</code>.
+      </p>
+      <p>
+        <button id="basic-button"
+                hx-put="/middleware-tester/table/"
+                hx-target="#attribute-test"
+                hx-swap="outerHTML">
+          Basic button
+        </button>
+      </p>
+      <p>
+        <button id="prompt-button"
+                hx-delete="/middleware-tester/table/"
+                hx-target="#attribute-test"
+                hx-swap="outerHTML"
+                hx-prompt="What is your answer?">
+          Prompt button
+        </button>
+      </p>
+      <p>
+        <input id="keyup-input"
+               name="keyup-input-name"
+               type="text"
+               placeholder="Type something..."
+               autocomplete="off"
+               hx-post="/middleware-tester/table/"
+               hx-trigger="keyup changed delay:100ms"
+               hx-target="#attribute-test"
+               hx-swap="outerHTML"></input>
+      </p>
+    </form>
+  </section>
+  <hr>
+  <section>
+    <p id="attribute-test"><em>Awaiting interaction...</em></p>
+  </section>
+{% endblock %}

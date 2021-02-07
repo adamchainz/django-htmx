@@ -8,6 +8,16 @@ def index(request):
     return render(request, "index.html")
 
 
+def middleware_tester(request):
+    return render(request, "middleware-tester.html")
+
+
 @require_http_methods(["DELETE", "POST", "PUT"])
-def attribute_test(request):
-    return render(request, "attribute_test.html", {"timestamp": time.time()})
+def middleware_tester_table(request):
+    return render(
+        request,
+        "middleware-tester-table.html",
+        {
+            "timestamp": time.time(),
+        },
+    )

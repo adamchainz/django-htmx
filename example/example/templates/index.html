@@ -1,56 +1,8 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>django-htmx example app</title>
-  <link rel="stylesheet" href="/static/mvp.css">
-</head>
-<body>
-  <header>
-    <h1>django-htmx example app</h1>
-  </header>
-  <main>
-    <section>
-      <form>
-        <p>
-          Use these form controls to trigger requests with htmx, and see a
-          summary of the attributes from the middleware in a table below.
-        </p>
-        <button id="basic-button"
-                hx-put="/attribute-test"
-                hx-target="#attribute-test"
-                hx-swap="outerHTML">
-          Basic button
-        </button>
-        <button id="prompt-button"
-                hx-delete="/attribute-test"
-                hx-target="#attribute-test"
-                hx-swap="outerHTML"
-                hx-prompt="What is your answer?">
-          Prompt button
-        </button>
-        <input id="keyup-input"
-               name="keyup-input-name"
-               type="text"
-               placeholder="Type something..."
-               autocomplete="off"
-               hx-post="/attribute-test"
-               hx-trigger="keyup changed delay:100ms"
-               hx-target="#attribute-test"
-               hx-swap="outerHTML"></input>
-      </form>
-    </section>
-    <hr>
-    <section>
-      <p id="attribute-test"><em>Awaiting interaction...</em></p>
-    </section>
-  </main>
-  <footer>
-    <hr>
-    <p>
-      For more information see <a href="https://github.com/adamchainz/django-htmx">django-htmx</a> and <a href="https://htmx.org/">htmx</a>.
-    </p>
-  </footer>
-  <script src="/static/htmx.min.js"></script>
-</body>
-</html>
+{% extends "_base.html" %}
+
+{% block main %}
+  <section>
+    Welcome to the example app.
+    Use one of the links in the navigation to explore!
+  </section>
+{% endblock %}
