@@ -12,16 +12,6 @@ class HtmxMiddlewareTests(SimpleTestCase):
     request_factory = RequestFactory()
     middleware = HtmxMiddleware(dummy_view)
 
-    def test_method_default(self):
-        request = self.request_factory.delete("/")
-        self.middleware(request)
-        assert request.method == "DELETE"
-
-    def test_method_set(self):
-        request = self.request_factory.get("/", HTTP_X_HTTP_METHOD_OVERRIDE="DELETE")
-        self.middleware(request)
-        assert request.method == "DELETE"
-
     def test_current_url_default(self):
         request = self.request_factory.get("/")
         self.middleware(request)

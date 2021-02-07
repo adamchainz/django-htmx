@@ -64,11 +64,7 @@ API
 ``django_htmx.middleware.HtmxMiddleware``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-The middleware does a few things:
-
-* It attaches ``request.htmx``, an instance of ``HtmxDetails`` (see below).
-* It modifies ``request.method`` based upon the ``X-HTTP-Method-Override`` header.
-  htmx sends this header to set what the method “really is” since the JavaScript ``XMLHttpRequest`` API only allows sending ``GET`` and ``POST`` requests.
+This middleware attaches ``request.htmx``, an instance of ``HtmxDetails``.
 
 ``django_htmx.middleware.HtmxDetails``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
