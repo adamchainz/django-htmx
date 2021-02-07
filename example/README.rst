@@ -1,14 +1,17 @@
 Example Application
 ===================
 
-Use Python 3.8 to run, with vanilla venv, pip, and Django:
+Use Python 3.8 to set up and run with these commands:
 
 .. code-block:: sh
 
    python -m venv venv
    source venv/bin/activate
-   python -m pip install -U pip -r requirements.txt -e ..
+   python -m pip install -U pip
+   python -m pip install -r requirements.txt -e ..
    DEBUG=1 python manage.py runserver
 
 Open it at http://127.0.0.1:8000/ .
-From there you can test some htmx features which use django-htmx.
+
+Browse the individual examples.
+Take them apart in your browser’s network tab and read the commented source code to see what’s going on!

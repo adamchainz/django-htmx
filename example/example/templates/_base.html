@@ -4,19 +4,30 @@
   <meta charset="utf-8">
   <title>django-htmx example app</title>
   <link rel="stylesheet" href="/static/mvp.css">
+
+  <!-- An example of how we can configure htmx -->
+  <!-- https://htmx.org/docs/#config -->
+  <meta name="htmx-config" content='{"historyCacheSize": 15}'>
 </head>
 <body>
   <header>
     <nav>
-      <h1>django-htmx example app</h1>
+      <h1>
+        <a href="/">
+          django-htmx example app
+        </a>
+      </h1>
       <ul>
         <li>
           <a href="/middleware-tester/">Middleware Tester</a>
         </li>
+        <li>
+          <a href="/partial-rendering/">Partial Rendering</a>
+        </li>
       </ul>
     </nav>
   </header>
-  <main>
+  <main id="main">
     {% block main %}{% endblock %}
   </main>
   <footer>
