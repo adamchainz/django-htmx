@@ -6,9 +6,6 @@ class HtmxMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        method = request.headers.get("X-HTTP-Method-Override", None)
-        if method:
-            request.method = method
         request.htmx = HtmxDetails(request)
         return self.get_response(request)
 
