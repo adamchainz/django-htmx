@@ -2,6 +2,9 @@
 History
 =======
 
+1.0.0 (2021-02-07)
+------------------
+
 * Add ``HtmxMiddleware`` which handles request headers from htmx.
 * Add example app on GitHub repository which demonstrates using django-htmx
   features.
