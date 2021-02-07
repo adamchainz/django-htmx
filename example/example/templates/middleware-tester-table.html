@@ -11,28 +11,42 @@
       <td>{{ timestamp }}</td>
     </tr>
     <tr>
-      <td><code>method</code></td>
-      <td>{{ request.method }}</td>
+      <td><code>request.method</code></td>
+      <td><code>{{ request.method|stringformat:'r' }}</code></td>
     </tr>
     <tr>
-      <td><code>current_url</code></td>
-      <td>{{ request.htmx.current_url }}</td>
+      <td><code>bool(request.htmx)</code></td>
+      <td>
+        {% if request.htmx %}
+          <code>True</code>
+        {% else %}
+          <code>For</code>
+        {% endif %}
+      </td>
     </tr>
     <tr>
-      <td><code>prompt</code></td>
-      <td>{{ request.htmx.prompt }}</td>
+      <td><code>request.htmx.current_url</code></td>
+      <td><code>{{ request.htmx.current_url|stringformat:'r' }}</code></td>
     </tr>
     <tr>
-      <td><code>target</code></td>
-      <td>{{ request.htmx.target }}</td>
+      <td><code>request.htmx.prompt</code></td>
+      <td><code>{{ request.htmx.prompt|stringformat:'r' }}</code></td>
     </tr>
     <tr>
-      <td><code>trigger</code></td>
-      <td>{{ request.htmx.trigger }}</td>
+      <td><code>request.htmx.target</code></td>
+      <td><code>{{ request.htmx.target|stringformat:'r' }}</code></td>
     </tr>
     <tr>
-      <td><code>trigger_name</code></td>
-      <td>{{ request.htmx.trigger_name }}</td>
+      <td><code>request.htmx.trigger</code></td>
+      <td><code>{{ request.htmx.trigger|stringformat:'r' }}</code></td>
+    </tr>
+    <tr>
+      <td><code>request.htmx.trigger_name</code></td>
+      <td><code>{{ request.htmx.trigger_name|stringformat:'r' }}</code></td>
+    </tr>
+    <tr>
+      <td><code>request.POST.get('keyup_input')</code></td>
+      <td><code>{{ request.POST.keyup_input|stringformat:'r' }}</code></td>
     </tr>
   </tbody>
 </table>
