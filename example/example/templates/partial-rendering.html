@@ -1,0 +1,80 @@
+{% extends base_template %}
+
+{% block main %}
+  <section>
+    <p>
+      This example shows using <a href="https://htmx.org/attributes/hx-boost/">the <code>hx-boost</code> feature</a> to make page requests using AJAX.
+      The view does partial rendering for requests made with htmx, using an alternative base template that only renders the <code>#main</code> element, saving time and bandwidth.
+      Paginate through the below list of randomly generated people to see this in action.
+    </p>
+  </section>
+
+  <section>
+    <table>
+      <thead>
+        <tr>
+          <th>id</th>
+          <th>name</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for person in page.object_list %}
+          <tr>
+            <td>{{ person.id }}</td>
+            <td>{{ person.name }}</td>
+          </tr>
+        {% empty %}
+          <tr>
+            <td colspan="2">
+              No people on this page.
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <!--
+      The htmx attributes set on the nav are inherited by the child links.
+      hx-boost tells htmx to convert the plain links into AJAX requests.
+      hx-target + hx-swap tell it how to swap the partially renderede page into
+      the DOM.
+    -->
+    <nav hx-boost="true" hx-target="#main" hx-swap="outerHTML">
+      <ul>
+        {% if page.number != 1 %}
+          <li>
+            <a href="?page=1">
+              &laquo; First
+            </a>
+          </li>
+        {% endif %}
+        {% if page.has_previous %}
+          <li>
+            <a href="?page={{ page.previous_page_number }}">
+              {{ page.previous_page_number }}
+            </a>
+          </li>
+        {% endif %}
+        <li>
+          {{ page.number }}
+        </li>
+        {% if page.has_next %}
+          <li>
+            <a href="?page={{ page.next_page_number }}">
+              {{ page.next_page_number }}
+            </a>
+          </li>
+        {% endif %}
+        {% if page.number != page.paginator.num_pages %}
+          <li>
+            <a href="?page={{ page.paginator.num_pages }}">
+              &raquo; Last
+            </a>
+          </li>
+        {% endif %}
+      </ul>
+    </nav>
+  </section>
+{% endblock %}
