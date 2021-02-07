@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>django-htmx example app</title>
+  <link rel="stylesheet" href="/static/mvp.css">
+</head>
+<body>
+  <header>
+    <nav>
+      <h1>django-htmx example app</h1>
+      <ul>
+        <li>
+          <a href="/middleware-tester/">Middleware Tester</a>
+        </li>
+      </ul>
+    </nav>
+  </header>
+  <main>
+    {% block main %}{% endblock %}
+  </main>
+  <footer>
+    <hr>
+    <p>
+      For more information see <a href="https://github.com/adamchainz/django-htmx">django-htmx</a> and <a href="https://htmx.org/">htmx</a>.
+    </p>
+  </footer>
+  <script src="/static/htmx.min.js"></script>
+</body>
+</html>

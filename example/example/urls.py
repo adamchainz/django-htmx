@@ -1,8 +1,9 @@
 from django.urls import path
 
-from example.core.views import attribute_test, index
+from example.core.views import index, middleware_tester, middleware_tester_table
 
 urlpatterns = [
     path("", index),
-    path("attribute-test", attribute_test),
+    path("middleware-tester/", middleware_tester),
+    path("middleware-tester/table/", middleware_tester_table),
 ]
