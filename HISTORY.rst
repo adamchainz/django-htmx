@@ -2,6 +2,9 @@
 History
 =======
 
+1.0.1 (2021-02-08)
+------------------
+
 * Remove ``X-HTTP-Method-Override`` handling from ``HtmxMiddleware``. This has
   not been needed since htmx 0.0.5, when use of the header was extracted
   to its ``method-override`` extension in `htmx commit
