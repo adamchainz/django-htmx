@@ -88,31 +88,31 @@ This allows you to switch behaviour for requests made with htmx like so:
             template_name = "complete.html"
         return render(template_name, ...)
 
-``current_url: Optional[str]``
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+``current_url: str | None``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The current URL of the browser, or ``None`` for non-htmx requests.
 Based on the ``HX-Current-URL`` header.
 
-``prompt: Optional[str]``
-~~~~~~~~~~~~~~~~~~~~~~~~~
+``prompt: str | None``
+~~~~~~~~~~~~~~~~~~~~~~
 
 The user response to `hx-prompt <https://htmx.org/attributes/hx-prompt/>`__ if it was used, or ``None``.
 
-``target: Optional[str]``
-~~~~~~~~~~~~~~~~~~~~~~~~~
+``target: str | None``
+~~~~~~~~~~~~~~~~~~~~~~
 
 The ``id`` of the target element if it exists, or ``None``.
 Based on the ``HX-Target`` header.
 
-``trigger: Optional[str]``
-~~~~~~~~~~~~~~~~~~~~~~~~~~
+``trigger: str | None``
+~~~~~~~~~~~~~~~~~~~~~~~
 
 The ``id`` of the triggered element if it exists, or ``None``.
 Based on the ``HX-Trigger`` header.
 
-``trigger_name: Optional[str]``
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+``trigger_name: str | None``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The ``name`` of the triggered element if it exists, or ``None``.
 Based on the ``HX-Trigger-Name`` header.
