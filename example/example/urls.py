@@ -1,9 +1,9 @@
 from django.urls import path
 
 from example.core.views import (
-    index,
     csrf_demo,
     csrf_demo_checker,
+    index,
     middleware_tester,
     middleware_tester_table,
     partial_rendering,
