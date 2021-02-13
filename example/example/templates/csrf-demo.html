@@ -1,0 +1,39 @@
+{% extends "_base.html" %}
+
+{% block main %}
+  <section>
+    <p>
+      This form shows you how to implement CSRF with htmx, using <a href="https://dev.htmx.org/attributes/hx-headers/"> the<code>hx-headers</code> attribute</a>.
+    </p>
+  </section>
+  <section>
+    <!--
+      Note you can place the hx-headers attribute on your <body> tag so it
+      affects all requests, reducing repetition.
+
+      The header name may be changed with the CSRF_HEADER_NAME setting;
+      https://docs.djangoproject.com/en/stable/ref/settings/#std:setting-CSRF_HEADER_NAME
+
+      Note we use {{ csrf_token }} instead of {% csrf_token %} to get the
+      variable rather than a rendered HTML <input>.
+    -->
+    <form hx-post="/csrf-demo/checker/"
+          hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+          hx-target="#result">
+      <label for="id_number">
+        Number:
+      </label>
+      <input id="id_number"
+             name="number"
+             type="text"
+             placeholder=""></input>
+      <button type="submit">
+        Check if odd
+      </button>
+    </p>
+    </form>
+  </section>
+  <section>
+    <p id="result"><em>Awaiting interaction...</em></p>
+  </section>
+{% endblock %}

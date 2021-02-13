@@ -6,10 +6,35 @@ from django.shortcuts import render
 from django.views.decorators.http import require_http_methods
 from faker import Faker
 
+from example.core.forms import OddNumberForm
+
 
 @require_http_methods(("GET",))
 def index(request):
     return render(request, "index.html")
+
+
+# CSRF Demo
+
+
+@require_http_methods(("GET",))
+def csrf_demo(request):
+    return render(request, "csrf-demo.html")
+
+
+@require_http_methods(("POST",))
+def csrf_demo_checker(request):
+    form = OddNumberForm(request.POST)
+    if form.is_valid():
+        number = form.cleaned_data["number"]
+        number_is_odd = number % 2 == 1
+    else:
+        number_is_odd = False
+    return render(
+        request,
+        "csrf-demo-checker.html",
+        {"form": form, "number_is_odd": number_is_odd},
+    )
 
 
 # Middleware tester

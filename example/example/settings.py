@@ -16,6 +16,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    "django.middleware.csrf.CsrfViewMiddleware",
     "django_htmx.middleware.HtmxMiddleware",
 ]
 
