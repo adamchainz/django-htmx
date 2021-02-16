@@ -3,10 +3,15 @@
 {% block main %}
   <section>
     <!--
-      The form controls all have the same target and swap method, so we define
-      those attributes here and they inherit it.
+      This form itself is never submitted, but acts as a container for the form
+      control elements, which make their own individual requests. Since the
+      form controls all have the same CSRF header, target, and swap method, we
+      define those attributes here and the controls inherit them.
     -->
-    <form action="#" hx-target="#attribute-test" hx-swap="outerHTML">
+    <form action="#"
+          hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+          hx-target="#attribute-test"
+          hx-swap="outerHTML">
       <p>
         The below form controls implement different patterns with HTMX.
         Interact with them to trigger requests that will render a table showing the Django request attributes added and changed by <code>HtmxMiddleware</code>.
