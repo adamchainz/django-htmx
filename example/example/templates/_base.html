@@ -11,10 +11,11 @@
 </head>
 
 <!--
-  Enable htmx debugging.
-  https://htmx.org/extensions/debug/
+  Enable htmx extensions for all requests:
+  * debug: https://htmx.org/extensions/debug/
+  * event-header: https://htmx.org/extensions/event-header/
 -->
-<body hx-ext="debug">
+<body hx-ext="debug, event-header">
   <header>
     <nav>
       <h1>
@@ -46,5 +47,6 @@
   </footer>
   <script src="/static/htmx.min.js"></script>
   <script src="/static/ext/debug.js"></script>
+  <script src="/static/ext/event-header.js"></script>
 </body>
 </html>

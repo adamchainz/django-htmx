@@ -6,6 +6,10 @@ History
   1.2.0. This is parsed into the ``request.htmx.history_restore_request``
   attribute.
 
+* Support the ``Triggering-Event`` header, which is sent by the
+  `event-header extension <https://htmx.org/extensions/event-header/>`__.
+  This is parsed into the ``request.htmx.triggering_event`` attribute.
+
 * Stop distributing tests to reduce package size. Tests are not intended to be
   run outside of the tox setup in the repository. Repackagers can use GitHub's
   tarballs per tag.

@@ -88,3 +88,20 @@ class HtmxMiddlewareTests(SimpleTestCase):
         request = self.request_factory.get("/", HTTP_HX_TRIGGER_NAME="some-name")
         self.middleware(request)
         assert request.htmx.trigger_name == "some-name"
+
+    def test_triggering_event_none(self):
+        request = self.request_factory.get("/")
+        self.middleware(request)
+        assert request.htmx.triggering_event is None
+
+    def test_triggering_event_bad_json(self):
+        request = self.request_factory.get("/", HTTP_TRIGGERING_EVENT="{")
+        self.middleware(request)
+        assert request.htmx.triggering_event is None
+
+    def test_triggering_event_good_json(self):
+        request = self.request_factory.get(
+            "/", HTTP_TRIGGERING_EVENT='{"target": null}'
+        )
+        self.middleware(request)
+        assert request.htmx.triggering_event == {"target": None}
