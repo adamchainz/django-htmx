@@ -14,6 +14,7 @@ def main(args=None):
 
     download_file(version, "htmx.min.js")
     download_file(version, "ext/debug.js")
+    download_file(version, "ext/event-header.js")
 
     print("✅")
 

@@ -1,3 +1,5 @@
+{% load example_tags %}
+
 <table id="attribute-test">
   <thead>
     <tr>
@@ -43,6 +45,22 @@
     <tr>
       <td><code>request.htmx.trigger_name</code></td>
       <td><code>{{ request.htmx.trigger_name|stringformat:'r' }}</code></td>
+    </tr>
+    <tr>
+      <td>
+        <code>request.htmx.triggering_event</code> <br>
+        <small>(via <a href="https://htmx.org/extensions/event-header/">event-header extension</a>)</small>
+      </td>
+      <td>
+        {% if request.htmx.triggering_event %}
+          <details>
+            <summary>JSON</summary>
+            <pre style="text-align: left"><code>{{ request.htmx.triggering_event|json_dumps }}</code></pre>
+          </details>
+        {% else %}
+          <code>{{ request.htmx.triggering_event|stringformat:'r' }}</code>
+        {% endif %}
+      </td>
     </tr>
     <tr>
       <td><code>request.POST.get('keyup_input')</code></td>

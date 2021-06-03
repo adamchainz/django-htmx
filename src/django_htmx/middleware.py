@@ -1,3 +1,6 @@
+import json
+from urllib.parse import unquote
+
 from django.utils.functional import cached_property
 
 
@@ -40,3 +43,13 @@ class HtmxDetails:
     @cached_property
     def trigger_name(self):
         return self.request.headers.get("HX-Trigger-Name") or None
+
+    @cached_property
+    def triggering_event(self):
+        if "Triggering-Event" in self.request.headers:
+            value = unquote(self.request.headers["Triggering-Event"])
+            try:
+                return json.loads(value)
+            except json.JSONDecodeError:
+                pass
+        return None
