@@ -9,7 +9,12 @@
   <!-- https://htmx.org/docs/#config -->
   <meta name="htmx-config" content='{"historyCacheSize": 15}'>
 </head>
-<body>
+
+<!--
+  Enable htmx debugging.
+  https://htmx.org/extensions/debug/
+-->
+<body hx-ext="debug">
   <header>
     <nav>
       <h1>
@@ -40,5 +45,6 @@
     </p>
   </footer>
   <script src="/static/htmx.min.js"></script>
+  <script src="/static/ext/debug.js"></script>
 </body>
 </html>
