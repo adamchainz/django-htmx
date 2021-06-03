@@ -2,6 +2,10 @@
 History
 =======
 
+* Support the ``HX-History-Restore-Request`` header, which was added in htmx
+  1.2.0. This is parsed into the ``request.htmx.history_restore_request``
+  attribute.
+
 * Stop distributing tests to reduce package size. Tests are not intended to be
   run outside of the tox setup in the repository. Repackagers can use GitHub's
   tarballs per tag.

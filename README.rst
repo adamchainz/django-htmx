@@ -94,6 +94,12 @@ This allows you to switch behaviour for requests made with htmx like so:
 The current URL of the browser, or ``None`` for non-htmx requests.
 Based on the ``HX-Current-URL`` header.
 
+``history_restore_request: bool``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``True`` if the request is for history restoration after a miss in the local history cache.
+Based on the ``HX-History-Restore-Request`` header.
+
 ``prompt: str | None``
 ~~~~~~~~~~~~~~~~~~~~~~
 

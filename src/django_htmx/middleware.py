@@ -22,6 +22,10 @@ class HtmxDetails:
         return self.request.headers.get("HX-Current-URL") or None
 
     @cached_property
+    def history_restore_request(self):
+        return self.request.headers.get("HX-History-Restore-Request", "") == "true"
+
+    @cached_property
     def prompt(self):
         return self.request.headers.get("HX-Prompt") or None
 
