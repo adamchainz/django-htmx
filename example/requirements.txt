@@ -4,17 +4,17 @@
 #
 #    pip-compile
 #
-asgiref==3.3.1
+asgiref==3.3.4
     # via django
-django==3.1.6
+django==3.2.4
     # via -r requirements.in
-faker==6.1.1
+faker==8.5.0
     # via -r requirements.in
 python-dateutil==2.8.1
     # via faker
 pytz==2021.1
     # via django
-six==1.15.0
+six==1.16.0
     # via python-dateutil
 sqlparse==0.4.1
     # via django
