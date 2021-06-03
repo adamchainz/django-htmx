@@ -1,7 +1,7 @@
 Example Application
 ===================
 
-Use Python 3.8 to set up and run with these commands:
+Use Python 3.9 to set up and run with these commands:
 
 .. code-block:: sh
 
