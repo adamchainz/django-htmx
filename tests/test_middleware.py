@@ -12,18 +12,6 @@ class HtmxMiddlewareTests(SimpleTestCase):
     request_factory = RequestFactory()
     middleware = HtmxMiddleware(dummy_view)
 
-    def test_current_url_default(self):
-        request = self.request_factory.get("/")
-        self.middleware(request)
-        assert request.htmx.current_url is None
-
-    def test_current_url_set(self):
-        request = self.request_factory.get(
-            "/", HTTP_HX_CURRENT_URL="https://example.com"
-        )
-        self.middleware(request)
-        assert request.htmx.current_url == "https://example.com"
-
     def test_bool_default(self):
         request = self.request_factory.get("/")
         self.middleware(request)
@@ -38,6 +26,28 @@ class HtmxMiddlewareTests(SimpleTestCase):
         request = self.request_factory.get("/", HTTP_HX_REQUEST="true")
         self.middleware(request)
         assert bool(request.htmx) is True
+
+    def test_current_url_default(self):
+        request = self.request_factory.get("/")
+        self.middleware(request)
+        assert request.htmx.current_url is None
+
+    def test_current_url_set(self):
+        request = self.request_factory.get(
+            "/", HTTP_HX_CURRENT_URL="https://example.com"
+        )
+        self.middleware(request)
+        assert request.htmx.current_url == "https://example.com"
+
+    def test_history_restore_request_false(self):
+        request = self.request_factory.get("/", HTTP_HX_HISTORY_RESTORE_REQUEST="false")
+        self.middleware(request)
+        assert request.htmx.history_restore_request is False
+
+    def test_history_restore_request_true(self):
+        request = self.request_factory.get("/", HTTP_HX_HISTORY_RESTORE_REQUEST="true")
+        self.middleware(request)
+        assert request.htmx.history_restore_request is True
 
     def test_prompt_default(self):
         request = self.request_factory.get("/")
