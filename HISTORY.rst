@@ -2,6 +2,9 @@
 History
 =======
 
+1.1.0 (2021-06-03)
+------------------
+
 * Support the ``HX-History-Restore-Request`` header, which was added in htmx
   1.2.0. This is parsed into the ``request.htmx.history_restore_request``
   attribute.
