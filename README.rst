@@ -189,6 +189,12 @@ Based on the ``HX-Trigger`` header.
 The ``name`` of the triggered element if it exists, or ``None``.
 Based on the ``HX-Trigger-Name`` header.
 
+``triggering_event: Any | None``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The deserialized JSON representtation of the event that triggered the request if it exists, or ``None``.
+This header is set by the `event-header htmx extension <https://htmx.org/extensions/event-header/>`__, and contains details of the DOM event that triggered the request.
+
 ``django_htmx.http.HttpResponseStopPolling: type[HttpResponse]``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

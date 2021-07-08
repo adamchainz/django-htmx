@@ -39,6 +39,15 @@ class HtmxMiddlewareTests(SimpleTestCase):
         self.middleware(request)
         assert request.htmx.current_url == "https://example.com"
 
+    def test_current_url_set_url_encoded(self):
+        request = self.request_factory.get(
+            "/",
+            HTTP_HX_CURRENT_URL="https%3A%2F%2Fexample.com%2F%3F",
+            HTTP_HX_CURRENT_URL_URI_AUTOENCODED="true",
+        )
+        self.middleware(request)
+        assert request.htmx.current_url == "https://example.com/?"
+
     def test_history_restore_request_false(self):
         request = self.request_factory.get("/", HTTP_HX_HISTORY_RESTORE_REQUEST="false")
         self.middleware(request)
@@ -101,7 +110,9 @@ class HtmxMiddlewareTests(SimpleTestCase):
 
     def test_triggering_event_good_json(self):
         request = self.request_factory.get(
-            "/", HTTP_TRIGGERING_EVENT='{"target": null}'
+            "/",
+            HTTP_TRIGGERING_EVENT="%7B%22target%22%3A%20null%7D",
+            HTTP_TRIGGERING_EVENT_URI_AUTOENCODED="true",
         )
         self.middleware(request)
         assert request.htmx.triggering_event == {"target": None}
