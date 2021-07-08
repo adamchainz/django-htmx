@@ -37,6 +37,19 @@ def csrf_demo_checker(request):
     )
 
 
+# Error demo
+
+
+@require_http_methods(("GET",))
+def error_demo(request):
+    return render(request, "error-demo.html")
+
+
+@require_http_methods(("GET",))
+def error_demo_trigger(request):
+    1 / 0
+
+
 # Middleware tester
 
 # This uses two views - one to render the form, and the second to render the

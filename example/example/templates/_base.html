@@ -1,9 +1,12 @@
+{% load django_htmx %}
+{% load static %}
+
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <title>django-htmx example app</title>
-  <link rel="stylesheet" href="/static/mvp.css">
+  <link rel="stylesheet" href="{% static 'mvp.css' %}">
 
   <!-- An example of how we can configure htmx -->
   <!-- https://htmx.org/docs/#config -->
@@ -28,6 +31,9 @@
           <a href="/csrf-demo/">CSRF Demo</a>
         </li>
         <li>
+          <a href="/error-demo/">Error Demo</a>
+        </li>
+        <li>
           <a href="/middleware-tester/">Middleware Tester</a>
         </li>
         <li>
@@ -45,8 +51,9 @@
       For more information see <a href="https://github.com/adamchainz/django-htmx">django-htmx</a> and <a href="https://htmx.org/">htmx</a>.
     </p>
   </footer>
-  <script src="/static/htmx.min.js"></script>
-  <script src="/static/ext/debug.js"></script>
-  <script src="/static/ext/event-header.js"></script>
+  <script src="{% static 'htmx.min.js' %}"></script>
+  <script src="{% static 'ext/debug.js' %}"></script>
+  <script src="{% static 'ext/event-header.js' %}"></script>
+  {% django_htmx_script %}
 </body>
 </html>

@@ -1,0 +1,23 @@
+{% extends "_base.html" %}
+
+{% block main %}
+  <section>
+    <p>
+      This page shows you django-htmx’s error handler.
+    </p>
+  </section>
+  <section>
+    <p>
+      {% if DEBUG %}
+        The error handler will work, since <code>DEBUG = True</code>.
+      {% else %}
+        The error handler will <strong>not</strong> work, since <strong>DEBUG = False</strong>.
+      {% endif %}
+    </p>
+  </section>
+  <section>
+    <button hx-get="/error-demo/trigger/">
+      Try divide by zero
+    </button>
+  </section>
+{% endblock %}

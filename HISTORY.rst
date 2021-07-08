@@ -2,6 +2,15 @@
 History
 =======
 
+* Installation now requires adding ``"django_htmx"`` to your ``INSTALLED_APPS``
+  setting.
+
+* Add extension script with debug error handler. To install it, follow the new
+  instructions in the README.
+
+  htmx’s default behaviour is to discard error responses. The extension
+  overrides this in debug mode to shows Django’s debug error responses.
+
 1.1.0 (2021-06-03)
 ------------------
 

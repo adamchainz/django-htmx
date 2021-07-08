@@ -1,9 +1,19 @@
 SECRET_KEY = "NOTASECRET"
 
-DATABASES = {}
-
 ALLOWED_HOSTS = []
 
-INSTALLED_APPS = []
+DATABASES = {}
+
+INSTALLED_APPS = [
+    "django_htmx",
+]
 
 MIDDLEWARE = []
+
+TEMPLATES = [
+    {
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "OPTIONS": {"context_processors": []},
+    }
+]
