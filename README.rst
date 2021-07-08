@@ -111,7 +111,7 @@ First, load the tag function into the globals of your `custom environment <https
 
 Second, call the function in your base template:
 
-.. code-block:: jinja2
+.. code-block:: jinja
 
     {{ django_htmx_script() }}
 
