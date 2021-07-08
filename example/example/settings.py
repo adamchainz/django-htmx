@@ -12,6 +12,7 @@ ALLOWED_HOSTS = ["*"]
 
 INSTALLED_APPS = [
     "example.core",
+    "django_htmx",
     "django.contrib.staticfiles",
 ]
 
@@ -31,7 +32,6 @@ TEMPLATES = [
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
-                "django.template.context_processors.debug",
                 "django.template.context_processors.request",
             ]
         },
