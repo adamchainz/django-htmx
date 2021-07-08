@@ -188,3 +188,34 @@ Based on the ``HX-Trigger`` header.
 
 The ``name`` of the triggered element if it exists, or ``None``.
 Based on the ``HX-Trigger-Name`` header.
+
+``django_htmx.http.HttpResponseStopPolling: type[HttpResponse]``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+When using a `polling trigger <https://htmx.org/docs/#polling>`__, htmx will stop polling when it encounters a response with the special HTTP status code 286.
+``HttpResponseStopPolling`` is a `custom response class <https://docs.djangoproject.com/en/stable/ref/request-response/#custom-response-classes>`__ with that status code.
+
+For example:
+
+.. code-block:: python
+
+    from django_htmx.http import HttpResponseStopPolling
+
+    def my_pollable_view(request):
+        if event_finished():
+            return HttpResponseStopPolling()
+        ...
+
+``django_htmx.http.HTMX_STOP_POLLING: int``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+A constant for the HTTP status code 286, for use with e.g. `Django’s render shortcut <https://docs.djangoproject.com/en/stable/topics/http/shortcuts/#django.shortcuts.render>`__.
+
+.. code-block:: python
+
+    from django_htmx.http import HTMX_STOP_POLLING
+
+    def my_pollable_view(request):
+        if event_finished():
+            return render("event-finished.html", status=HTMX_STOP_POLLING)
+        ...

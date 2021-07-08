@@ -11,6 +11,9 @@ History
   htmx’s default behaviour is to discard error responses. The extension
   overrides this in debug mode to shows Django’s debug error responses.
 
+* Add ``django_htmx.http`` module with ``HttpResponseStopPolling`` class and
+  ``HTMX_STOP_POLLING`` constant.
+
 1.1.0 (2021-06-03)
 ------------------
 
