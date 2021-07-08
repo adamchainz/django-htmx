@@ -2,6 +2,9 @@
 History
 =======
 
+1.2.0 (2021-07-08)
+------------------
+
 * Installation now requires adding ``"django_htmx"`` to your ``INSTALLED_APPS``
   setting.
 
