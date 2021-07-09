@@ -12,7 +12,7 @@ def main(args=None):
     args = parser.parse_args(args)
     version = args.version
 
-    download_file(version, "htmx.min.js")
+    download_file(version, "htmx.js")
     download_file(version, "ext/debug.js")
     download_file(version, "ext/event-header.js")
 
@@ -32,8 +32,8 @@ def download_file(version, name):
         ],
         check=True,
     )
-    # Fix lack of trailing newline in minified file as otherwise pre-commit has
-    # to fix it.
+    # Fix lack of trailing newline in minified files as otherwise pre-commit
+    # has to fix it.
     if name.endswith(".min.js"):
         with open(f"example/static/{name}", "a") as fp:
             fp.write("\n")
