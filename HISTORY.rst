@@ -2,6 +2,8 @@
 History
 =======
 
+* Make extension script error handler also show 404 errors.
+
 1.2.0 (2021-07-08)
 ------------------
 
