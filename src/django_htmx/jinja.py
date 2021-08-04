@@ -3,7 +3,7 @@ from django.templatetags.static import static
 from django.utils.html import format_html
 
 
-def django_htmx_script():
+def django_htmx_script() -> str:
     # Optimization: whilst the script has no behaviour outside of debug mode,
     # don't include it.
     if not settings.DEBUG:

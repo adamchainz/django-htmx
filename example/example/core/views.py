@@ -2,6 +2,7 @@ import time
 from dataclasses import dataclass
 
 from django.core.paginator import Paginator
+from django.http import HttpRequest, HttpResponse
 from django.shortcuts import render
 from django.views.decorators.http import require_http_methods
 from faker import Faker
@@ -10,7 +11,7 @@ from example.core.forms import OddNumberForm
 
 
 @require_http_methods(("GET",))
-def index(request):
+def index(request: HttpRequest) -> HttpResponse:
     return render(request, "index.html")
 
 
@@ -18,12 +19,12 @@ def index(request):
 
 
 @require_http_methods(("GET",))
-def csrf_demo(request):
+def csrf_demo(request: HttpRequest) -> HttpResponse:
     return render(request, "csrf-demo.html")
 
 
 @require_http_methods(("POST",))
-def csrf_demo_checker(request):
+def csrf_demo_checker(request: HttpRequest) -> HttpResponse:
     form = OddNumberForm(request.POST)
     if form.is_valid():
         number = form.cleaned_data["number"]
@@ -41,13 +42,14 @@ def csrf_demo_checker(request):
 
 
 @require_http_methods(("GET",))
-def error_demo(request):
+def error_demo(request: HttpRequest) -> HttpResponse:
     return render(request, "error-demo.html")
 
 
 @require_http_methods(("GET",))
-def error_demo_trigger(request):
+def error_demo_trigger(request: HttpRequest) -> HttpResponse:
     1 / 0
+    return render(request, "error-demo.html")  # unreachable
 
 
 # Middleware tester
@@ -57,12 +59,12 @@ def error_demo_trigger(request):
 
 
 @require_http_methods(("GET",))
-def middleware_tester(request):
+def middleware_tester(request: HttpRequest) -> HttpResponse:
     return render(request, "middleware-tester.html")
 
 
 @require_http_methods(["DELETE", "POST", "PUT"])
-def middleware_tester_table(request):
+def middleware_tester_table(request: HttpRequest) -> HttpResponse:
     return render(
         request,
         "middleware-tester-table.html",
@@ -88,7 +90,7 @@ people = [Person(id=i, name=faker.name()) for i in range(1, 235)]
 
 
 @require_http_methods(("GET",))
-def partial_rendering(request):
+def partial_rendering(request: HttpRequest) -> HttpResponse:
     # Standard Django pagination
     page_num = request.GET.get("page", "1")
     page = Paginator(object_list=people, per_page=10).get_page(page_num)

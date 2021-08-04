@@ -4,22 +4,24 @@ Download the given htmx version and the extensions we're using.
 """
 import argparse
 import subprocess
+from typing import List, Optional
 
 
-def main(args=None):
+def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("version", help="e.g. 1.0.1")
-    args = parser.parse_args(args)
-    version = args.version
+    args = parser.parse_args(argv)
+    version: str = args.version
 
     download_file(version, "htmx.js")
     download_file(version, "ext/debug.js")
     download_file(version, "ext/event-header.js")
 
     print("✅")
+    return 0
 
 
-def download_file(version, name):
+def download_file(version: str, name: str) -> None:
     print(f"{name}...")
     subprocess.run(
         [
@@ -40,4 +42,4 @@ def download_file(version, name):
 
 
 if __name__ == "__main__":
-    main()
+    exit(main())

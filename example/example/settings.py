@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Any, Dict
 
 BASE_DIR = Path(__file__).parent
 
@@ -23,7 +24,7 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = "example.urls"
 
-DATABASES = {}
+DATABASES: Dict[str, Dict[str, Any]] = {}
 
 TEMPLATES = [
     {
