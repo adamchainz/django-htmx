@@ -103,10 +103,12 @@ First, load the tag function into the globals of your `custom environment <https
 
     def environment(**options):
         env = Environment(**options)
-        env.globals.update({
-            # ...
-            'django_htmx_script': django_htmx_script,
-        })
+        env.globals.update(
+            {
+                # ...
+                "django_htmx_script": django_htmx_script,
+            }
+        )
         return env
 
 Second, call the function in your base template:
@@ -209,6 +211,7 @@ For example:
 
     from django_htmx.http import HttpResponseStopPolling
 
+
     def my_pollable_view(request):
         if event_finished():
             return HttpResponseStopPolling()
@@ -222,6 +225,7 @@ A constant for the HTTP status code 286, for use with e.g. `Django’s render sh
 .. code-block:: python
 
     from django_htmx.http import HTMX_STOP_POLLING
+
 
     def my_pollable_view(request):
         if event_finished():
