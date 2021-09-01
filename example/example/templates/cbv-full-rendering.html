@@ -1,0 +1,16 @@
+{% extends '_base.html' %}
+
+{% block main %}
+  <section>
+    <p>
+      This example shows using <a href="https://htmx.org/attributes/hx-boost/">the <code>hx-boost</code> feature</a> to
+      make page requests using AJAX.
+      The view does partial rendering for requests made with htmx, using an alternative base template that only renders
+      the <code>#data-only</code> element, saving time and bandwidth.
+      Paginate through the below list of randomly generated people to see this in action.
+    </p>
+  </section>
+  <div id="data-only">
+    {% include 'cbv-partial-rendering.html' %}
+  </div>
+{% endblock %}

@@ -9,6 +9,7 @@ from example.core.views import (
     middleware_tester,
     middleware_tester_table,
     partial_rendering,
+    HtmxCBVListView
 )
 
 urlpatterns = [
@@ -20,4 +21,5 @@ urlpatterns = [
     path("middleware-tester/", middleware_tester),
     path("middleware-tester/table/", middleware_tester_table),
     path("partial-rendering/", partial_rendering),
+    path("cbv/", HtmxCBVListView.as_view())
 ]

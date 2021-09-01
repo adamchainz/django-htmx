@@ -8,7 +8,7 @@ from django.views.decorators.http import require_http_methods
 from faker import Faker
 
 from example.core.forms import OddNumberForm
-
+from django_htmx.views import HtmxListView
 
 @require_http_methods(("GET",))
 def index(request: HttpRequest) -> HttpResponse:
@@ -111,3 +111,17 @@ def partial_rendering(request: HttpRequest) -> HttpResponse:
             "page": page,
         },
     )
+
+# Class based view (CBV) example
+class HtmxCBVListView(HtmxListView):
+    queryset = people
+    template_name = "cbv-full-rendering.html"
+    partial_template_name = "cbv-partial-rendering.html"
+    paginate_by = 10
+
+    def get_context_data(self, **kwargs):
+        # the function-based example uses `page` as the paginator object name
+        # here we switch the context key `page_obj` to `page` to keep things the same
+        ctx = super().get_context_data(**kwargs)
+        ctx['page'] = ctx.pop('page_obj')
+        return ctx
