@@ -1,5 +1,5 @@
 from django.core.exceptions import ImproperlyConfigured
-from django.views.generic.list import MultipleObjectTemplateResponseMixin, BaseListView
+from django.views.generic.list import BaseListView, MultipleObjectTemplateResponseMixin
 
 
 class HtmxMixin(MultipleObjectTemplateResponseMixin):
