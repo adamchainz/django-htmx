@@ -42,4 +42,4 @@ def download_file(version: str, name: str) -> None:
 
 
 if __name__ == "__main__":
-    exit(main())
+    raise SystemExit(main())
