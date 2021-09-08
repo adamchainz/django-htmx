@@ -77,8 +77,8 @@ Reference
 Extension Script
 ^^^^^^^^^^^^^^^^
 
-django-htmx comes with a small JavaScript extension for htmx’s behaviour.
-Currently the extension only includes a debug error handler, documented below.
+django-htmx comes with a small JavaScript extension for htmx’s behavior.
+Currently, the extension only includes a debug error handler, documented below.
 
 The script is served as a static file called `django-htmx.js`, but you shouldn’t reference it directly.
 Instead, use the included template tags, for both Django and Jinja templates.
@@ -120,8 +120,8 @@ Second, call the function in your base template:
 Debug Error Handler
 ~~~~~~~~~~~~~~~~~~~
 
-htmx’s default behaviour when encountering an HTTP error is to discard the response.
-This can make it hard to debug errors in development.
+htmx’s default behavior when encountering an HTTP error is to discard the response.
+Making it hard to debug errors in development.
 
 The django-htmx script includes an error handler that’s active when debug mode is on.
 The handler detects responses with 404 and 500 status codes and replaces the page with their content.
