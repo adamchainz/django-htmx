@@ -19,3 +19,5 @@ TEMPLATES = [
         "OPTIONS": {"context_processors": []},
     }
 ]
+
+USE_TZ = True
