@@ -82,7 +82,7 @@ Currently the extension only includes a debug error handler, documented below.
 
 The script is served as a static file called `django-htmx.js`, but you shouldn’t reference it directly.
 Instead, use the included template tags, for both Django and Jinja templates.
-You probably want to include the relevant template tag after your htmx script tag.
+Include the relevant template tag after your htmx script tag.
 
 For **Django Templates**, load and use the template tag:
 
@@ -111,7 +111,7 @@ First, load the tag function into the globals of your `custom environment <https
         )
         return env
 
-Second, call the function in your base template:
+Second, call the function in your template:
 
 .. code-block:: jinja
 
