@@ -6,17 +6,17 @@
 #
 asgiref==3.4.1
     # via django
-django==3.2.5
+django==3.2.7
     # via -r requirements.in
-faker==8.9.1
+faker==8.14.1
     # via -r requirements.in
-python-dateutil==2.8.1
+python-dateutil==2.8.2
     # via faker
-pytz==2021.1
+pytz==2021.3
     # via django
 six==1.16.0
     # via python-dateutil
-sqlparse==0.4.1
+sqlparse==0.4.2
     # via django
 text-unidecode==1.3
     # via faker
