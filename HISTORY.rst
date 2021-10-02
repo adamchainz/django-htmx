@@ -2,6 +2,9 @@
 History
 =======
 
+* Support the ``HX-Boosted`` header, which was added in htmx 1.6.0.
+  This is parsed into the ``request.htmx.boosted`` attribute.
+
 1.3.0 (2021-09-28)
 ------------------
 
