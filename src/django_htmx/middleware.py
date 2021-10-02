@@ -30,6 +30,10 @@ class HtmxDetails:
         return self._get_header_value("HX-Request") == "true"
 
     @cached_property
+    def boosted(self) -> bool:
+        return self._get_header_value("HX-Boosted") == "true"
+
+    @cached_property
     def current_url(self) -> Optional[str]:
         return self._get_header_value("HX-Current-URL")
 
@@ -62,7 +66,3 @@ class HtmxDetails:
             except json.JSONDecodeError:
                 value = None
         return value
-
-    @cached_property
-    def boosted(self) -> bool:
-        return self._get_header_value("HX-Boosted") == "true"
