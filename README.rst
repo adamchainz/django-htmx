@@ -199,6 +199,11 @@ Based on the ``HX-Trigger-Name`` header.
 The deserialized JSON representtation of the event that triggered the request if it exists, or ``None``.
 This header is set by the `event-header htmx extension <https://htmx.org/extensions/event-header/>`__, and contains details of the DOM event that triggered the request.
 
+``boosted: bool``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``True`` if the request request came from an element with hx-boost attribute. Based on the ``HX-Boosted`` header.
+
 ``django_htmx.http.HttpResponseStopPolling: type[HttpResponse]``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

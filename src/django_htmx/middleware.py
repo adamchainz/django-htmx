@@ -62,3 +62,7 @@ class HtmxDetails:
             except json.JSONDecodeError:
                 value = None
         return value
+
+    @cached_property
+    def boosted(self) -> bool:
+        return self._get_header_value("HX-Boosted") == "true"

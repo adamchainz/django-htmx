@@ -116,3 +116,13 @@ class HtmxMiddlewareTests(SimpleTestCase):
         )
         self.middleware(request)
         assert request.htmx.triggering_event == {"target": None}
+
+    def test_boosted_default(self):
+        request = self.request_factory.get("/")
+        self.middleware(request)
+        assert not request.htmx.boosted
+
+    def test_boosted_set(self):
+        request = self.request_factory.get("/", HTTP_HX_BOOSTED="true")
+        self.middleware(request)
+        assert request.htmx.boosted
