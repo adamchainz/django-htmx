@@ -2,6 +2,10 @@
 History
 =======
 
+* Add ``HttpResponseClientRedirect`` class for sending HTMX client-side redirects.
+
+  Thanks to Julio César in `PR #121 <https://github.com/adamchainz/django-htmx/pull/121>`__.
+
 1.5.0 (2021-10-05)
 ------------------
 
