@@ -258,3 +258,49 @@ A constant for the HTTP status code 286, for use with e.g. `Django’s render sh
         if event_finished():
             return render("event-finished.html", status=HTMX_STOP_POLLING)
         ...
+
+``django_htmx.http.trigger_client_event(response, name, *, params, after)``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Full signature:
+
+.. code-block:: python
+
+    def trigger_client_event(
+        response: HttpResponse,
+        name: str,
+        params: dict[str, Any],
+        *,
+        after: EventAfterType = "receive"
+    ) -> None:
+        ...
+
+A header modifying function for triggering client-side events via the |HX-Trigger headers|__.
+Takes the name of the event to trigger and any JSON-compatible parameters for it, and stores them in the appropriate header.
+The header depends on the value of ``after``:
+
+.. |HX-Trigger header| replace:: ``HX-Trigger`` headers
+__ https://htmx.org/headers/hx-trigger/
+
+* ``"receive"``, the default, maps to ``HX-Trigger``
+* ``"settle"`` maps to ``HX-Trigger-After-Settle``
+* ``"swap"`` maps to ``HX-Trigger-After-Swap``
+
+Calling ``trigger_client_event`` multiple times for the same ``response`` and ``after`` will add or replace the given event name and preserve others.
+
+For example:
+
+.. code-block:: python
+
+    from django_htmx.http import trigger_client_event
+
+
+    def end_of_long_process(request):
+        response = render("end-of-long-process.html")
+        trigger_client_event(
+            response,
+            "showConfetti",
+            {"colours": ["purple", "red", "pink"]},
+            after="swap",
+        )
+        return response
