@@ -6,6 +6,8 @@ History
 
   Thanks to Julio César in `PR #121 <https://github.com/adamchainz/django-htmx/pull/121>`__.
 
+* Add ``django_htmx.http.trigger_client_event()`` for triggering client side events.
+
 1.5.0 (2021-10-05)
 ------------------
 
