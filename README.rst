@@ -205,6 +205,24 @@ Based on the ``HX-Trigger-Name`` header.
 The deserialized JSON representtation of the event that triggered the request if it exists, or ``None``.
 This header is set by the `event-header htmx extension <https://htmx.org/extensions/event-header/>`__, and contains details of the DOM event that triggered the request.
 
+``django_htmx.http.HttpResponseClientRedirect: type[HttpResponse]``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+htmx can trigger a redirect on the client side when it receives a response with the ``HX-Redirect`` header.
+``HttpResponseClientRedirect`` is a `custom response class <https://docs.djangoproject.com/en/stable/ref/request-response/#custom-response-classes>`__ for triggering such redirects.
+
+For example:
+
+.. code-block:: python
+
+    from django_htmx.http import HttpResponseClientRedirect
+
+
+    def sensitive_view(request):
+        if not sudo_mode.active(request):
+            return HttpResponseClientRedirect("/activate-sudo-mode/")
+        ...
+
 ``django_htmx.http.HttpResponseStopPolling: type[HttpResponse]``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
