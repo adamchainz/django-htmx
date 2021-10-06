@@ -279,7 +279,7 @@ A header modifying function for triggering client-side events via the |HX-Trigge
 Takes the name of the event to trigger and any JSON-compatible parameters for it, and stores them in the appropriate header.
 The header depends on the value of ``after``:
 
-.. |HX-Trigger header| replace:: ``HX-Trigger`` headers
+.. |HX-Trigger headers| replace:: ``HX-Trigger`` headers
 __ https://htmx.org/headers/hx-trigger/
 
 * ``"receive"``, the default, maps to ``HX-Trigger``
