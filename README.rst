@@ -161,7 +161,7 @@ This allows you to switch behaviour for requests made with htmx like so:
 ``boosted: bool``
 ~~~~~~~~~~~~~~~~~
 
-``True`` if the request request came from an element with the ``hx-boost`` attribute.
+``True`` if the request came from an element with the ``hx-boost`` attribute.
 Based on the ``HX-Boosted`` header.
 
 ``current_url: str | None``
