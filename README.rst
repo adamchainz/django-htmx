@@ -80,11 +80,10 @@ Extension Script
 django-htmx comes with a small JavaScript extension for htmx’s behaviour.
 Currently the extension only includes a debug error handler, documented below.
 
-The script is served as a static file called `django-htmx.js`, but you shouldn’t reference it directly.
+The script is served as a static file called ``django-htmx.js``, but you shouldn’t reference it directly.
 Instead, use the included template tags, for both Django and Jinja templates.
-Include the relevant template tag after your htmx script tag.
 
-For **Django Templates**, load and use the template tag:
+For **Django Templates**, load and use the template tag, after your htmx ``<script>`` tag:
 
 .. code-block:: django
 
@@ -111,7 +110,7 @@ First, load the tag function into the globals of your `custom environment <https
         )
         return env
 
-Second, call the function in your template:
+Second, call the function in your template, after your htmx ``<script>`` tag:
 
 .. code-block:: jinja
 
