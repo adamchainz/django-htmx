@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 """
 Download the given htmx version and the extensions we're using.
+
+This is only intended for maintaining the example app.
 """
 import argparse
 import subprocess
