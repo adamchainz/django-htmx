@@ -9,7 +9,7 @@ def django_htmx_script() -> str:
     if not settings.DEBUG:
         return format_html("")
     return format_html(
-        '<script type="text/javascript" src="{}" data-debug="{}" async defer></script>',
+        '<script type="text/javascript" src="{}" data-debug="{}" defer></script>',
         static("django-htmx.js"),
         str(bool(settings.DEBUG)),
     )

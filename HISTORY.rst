@@ -2,6 +2,8 @@
 History
 =======
 
+* Drop redundant 'async' from debug ``<script>`` tag.
+
 1.6.0 (2021-10-06)
 ------------------
 
