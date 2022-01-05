@@ -4,21 +4,33 @@ from dataclasses import dataclass
 from django.core.paginator import Paginator
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import render
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import require_GET, require_http_methods
 from faker import Faker
 
 from example.core.forms import OddNumberForm
 
 
-@require_http_methods(("GET",))
+@require_GET
 def index(request: HttpRequest) -> HttpResponse:
     return render(request, "index.html")
+
+
+@require_GET
+def favicon(request: HttpRequest) -> HttpResponse:
+    return HttpResponse(
+        (
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">'
+            + '<text y=".9em" font-size="90">🦊</text>'
+            + "</svg>"
+        ),
+        content_type="image/svg+xml",
+    )
 
 
 # CSRF Demo
 
 
-@require_http_methods(("GET",))
+@require_GET
 def csrf_demo(request: HttpRequest) -> HttpResponse:
     return render(request, "csrf-demo.html")
 
@@ -41,12 +53,12 @@ def csrf_demo_checker(request: HttpRequest) -> HttpResponse:
 # Error demo
 
 
-@require_http_methods(("GET",))
+@require_GET
 def error_demo(request: HttpRequest) -> HttpResponse:
     return render(request, "error-demo.html")
 
 
-@require_http_methods(("GET",))
+@require_GET
 def error_demo_trigger(request: HttpRequest) -> HttpResponse:
     1 / 0
     return render(request, "error-demo.html")  # unreachable
@@ -58,7 +70,7 @@ def error_demo_trigger(request: HttpRequest) -> HttpResponse:
 # table of attributes.
 
 
-@require_http_methods(("GET",))
+@require_GET
 def middleware_tester(request: HttpRequest) -> HttpResponse:
     return render(request, "middleware-tester.html")
 
@@ -89,7 +101,7 @@ faker = Faker()
 people = [Person(id=i, name=faker.name()) for i in range(1, 235)]
 
 
-@require_http_methods(("GET",))
+@require_GET
 def partial_rendering(request: HttpRequest) -> HttpResponse:
     # Standard Django pagination
     page_num = request.GET.get("page", "1")
