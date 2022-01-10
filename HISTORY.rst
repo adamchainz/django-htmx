@@ -2,6 +2,9 @@
 History
 =======
 
+1.7.0 (2022-01-10)
+------------------
+
 * Use ``DjangoJSONEncoder`` for encoding the ``HX-Trigger`` event.
 
   Thanks to Cleiton de Lima in `PR #182 <https://github.com/adamchainz/django-htmx/pull/182>`__.
