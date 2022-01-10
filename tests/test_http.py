@@ -1,6 +1,4 @@
-import uuid
-from datetime import datetime
-from decimal import Decimal
+from uuid import UUID
 
 import pytest
 from django.http import HttpResponse
@@ -106,19 +104,11 @@ class TriggerClientEventTests(SimpleTestCase):
 
     def test_django_json_encoder(self):
         response = HttpResponse()
-        uuid_value = uuid.uuid4()
-        dt = datetime(2022, 1, 1, 10, 0, 0)
+        uuid_value = UUID("{12345678-1234-5678-1234-567812345678}")
 
-        params = {
-            "decimal": Decimal("9.99"),
-            "uuid": uuid_value,
-            "datetime": dt,
-            "date": dt.date(),
-        }
-        trigger_client_event(response, "showMessage", params)
+        trigger_client_event(response, "showMessage", {"uuid": uuid_value})
 
-        expected = (
-            '{"decimal": "%s", "uuid": "%s", "datetime": "%s", "date": "%s"}'
-        ) % ("9.99", uuid_value, "2022-01-01T10:00:00", "2022-01-01")
-
-        assert expected in response["HX-Trigger"]
+        assert (
+            response["HX-Trigger"]
+            == '{"showMessage": {"uuid": "12345678-1234-5678-1234-567812345678"}}'
+        )
