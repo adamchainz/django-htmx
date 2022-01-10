@@ -2,6 +2,10 @@
 History
 =======
 
+* Use ``DjangoJSONEncoder`` for encoding the ``HX-Trigger`` event.
+
+  Thanks to Cleiton de Lima in `PR #182 <https://github.com/adamchainz/django-htmx/pull/182>`__.
+
 * Drop redundant 'async' from debug ``<script>`` tag.
 
 1.6.0 (2021-10-06)

@@ -2,6 +2,7 @@ import json
 import sys
 from typing import Any, Dict
 
+from django.core.serializers.json import DjangoJSONEncoder
 from django.http import HttpResponse
 from django.http.response import HttpResponseRedirectBase
 
@@ -60,4 +61,4 @@ def trigger_client_event(
     else:
         data = {name: params}
 
-    response[header] = json.dumps(data)
+    response[header] = json.dumps(data, cls=DjangoJSONEncoder)

@@ -1,3 +1,5 @@
+from uuid import UUID
+
 import pytest
 from django.http import HttpResponse
 from django.test import SimpleTestCase
@@ -98,4 +100,15 @@ class TriggerClientEventTests(SimpleTestCase):
 
         assert (
             response["HX-Trigger-After-Swap"] == '{"showMessage": {"value": "Great!"}}'
+        )
+
+    def test_django_json_encoder(self):
+        response = HttpResponse()
+        uuid_value = UUID("{12345678-1234-5678-1234-567812345678}")
+
+        trigger_client_event(response, "showMessage", {"uuid": uuid_value})
+
+        assert (
+            response["HX-Trigger"]
+            == '{"showMessage": {"uuid": "12345678-1234-5678-1234-567812345678"}}'
         )

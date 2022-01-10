@@ -276,12 +276,17 @@ Full signature:
     ) -> None:
         ...
 
-A header modifying function for triggering client-side events via the |HX-Trigger headers|__.
+Modify the |HX-Trigger headers|__ of ``response``  to trigger client-side events.
 Takes the name of the event to trigger and any JSON-compatible parameters for it, and stores them in the appropriate header.
-The header depends on the value of ``after``:
+Uses |DjangoJSONEncoder|__ for its extended data type support.
 
 .. |HX-Trigger headers| replace:: ``HX-Trigger`` headers
 __ https://htmx.org/headers/hx-trigger/
+
+.. |DjangoJSONEncoder| replace:: ``DjangoJSONEncoder``
+__ https://docs.djangoproject.com/en/stable/topics/serialization/#django.core.serializers.json.DjangoJSONEncoder
+
+Which of the ``HX-Trigger`` headers is modified depends on the value of ``after``:
 
 * ``"receive"``, the default, maps to ``HX-Trigger``
 * ``"settle"`` maps to ``HX-Trigger-After-Settle``
