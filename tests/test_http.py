@@ -1,3 +1,7 @@
+import uuid
+from datetime import datetime
+from decimal import Decimal
+
 import pytest
 from django.http import HttpResponse
 from django.test import SimpleTestCase
@@ -99,3 +103,22 @@ class TriggerClientEventTests(SimpleTestCase):
         assert (
             response["HX-Trigger-After-Swap"] == '{"showMessage": {"value": "Great!"}}'
         )
+
+    def test_django_json_encoder(self):
+        response = HttpResponse()
+        uuid_value = uuid.uuid4()
+        dt = datetime(2022, 1, 1, 10, 0, 0)
+
+        params = {
+            "decimal": Decimal("9.99"),
+            "uuid": uuid_value,
+            "datetime": dt,
+            "date": dt.date(),
+        }
+        trigger_client_event(response, "showMessage", params)
+
+        expected = (
+            '{"decimal": "%s", "uuid": "%s", "datetime": "%s", "date": "%s"}'
+        ) % ("9.99", uuid_value, "2022-01-01T10:00:00", "2022-01-01")
+
+        assert expected in response["HX-Trigger"]
