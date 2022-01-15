@@ -6,9 +6,9 @@
 #
 asgiref==3.4.1
     # via django
-django==4.0
+django==4.0.1
     # via -r requirements.in
-faker==10.0.0
+faker==11.3.0
     # via -r requirements.in
 python-dateutil==2.8.2
     # via faker
