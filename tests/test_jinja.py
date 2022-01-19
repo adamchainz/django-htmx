@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from django.test import SimpleTestCase, override_settings
 
 from django_htmx.jinja import django_htmx_script

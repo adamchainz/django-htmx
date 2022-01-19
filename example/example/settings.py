@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 import os
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 BASE_DIR = Path(__file__).parent
 
@@ -24,7 +26,7 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = "example.urls"
 
-DATABASES: Dict[str, Dict[str, Any]] = {}
+DATABASES: dict[str, dict[str, Any]] = {}
 
 TEMPLATES = [
     {
