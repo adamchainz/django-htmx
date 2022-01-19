@@ -4,12 +4,13 @@ Download the given htmx version and the extensions we're using.
 
 This is only intended for maintaining the example app.
 """
+from __future__ import annotations
+
 import argparse
 import subprocess
-from typing import List, Optional
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("version", help="e.g. 1.0.1")
     args = parser.parse_args(argv)

@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 import json
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 from urllib.parse import unquote
 
 from django.http import HttpRequest, HttpResponse
@@ -19,7 +21,7 @@ class HtmxDetails:
     def __init__(self, request: HttpRequest) -> None:
         self.request = request
 
-    def _get_header_value(self, name: str) -> Optional[str]:
+    def _get_header_value(self, name: str) -> str | None:
         value = self.request.headers.get(name) or None
         if value:
             if self.request.headers.get(f"{name}-URI-AutoEncoded") == "true":
@@ -34,7 +36,7 @@ class HtmxDetails:
         return self._get_header_value("HX-Boosted") == "true"
 
     @cached_property
-    def current_url(self) -> Optional[str]:
+    def current_url(self) -> str | None:
         return self._get_header_value("HX-Current-URL")
 
     @cached_property
@@ -42,19 +44,19 @@ class HtmxDetails:
         return self._get_header_value("HX-History-Restore-Request") == "true"
 
     @cached_property
-    def prompt(self) -> Optional[str]:
+    def prompt(self) -> str | None:
         return self._get_header_value("HX-Prompt")
 
     @cached_property
-    def target(self) -> Optional[str]:
+    def target(self) -> str | None:
         return self._get_header_value("HX-Target")
 
     @cached_property
-    def trigger(self) -> Optional[str]:
+    def trigger(self) -> str | None:
         return self._get_header_value("HX-Trigger")
 
     @cached_property
-    def trigger_name(self) -> Optional[str]:
+    def trigger_name(self) -> str | None:
         return self._get_header_value("HX-Trigger-Name")
 
     @cached_property

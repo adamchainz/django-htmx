@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 import json
 import sys
-from typing import Any, Dict
+from typing import Any
 
 from django.core.serializers.json import DjangoJSONEncoder
 from django.http import HttpResponse
@@ -36,7 +38,7 @@ class HttpResponseClientRedirect(HttpResponseRedirectBase):
 def trigger_client_event(
     response: HttpResponse,
     name: str,
-    params: Dict[str, Any],
+    params: dict[str, Any],
     *,
     after: EventAfterType = "receive",
 ) -> None:

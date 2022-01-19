@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from django import template
 
 from django_htmx.jinja import django_htmx_script

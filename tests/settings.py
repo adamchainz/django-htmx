@@ -1,16 +1,18 @@
-from typing import Any, Dict, List
+from __future__ import annotations
+
+from typing import Any
 
 SECRET_KEY = "NOTASECRET"
 
-ALLOWED_HOSTS: List[str] = []
+ALLOWED_HOSTS: list[str] = []
 
-DATABASES: Dict[str, Dict[str, Any]] = {}
+DATABASES: dict[str, dict[str, Any]] = {}
 
 INSTALLED_APPS = [
     "django_htmx",
 ]
 
-MIDDLEWARE: List[str] = []
+MIDDLEWARE: list[str] = []
 
 TEMPLATES = [
     {
