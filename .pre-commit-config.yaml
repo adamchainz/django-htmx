@@ -52,3 +52,7 @@ repos:
   - id: mypy
     additional_dependencies:
     - types-python-dateutil
+- repo: https://github.com/Lucas-C/pre-commit-hooks-markup
+  rev: v1.0.1
+  hooks:
+  - id: rst-linter
