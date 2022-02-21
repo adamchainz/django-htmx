@@ -45,8 +45,8 @@ Based on the ``HX-Current-URL`` header.
 ``history_restore_request: bool``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-``True`` if the request is for history restoration after a miss in the local history cache.
-Based on the ``HX-History-Restore-Request`` header.
+``True`` if the request is for history restoration after a miss in the local
+history cache. Based on the ``HX-History-Restore-Request`` header.
 
 ``prompt: str | None``
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -74,5 +74,7 @@ Based on the ``HX-Trigger-Name`` header.
 ``triggering_event: Any | None``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The deserialized JSON representtation of the event that triggered the request if it exists, or ``None``.
-This header is set by the `event-header htmx extension <https://htmx.org/extensions/event-header/>`__, and contains details of the DOM event that triggered the request.
+The deserialized JSON representtation of the event that triggered the request if
+it exists, or ``None``. This header is set by the `event-header htmx extension
+<https://htmx.org/extensions/event-header/>`__, and contains details of the DOM
+event that triggered the request.

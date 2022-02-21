@@ -4,8 +4,9 @@
 # list see the documentation:
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
-# -- Path setup --------------------------------------------------------------
+from __future__ import annotations
 
+# -- Path setup --------------------------------------------------------------
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
@@ -17,12 +18,12 @@
 
 # -- Project information -----------------------------------------------------
 
-project = 'django-htmx'
-copyright = '2022, Adam Johnson'
-author = 'Adam Johnson'
+project = "django-htmx"
+copyright = "2022, Adam Johnson"
+author = "Adam Johnson"
 
 # The full version, including alpha/beta/rc tags
-release = '1.8.0'
+release = "1.8.0"
 
 
 # -- General configuration ---------------------------------------------------
@@ -36,7 +37,7 @@ extensions = [
 ]
 
 # Add any paths that contain templates here, relative to this directory.
-templates_path = ['_templates']
+templates_path = ["_templates"]
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
@@ -49,12 +50,12 @@ exclude_patterns = []
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = 'furo'
+html_theme = "furo"
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
-html_static_path = ['_static']
+html_static_path = ["_static"]
 
 
 intersphinx_mapping = {

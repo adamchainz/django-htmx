@@ -36,6 +36,7 @@ repos:
   rev: 4.0.1
   hooks:
   - id: flake8
+    exclude: docs/.*
     additional_dependencies:
     - flake8-bugbear
     - flake8-comprehensions
@@ -45,14 +46,17 @@ repos:
   rev: "0.47"
   hooks:
   - id: check-manifest
+    exclude: docs/.*
     args: [--no-build-isolation]
 - repo: https://github.com/pre-commit/mirrors-mypy
   rev: v0.931
   hooks:
   - id: mypy
+    exclude: docs/.*
     additional_dependencies:
     - types-python-dateutil
-- repo: https://github.com/Lucas-C/pre-commit-hooks-markup
-  rev: v1.0.1
+- repo: https://github.com/PyCQA/doc8.git
+  rev: 0.10.1
   hooks:
-  - id: rst-linter
+  - id: doc8
+    files: ^docs/

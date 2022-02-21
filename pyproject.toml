@@ -31,3 +31,6 @@ addopts = """\
     --ds=tests.settings
     """
 django_find_project = false
+
+[tool.check-manifest]
+ignore = ["docs/Makefile", "docs/make.bat", "docs/source/*.py", "docs/source/*.rst"]

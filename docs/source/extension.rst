@@ -9,18 +9,21 @@ Extension Script
 django-htmx comes with a small JavaScript extension for htmx’s behaviour.
 Currently the extension only includes a debug error handler, documented below.
 
-The script is served as a static file called ``django-htmx.js``, but you shouldn’t reference it directly.
-Instead, use the included template tags, for both Django and Jinja templates.
+The script is served as a static file called ``django-htmx.js``, but you
+shouldn’t reference it directly. Instead, use the included template tags, for
+both Django and Jinja templates.
 
-For **Django Templates**, load and use the template tag, after your htmx ``<script>`` tag:
+For **Django Templates**, load and use the template tag, after your htmx
+``<script>`` tag:
 
 .. code-block:: django
 
     {% load django_htmx %}
     {% django_htmx_script %}
 
-For **Jinja Templates**, you need to perform two steps.
-First, load the tag function into the globals of your `custom environment <https://docs.djangoproject.com/en/stable/topics/templates/#django.template.backends.jinja2.Jinja2>`__:
+For **Jinja Templates**, you need to perform two steps. First, load the tag
+function into the globals of your `custom environment
+<https://docs.djangoproject.com/en/stable/topics/templates/#django.template.backends.jinja2.Jinja2>`__:
 
 .. code-block:: python
 
@@ -48,11 +51,12 @@ Second, call the function in your template, after your htmx ``<script>`` tag:
 Debug Error Handler
 ~~~~~~~~~~~~~~~~~~~
 
-htmx’s default behaviour when encountering an HTTP error is to discard the response.
-This can make it hard to debug errors in development.
+htmx’s default behaviour when encountering an HTTP error is to discard the
+response. This can make it hard to debug errors in development.
 
-The django-htmx script includes an error handler that’s active when debug mode is on.
-The handler detects responses with 404 and 500 status codes and replaces the page with their content.
-This change allows you to debug with Django’s default error responses as you would for a non-htmx request.
+The django-htmx script includes an error handler that’s active when debug mode
+is on. The handler detects responses with 404 and 500 status codes and replaces
+the page with their content. This change allows you to debug with Django’s
+default error responses as you would for a non-htmx request.
 
 See this in action in the “Error Demo” section of the example app.
