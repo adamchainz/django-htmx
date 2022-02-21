@@ -1,0 +1,9 @@
+version: 2
+
+python:
+  install:
+    - method: pip
+      path: ./requirements/py37-django32.txt
+      extra_requirements:
+        - docs
+  system_packages: true
