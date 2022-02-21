@@ -1,5 +1,6 @@
 version: 2
 
 python:
+  version: "3.7"
   install:
-    requirements:requirements/py37-django32.txt
+    - requirements: requirements/py37-django32.txt
