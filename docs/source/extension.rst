@@ -10,7 +10,7 @@ django-htmx comes with a small JavaScript extension for htmx’s behaviour.
 Currently the extension only includes a debug error handler, documented below.
 
 The script is served as a static file called ``django-htmx.js``, but you
-shouldn’t reference it directly. Instead, use the included template tags, for
+shouldn't reference it directly. Instead, use the included template tags, for
 both Django and Jinja templates.
 
 For **Django Templates**, load and use the template tag, after your htmx

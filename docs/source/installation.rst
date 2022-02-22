@@ -31,6 +31,6 @@ Installation
    :doc:`extension`
 
 It’s up to you to add htmx (and any extensions) to your project, via a
-``<script>`` tag in your base template. Forut resilience, you probably want to
+``<script>`` tag in your base template. For resilience, you probably want to
 download it into your project’s static files, rather than rely on the
 ``unpkg.com`` hosted version.
