@@ -45,3 +45,6 @@ output/*/index.html
 
 .coverage
 .coverage.*
+
+# Sphinx
+docs/_build
