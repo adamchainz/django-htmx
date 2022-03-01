@@ -11,9 +11,6 @@ Welcome to django-htmx's documentation!
    middleware
    http
    tips
-   contributing
-
-
 
 
 Indices and tables
