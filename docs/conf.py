@@ -6,25 +6,35 @@
 
 from __future__ import annotations
 
-# -- Path setup --------------------------------------------------------------
-# If extensions (or modules to document with autodoc) are in another directory,
-# add these directories to sys.path here. If the directory is relative to the
-# documentation root, use os.path.abspath to make it absolute, like shown here.
-#
-# import os
-# import sys
-# sys.path.insert(0, os.path.abspath('.'))
+import sys
+from pathlib import Path
 
+# -- Path setup --------------------------------------------------------------
+
+here = Path(__file__).parent.resolve()
+sys.path.insert(0, str(here / ".." / "src"))
 
 # -- Project information -----------------------------------------------------
 
 project = "django-htmx"
-copyright = "2022, Adam Johnson"
+copyright = "2020 Adam Johnson"
 author = "Adam Johnson"
 
-# The full version, including alpha/beta/rc tags
-release = "1.8.0"
+# The version info for the project you're documenting, acts as replacement
+# for |version| and |release|, also used in various other places throughout
+# the built documents.
 
+
+def _get_version() -> str:
+    lines = (here / ".." / "setup.cfg").read_text().splitlines()
+    version_lines = [line.strip() for line in lines if line.startswith("version = ")]
+
+    assert len(version_lines) == 1
+    return version_lines[0].split(" = ")[1]
+
+
+version = _get_version()
+release = version
 
 # -- General configuration ---------------------------------------------------
 
@@ -34,10 +44,8 @@ release = "1.8.0"
 extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.intersphinx",
+    "sphinx.ext.viewcode",
 ]
-
-# Add any paths that contain templates here, relative to this directory.
-templates_path = ["_templates"]
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
@@ -53,9 +61,26 @@ exclude_patterns = [
 #
 html_theme = "furo"
 
+# -- Options for LaTeX output ------------------------------------------
+
+# Grouping the document tree into LaTeX files. List of tuples
+# (source start file, target name, title, author, documentclass
+# [howto/manual]).
+latex_documents = [
+    (
+        "index",
+        "django-htmx.tex",
+        "django-htmx Documentation",
+        "Adam Johnson",
+        "manual",
+    ),
+]
+
+# -- Options for Intersphinx -------------------------------------------
+
 intersphinx_mapping = {
-    "https://docs.python.org/": None,
-    "https://docs.djangoproject.com/en/dev/": (
-        "https://docs.djangoproject.com/en/dev/_objects/"
+    "django": (
+        "https://docs.djangoproject.com/en/stable/",
+        "https://docs.djangoproject.com/en/stable/_objects/",
     ),
 }
