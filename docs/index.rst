@@ -8,10 +8,10 @@ django-htmx documentation
    :caption: Contents:
 
    installation
-   configuration
    extension
    middleware
    http
+   example_project
    tips
 
 
