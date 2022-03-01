@@ -37,6 +37,8 @@ Installation
            ...,
        ]
 
+   The middleware adds ``request.htmx``, as described in :doc:`middleware`.
+
 4. (Optional) Add the extension script to your base template, as documented in :doc:`extension_script`.
 
 It’s up to you to add htmx (and extensions) to your project, via a ``<script>`` tag in your base template.
