@@ -8,7 +8,7 @@ django-htmx documentation
    :caption: Contents:
 
    installation
-   extension
+   extension_script
    middleware
    http
    example_project

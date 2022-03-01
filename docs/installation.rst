@@ -1,5 +1,5 @@
 Installation
-------------
+============
 
 1. Install with **pip**:
 
@@ -27,10 +27,7 @@ Installation
            ...,
        ]
 
-4. (Optional) Add the extension script to your template, as documented in
-   :doc:`extension`
+4. (Optional) Add the extension script to your base template, as documented in :doc:`extension_script`.
 
-It’s up to you to add htmx (and any extensions) to your project, via a
-``<script>`` tag in your base template. For resilience, you probably want to
-download it into your project’s static files, rather than rely on the
-``unpkg.com`` hosted version.
+It’s up to you to add htmx (and extensions) to your project, via a ``<script>`` tag in your base template.
+For resilience, download it into your project’s static files, rather than rely on the ``unpkg.com`` hosted version.
