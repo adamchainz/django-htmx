@@ -21,7 +21,7 @@ HTMX_STOP_POLLING = 286
 class HttpResponseStopPolling(HttpResponse):
     status_code = HTMX_STOP_POLLING
 
-    def __init__(self, *args: object, **kwargs: object) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._reason_phrase = "Stop Polling"
 
