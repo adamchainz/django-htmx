@@ -1,80 +1,88 @@
 Middleware
-------------
+==========
 
-``django_htmx.middleware.HtmxMiddleware``
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.. currentmodule:: django_htmx.middleware
 
-This middleware attaches ``request.htmx``, an instance of ``HtmxDetails``.
+.. class:: HtmxMiddleware
 
-See it action in the “Middleware Tester” section of the example app.
+   This middleware attaches ``request.htmx``, an instance of :obj:`HtmxDetails` (below).
+   Your views, and any following middleware, can use ``request.htmx`` to switch behaviour for requests from htmx.
 
-``django_htmx.middleware.HtmxDetails``
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   See it action in the “Middleware Tester” section of the :doc:`example project <example_project>`.
 
-This class provides shortcuts for reading the htmx-specific `request headers <https://htmx.org/reference/#request_headers>`__.
+.. class:: HtmxDetails
 
-``__bool__(): bool``
-~~~~~~~~~~~~~~~~~~~~
+   This class provides shortcuts for reading the htmx-specific `request headers <https://htmx.org/reference/#request_headers>`__.
 
-``True`` if the request was made with htmx, otherwise ``False``.
-This is based on the presence of the ``HX-Request`` header.
+   .. automethod:: __bool__
 
-This allows you to switch behaviour for requests made with htmx like so:
+      ``True`` if the request was made with htmx, otherwise ``False``.
+      This is based on the presence of the ``HX-Request`` header.
 
-.. code-block:: python
+      This allows you to switch behaviour for requests made with htmx like so:
 
-    def my_view(request):
-        if request.htmx:
-            template_name = "partial.html"
-        else:
-            template_name = "complete.html"
-        return render(template_name, ...)
+      .. code-block:: python
 
-``boosted: bool``
-~~~~~~~~~~~~~~~~~
+          def my_view(request):
+              if request.htmx:
+                  template_name = "partial.html"
+              else:
+                  template_name = "complete.html"
+              return render(template_name, ...)
 
-``True`` if the request came from an element with the ``hx-boost`` attribute.
-Based on the ``HX-Boosted`` header.
+   .. attribute:: boosted
+      :type: bool
 
-``current_url: str | None``
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      ``True`` if the request came from an element with the ``hx-boost`` attribute.
+      Based on the ``HX-Boosted`` header.
 
-The current URL of the browser, or ``None`` for non-htmx requests.
-Based on the ``HX-Current-URL`` header.
+      You can use this attribute to change behaviour for boosted requests like so:
 
-``history_restore_request: bool``
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      .. code-block:: python
 
-``True`` if the request is for history restoration after a miss in the local
-history cache. Based on the ``HX-History-Restore-Request`` header.
+          def my_view(request):
+              if request.htmx.boosted:
+                  # do something special
+                  ...
+              return render(...)
 
-``prompt: str | None``
-~~~~~~~~~~~~~~~~~~~~~~
+   .. attribute:: current_url
+      :type: str | None
 
-The user response to `hx-prompt <https://htmx.org/attributes/hx-prompt/>`__ if it was used, or ``None``.
+      The current URL of the browser, or ``None`` for non-htmx requests.
+      Based on the ``HX-Current-URL`` header.
 
-``target: str | None``
-~~~~~~~~~~~~~~~~~~~~~~
+   .. attribute:: history_restore_request
+      :type: bool
 
-The ``id`` of the target element if it exists, or ``None``.
-Based on the ``HX-Target`` header.
+      ``True`` if the request is for history restoration after a miss in the local
+      history cache. Based on the ``HX-History-Restore-Request`` header.
 
-``trigger: str | None``
-~~~~~~~~~~~~~~~~~~~~~~~
+   .. attribute:: prompt
+      :type: str | None
 
-The ``id`` of the triggered element if it exists, or ``None``.
-Based on the ``HX-Trigger`` header.
+      The user response to `hx-prompt <https://htmx.org/attributes/hx-prompt/>`__ if it was used, or ``None``.
 
-``trigger_name: str | None``
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   .. attribute:: target
+      :type: str | None
 
-The ``name`` of the triggered element if it exists, or ``None``.
-Based on the ``HX-Trigger-Name`` header.
+      The ``id`` of the target element if it exists, or ``None``.
+      Based on the ``HX-Target`` header.
 
-``triggering_event: Any | None``
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   .. attribute:: trigger
+      :type: str | None
 
-The deserialized JSON representation of the event that triggered the request if
-it exists, or ``None``. This header is set by the `event-header htmx extension
-<https://htmx.org/extensions/event-header/>`__, and contains details of the DOM
-event that triggered the request.
+      The ``id`` of the triggered element if it exists, or ``None``.
+      Based on the ``HX-Trigger`` header.
+
+   .. attribute:: trigger_name
+      :type: str | None
+
+      The ``name`` of the triggered element if it exists, or ``None``.
+      Based on the ``HX-Trigger-Name`` header.
+
+   .. attribute:: triggering_event
+      :type: Any | None
+
+      The deserialized JSON representation of the event that triggered the request if it exists, or ``None``.
+      This header is set by the `event-header htmx extension <https://htmx.org/extensions/event-header/>`__, and contains details of the DOM event that triggered the request.
