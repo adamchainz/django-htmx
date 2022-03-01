@@ -52,8 +52,3 @@ repos:
   - id: mypy
     additional_dependencies:
     - types-python-dateutil
-- repo: https://github.com/PyCQA/doc8.git
-  rev: 0.10.1
-  hooks:
-  - id: doc8
-    files: ^docs/
