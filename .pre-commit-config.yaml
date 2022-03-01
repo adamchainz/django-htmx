@@ -36,7 +36,6 @@ repos:
   rev: 4.0.1
   hooks:
   - id: flake8
-    exclude: docs/.*
     additional_dependencies:
     - flake8-bugbear
     - flake8-comprehensions
@@ -51,7 +50,6 @@ repos:
   rev: v0.931
   hooks:
   - id: mypy
-    exclude: docs/.*
     additional_dependencies:
     - types-python-dateutil
 - repo: https://github.com/PyCQA/doc8.git
