@@ -1,9 +1,5 @@
-
 coverage
 django
 pytest
 pytest-django
 pytest-randomly
-furo
-Sphinx
-sphinxcontrib-spelling
