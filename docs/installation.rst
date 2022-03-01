@@ -1,5 +1,5 @@
-Requirements and Installation
-=============================
+Installation
+============
 
 Requirements
 ------------
