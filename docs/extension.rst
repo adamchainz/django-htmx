@@ -1,5 +1,3 @@
-.. _extension:
-
 Extension Script
 ----------------
 
