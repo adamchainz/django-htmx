@@ -1,5 +1,7 @@
-Welcome to django-htmx's documentation!
-=======================================
+django-htmx documentation
+=========================
+
+*Extensions for using Django with htmx.*
 
 .. toctree::
    :maxdepth: 2
