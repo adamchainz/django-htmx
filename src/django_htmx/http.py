@@ -36,11 +36,8 @@ class HttpResponseClientRedirect(HttpResponseRedirectBase):
 
 
 class HttpResponseClientRefresh(HttpResponse):
-    status_code = 200
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self["HX-Refresh"] = "true"
+    def __init__(self) -> None:
+        super().__init__(headers={"HX-Refresh": "true"})
 
 
 def trigger_client_event(

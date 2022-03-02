@@ -23,6 +23,27 @@ HTTP
                return HttpResponseClientRedirect("/activate-sudo-mode/")
            ...
 
+.. autoclass:: HttpResponseClientRefresh
+
+   htmx will trigger a page reload when it receives a response with the |HX-Refresh header|__.
+   ``HttpResponseStopPolling`` is a `custom response class <https://docs.djangoproject.com/en/stable/ref/request-response/#custom-response-classes>`__ that allows you to send such a response.
+   It takes no arguments, since htmx ignores any content.
+
+   .. |HX-Refresh header| replace:: ``HX-Refresh`` header
+   __ https://htmx.org/reference/#response_headers
+
+   For example:
+
+   .. code-block:: python
+
+       from django_htmx.http import HttpResponseClientRefresh
+
+
+       def partial_table_view(request):
+           if page_outdated(request):
+               return HttpResponseClientRefresh()
+           ...
+
 .. autoclass:: HttpResponseStopPolling
 
    When using a `polling trigger <https://htmx.org/docs/#polling>`__, htmx will stop polling when it encounters a response with the special HTTP status code 286.
