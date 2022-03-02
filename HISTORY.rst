@@ -2,6 +2,9 @@
 History
 =======
 
+1.9.0 (2022-03-02)
+------------------
+
 * Move documentation from the README to `Read the Docs <https://django-htmx.readthedocs.io/>`__.
   Also expand it with sections on installing htmx, and configuring CSRF.
 
