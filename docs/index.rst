@@ -1,7 +1,10 @@
 django-htmx documentation
 =========================
 
-*Extensions for using Django with htmx.*
+*Extensions for using Django with* |htmx|__\ *.*
+
+.. |htmx| replace:: *htmx*
+__ https://htmx.org/
 
 .. toctree::
    :maxdepth: 2
