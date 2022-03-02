@@ -11,6 +11,10 @@
   <!-- An example of how we can configure htmx -->
   <!-- https://htmx.org/docs/#config -->
   <meta name="htmx-config" content='{"historyCacheSize": 15}'>
+
+  <script src="{% static 'htmx.js' %}" defer></script>
+  <script src="{% static 'ext/debug.js' %}" defer></script>
+  <script src="{% static 'ext/event-header.js' %}" defer></script>
 </head>
 
 <!--
@@ -51,9 +55,6 @@
       For more information see <a href="https://github.com/adamchainz/django-htmx">django-htmx</a> and <a href="https://htmx.org/">htmx</a>.
     </p>
   </footer>
-  <script src="{% static 'htmx.js' %}"></script>
-  <script src="{% static 'ext/debug.js' %}"></script>
-  <script src="{% static 'ext/event-header.js' %}"></script>
   {% django_htmx_script %}
 </body>
 </html>
