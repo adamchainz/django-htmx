@@ -2,6 +2,11 @@
 History
 =======
 
+* Move documentation from the README to `Read the Docs <https://django-htmx.readthedocs.io/>`__.
+  Also expand it with sections on installing htmx, and configuring CSRF.
+
+  Thanks to Ben Beecher for intial setup in `PR #194 <https://github.com/adamchainz/django-htmx/pull/194>`__.
+
 * Add ``HttpResponseClientRefresh`` for telling htmx to reload the page.
 
   Thanks to Bogumil Schube in `PR #193 <https://github.com/adamchainz/django-htmx/pull/193>`__.
