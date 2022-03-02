@@ -2,6 +2,10 @@
 History
 =======
 
+* Add ``HttpResponseClientRefresh`` for telling htmx to reload the page.
+
+  Thanks to Bogumil Schube in `PR #193 <https://github.com/adamchainz/django-htmx/pull/193>`__.
+
 1.8.0 (2022-01-10)
 ------------------
 

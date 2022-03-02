@@ -35,6 +35,12 @@ class HttpResponseClientRedirect(HttpResponseRedirectBase):
         del self["Location"]
 
 
+class HttpResponseClientRefresh(HttpResponse):
+    def __init__(self) -> None:
+        super().__init__()
+        self["HX-Refresh"] = "true"
+
+
 def trigger_client_event(
     response: HttpResponse,
     name: str,

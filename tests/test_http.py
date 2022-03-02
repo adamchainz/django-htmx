@@ -8,6 +8,7 @@ from django.test import SimpleTestCase
 
 from django_htmx.http import (
     HttpResponseClientRedirect,
+    HttpResponseClientRefresh,
     HttpResponseStopPolling,
     trigger_client_event,
 )
@@ -28,6 +29,15 @@ class HttpResponseClientRedirectTests(SimpleTestCase):
         assert response.status_code == 200
         assert response["HX-Redirect"] == "https://example.com"
         assert "Location" not in response
+
+
+class HttpResponseClientRefreshTests(SimpleTestCase):
+    def test_success(self):
+        response = HttpResponseClientRefresh()
+
+        assert response.status_code == 200
+        assert response["Content-Type"] == "text/html; charset=utf-8"
+        assert response["HX-Refresh"] == "true"
 
 
 class TriggerClientEventTests(SimpleTestCase):
