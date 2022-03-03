@@ -3,10 +3,12 @@
 {% block main %}
   <section>
     <p>
-      This example shows using <a href="https://htmx.org/attributes/hx-boost/">the <code>hx-boost</code> feature</a> to make page requests using AJAX.
-      The view does partial rendering for requests made with htmx, using an alternative base template that only renders the <code>#main</code> element, saving time and bandwidth.
-      Paginate through the below list of randomly generated people to see this in action.
+      This example shows you how you can do partial rendering for htmx reuqests.
+      The view uses an alternative base template for requests made with htmx.
+      This base template only renders the <code>&lt;main&gt;</code> element, saving time and bandwidth.
+      Paginate through the below list of randomly generated people to see this in action, and study the view and template.
     </p>
+    <p><a href="https://django-htmx.readthedocs.io/en/latest/tips.html#partial-rendering">See more in the docs</a>.</p>
   </section>
 
   <section>
