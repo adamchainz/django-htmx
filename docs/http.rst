@@ -26,7 +26,7 @@ HTTP
 .. autoclass:: HttpResponseClientRefresh
 
    htmx will trigger a page reload when it receives a response with the |HX-Refresh header|__.
-   ``HttpResponseStopPolling`` is a `custom response class <https://docs.djangoproject.com/en/stable/ref/request-response/#custom-response-classes>`__ that allows you to send such a response.
+   ``HttpResponseClientRefresh`` is a `custom response class <https://docs.djangoproject.com/en/stable/ref/request-response/#custom-response-classes>`__ that allows you to send such a response.
    It takes no arguments, since htmx ignores any content.
 
    .. |HX-Refresh header| replace:: ``HX-Refresh`` header
