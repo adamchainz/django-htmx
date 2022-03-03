@@ -3,7 +3,7 @@
 {% block main %}
   <section>
     <p>
-      This example shows using <a href="https://htmx.org/attributes/hx-boost/">the <code>hx-boost</code> feature</a> to make page requests using AJAX.
+      This example shows using <a href="https://htmx.org/attributes/hx-boost/">the <code>hx-boost</code> feature</a>, this allows you to "boost" normal anchors and form tags to use AJAX instead.
       The view does partial rendering for requests made with htmx, using an alternative base template that only renders the <code>#main</code> element, saving time and bandwidth.
       Paginate through the below list of randomly generated people to see this in action.
     </p>
@@ -43,7 +43,7 @@
       htmx to push the fetched URL into the browser history, so we can use
       the backwards/forwards buttons to navigate these subpages.
     -->
-    <nav hx-target="#main" hx-swap="outerHTML" hx-push-url="true">
+    <nav hx-target="#main" hx-swap="outerHTML" hx-push-url="true" hx-boost="true">
       <ul>
         {% if page.number != 1 %}
           <li>
@@ -53,14 +53,14 @@
               page works without JavaScript, and to ensure the link is
               displayed as clickable.
             -->
-            <a hx-get="?page=1" href="?page=1">
+            <a href="?page=1">
               &laquo; First
             </a>
           </li>
         {% endif %}
         {% if page.has_previous %}
           <li>
-            <a hx-get="?page={{ page.previous_page_number }}" href="?page={{ page.previous_page_number }}">
+            <a href="?page={{ page.previous_page_number }}">
               {{ page.previous_page_number }}
             </a>
           </li>
@@ -70,14 +70,14 @@
         </li>
         {% if page.has_next %}
           <li>
-            <a hx-get="?page={{ page.next_page_number }}" href="?page={{ page.next_page_number }}">
+            <a href="?page={{ page.next_page_number }}">
               {{ page.next_page_number }}
             </a>
           </li>
         {% endif %}
         {% if page.number != page.paginator.num_pages %}
           <li>
-            <a hx-get="?page={{ page.paginator.num_pages }}" href="?page={{ page.paginator.num_pages }}">
+            <a href="?page={{ page.paginator.num_pages }}">
               &raquo; Last
             </a>
           </li>
