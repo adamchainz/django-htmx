@@ -18,7 +18,14 @@ Load and use the template tag in your base template, after your htmx ``<script>`
 .. code-block:: django
 
     {% load django_htmx %}
-    {% django_htmx_script %}
+    <!doctype html>
+    <html>
+      ...
+      <script src="{% static 'js/htmx.min.js' %} defer></script>{# or however you include htmx #}
+      {% django_htmx_script %}
+      </body>
+    </html>
+
 
 Jinja Templates
 ^^^^^^^^^^^^^^^
