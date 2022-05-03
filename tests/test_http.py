@@ -3,7 +3,7 @@ from __future__ import annotations
 from uuid import UUID
 
 import pytest
-from django.http import HttpResponse
+from django.http import HttpResponse, StreamingHttpResponse
 from django.test import SimpleTestCase
 
 from django_htmx.http import (
@@ -67,6 +67,15 @@ class TriggerClientEventTests(SimpleTestCase):
 
     def test_success(self):
         response = HttpResponse()
+
+        trigger_client_event(response, "showConfetti", {"colours": ["purple", "red"]})
+
+        assert (
+            response["HX-Trigger"] == '{"showConfetti": {"colours": ["purple", "red"]}}'
+        )
+
+    def test_success_streaming(self):
+        response = StreamingHttpResponse(iter((b"hello",)))
 
         trigger_client_event(response, "showConfetti", {"colours": ["purple", "red"]})
 

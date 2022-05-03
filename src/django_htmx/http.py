@@ -6,7 +6,7 @@ from typing import Any
 
 from django.core.serializers.json import DjangoJSONEncoder
 from django.http import HttpResponse
-from django.http.response import HttpResponseRedirectBase
+from django.http.response import HttpResponseBase, HttpResponseRedirectBase
 
 if sys.version_info >= (3, 8):
     from typing import Literal
@@ -42,7 +42,7 @@ class HttpResponseClientRefresh(HttpResponse):
 
 
 def trigger_client_event(
-    response: HttpResponse,
+    response: HttpResponseBase,
     name: str,
     params: dict[str, Any],
     *,
