@@ -68,8 +68,11 @@ class TriggerClientEventTests(SimpleTestCase):
     def test_success(self):
         response = HttpResponse()
 
-        trigger_client_event(response, "showConfetti", {"colours": ["purple", "red"]})
+        result = trigger_client_event(
+            response, "showConfetti", {"colours": ["purple", "red"]}
+        )
 
+        assert result is response
         assert (
             response["HX-Trigger"] == '{"showConfetti": {"colours": ["purple", "red"]}}'
         )
@@ -77,8 +80,11 @@ class TriggerClientEventTests(SimpleTestCase):
     def test_success_streaming(self):
         response = StreamingHttpResponse(iter((b"hello",)))
 
-        trigger_client_event(response, "showConfetti", {"colours": ["purple", "red"]})
+        result = trigger_client_event(
+            response, "showConfetti", {"colours": ["purple", "red"]}
+        )
 
+        assert result is response
         assert (
             response["HX-Trigger"] == '{"showConfetti": {"colours": ["purple", "red"]}}'
         )
@@ -86,9 +92,13 @@ class TriggerClientEventTests(SimpleTestCase):
     def test_success_multiple_events(self):
         response = HttpResponse()
 
-        trigger_client_event(response, "showConfetti", {"colours": ["purple"]})
-        trigger_client_event(response, "showMessage", {"value": "Well done!"})
+        result1 = trigger_client_event(
+            response, "showConfetti", {"colours": ["purple"]}
+        )
+        result2 = trigger_client_event(response, "showMessage", {"value": "Well done!"})
 
+        assert result1 is response
+        assert result2 is response
         assert response["HX-Trigger"] == (
             '{"showConfetti": {"colours": ["purple"]},'
             + ' "showMessage": {"value": "Well done!"}}'

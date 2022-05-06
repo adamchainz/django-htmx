@@ -47,7 +47,7 @@ def trigger_client_event(
     params: dict[str, Any],
     *,
     after: EventAfterType = "receive",
-) -> None:
+) -> HttpResponseBase:
     if after == "receive":
         header = "HX-Trigger"
     elif after == "settle":
@@ -70,3 +70,5 @@ def trigger_client_event(
         data = {name: params}
 
     response[header] = json.dumps(data, cls=DjangoJSONEncoder)
+
+    return response

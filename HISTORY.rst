@@ -2,6 +2,8 @@
 History
 =======
 
+* Make ``trigger_client_event()`` return the response.
+
 1.9.0 (2022-03-02)
 ------------------
 
