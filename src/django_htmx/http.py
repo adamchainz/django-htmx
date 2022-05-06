@@ -70,3 +70,5 @@ def trigger_client_event(
         data = {name: params}
 
     response[header] = json.dumps(data, cls=DjangoJSONEncoder)
+
+    return response
