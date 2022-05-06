@@ -47,7 +47,7 @@ def trigger_client_event(
     params: dict[str, Any],
     *,
     after: EventAfterType = "receive",
-) -> None:
+) -> HttpResponseBase:
     if after == "receive":
         header = "HX-Trigger"
     elif after == "settle":

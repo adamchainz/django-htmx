@@ -82,7 +82,7 @@ HTTP
 
 .. autofunction:: trigger_client_event
 
-   Modify the |HX-Trigger headers|__ of ``response`` to trigger client-side events.
+   Modify the |HX-Trigger headers|__ of ``response`` to trigger client-side events, and returns the response.
    Takes the name of the event to trigger and any JSON-compatible parameters for it, and stores them in the appropriate header. Uses |DjangoJSONEncoder|__ for its extended data type support.
 
    .. |HX-Trigger headers| replace:: ``HX-Trigger`` headers
@@ -108,10 +108,9 @@ HTTP
 
        def end_of_long_process(request):
            response = render("end-of-long-process.html")
-           trigger_client_event(
+           return trigger_client_event(
                response,
                "showConfetti",
                {"colours": ["purple", "red", "pink"]},
                after="swap",
            )
-           return response
