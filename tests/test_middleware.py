@@ -128,3 +128,15 @@ class HtmxMiddlewareTests(SimpleTestCase):
         )
         self.middleware(request)
         assert request.htmx.triggering_event == {"target": None}
+
+    async def test_async(self):
+        async def dummy_async_view(request):
+            return HttpResponse("Hello!")
+
+        middleware = HtmxMiddleware(dummy_async_view)
+        request = self.request_factory.get("/", HTTP_HX_REQUEST="true")
+
+        response = await middleware(request)
+
+        assert isinstance(response, HttpResponse)
+        assert bool(request.htmx) is True

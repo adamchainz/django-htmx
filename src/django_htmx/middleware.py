@@ -1,20 +1,42 @@
 from __future__ import annotations
 
+import asyncio
 import json
-from typing import Any, Callable
+from typing import Any, Callable, Coroutine
 from urllib.parse import unquote
 
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest
+from django.http.response import HttpResponseBase
 from django.utils.functional import cached_property
 
 
 class HtmxMiddleware:
-    def __init__(self, get_response: Callable[[HttpRequest], HttpResponse]) -> None:
+    sync_capable = True
+    async_capable = True
+
+    def __init__(self, get_response: Callable[[HttpRequest], HttpResponseBase]) -> None:
         self.get_response = get_response
 
-    def __call__(self, request: HttpRequest) -> HttpResponse:
+        if asyncio.iscoroutinefunction(self.get_response):
+            # Mark the class as async-capable, but do the actual switch
+            # inside __call__ to avoid swapping out dunder methods
+            self._is_coroutine = (
+                asyncio.coroutines._is_coroutine  # type: ignore [attr-defined]
+            )
+        else:
+            self._is_coroutine = None
+
+    def __call__(
+        self, request: HttpRequest
+    ) -> HttpResponseBase | Coroutine[Any, Any, Any]:
+        if self._is_coroutine:
+            return self.__acall__(request)
         request.htmx = HtmxDetails(request)
         return self.get_response(request)
+
+    async def __acall__(self, request: HttpRequest) -> HttpResponseBase:
+        request.htmx = HtmxDetails(request)
+        return await self.get_response(request)
 
 
 class HtmxDetails:
