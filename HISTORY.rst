@@ -4,6 +4,8 @@ History
 
 * Make ``trigger_client_event()`` return the response.
 
+* Add async support to ``HtmxMiddleware`` to reduce overhead on async views.
+
 1.9.0 (2022-03-02)
 ------------------
 
