@@ -7,6 +7,7 @@ Middleware
 
    This middleware attaches ``request.htmx``, an instance of :obj:`HtmxDetails` (below).
    Your views, and any following middleware, can use ``request.htmx`` to switch behaviour for requests from htmx.
+   The middleware supports both sync and async modes.
 
    See it action in the “Middleware Tester” section of the :doc:`example project <example_project>`.
 
