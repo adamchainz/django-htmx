@@ -1,6 +1,3 @@
-prune docs
-prune example
-exclude .readthedocs.yaml
 include HISTORY.rst
 include LICENSE
 include pyproject.toml
