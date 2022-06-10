@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from uuid import UUID
 
 import pytest
@@ -9,6 +10,7 @@ from django.test import SimpleTestCase
 
 from django_htmx.http import HttpResponseClientRedirect
 from django_htmx.http import HttpResponseClientRefresh
+from django_htmx.http import HttpResponseLocation
 from django_htmx.http import HttpResponseStopPolling
 from django_htmx.http import push_url
 from django_htmx.http import reswap
@@ -39,6 +41,16 @@ class HttpResponseClientRedirectTests(SimpleTestCase):
             '<HttpResponseClientRedirect status_code=200, "text/html; '
             + 'charset=utf-8", url="https://example.com">'
         )
+
+
+class HttpResponseLocationTests(SimpleTestCase):
+    def test_success(self):
+        response = HttpResponseLocation("https://example.com", target="#sample")
+
+        assert response.status_code == 200
+        assert "Location" not in response
+        swap_spec = json.loads(response["HX-location"])
+        assert swap_spec == {"path": "https://example.com", "target": "#sample"}
 
 
 class HttpResponseClientRefreshTests(SimpleTestCase):

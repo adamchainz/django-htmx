@@ -29,6 +29,32 @@ class HttpResponseStopPolling(HttpResponse):
         self._reason_phrase = "Stop Polling"
 
 
+class HttpResponseLocation(HttpResponseRedirectBase):
+    status_code = 200
+    swap_spec_kwargs = (
+        "source",
+        "event",
+        "handler",
+        "target",
+        "swap",
+        "values",
+        "headers",
+    )
+
+    def __init__(self, redirect_to: str, *args: Any, **kwargs: Any) -> None:
+        swap_details = {}
+        for key in self.swap_spec_kwargs:
+            if key in kwargs:
+                swap_details[key] = kwargs.pop(key)
+
+        super().__init__(redirect_to, *args, **kwargs)
+
+        swap_details["path"] = self["Location"]
+        swap_spec = json.dumps(swap_details)
+        self["HX-Location"] = swap_spec
+        del self["Location"]
+
+
 class HttpResponseClientRedirect(HttpResponseRedirectBase):
     status_code = 200
 
