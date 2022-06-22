@@ -31,27 +31,16 @@ class HttpResponseStopPolling(HttpResponse):
 
 class HttpResponseLocation(HttpResponseRedirectBase):
     status_code = 200
-    swap_spec_kwargs = (
-        "source",
-        "event",
-        "handler",
-        "target",
-        "swap",
-        "values",
-        "headers",
-    )
 
-    def __init__(self, redirect_to: str, *args: Any, **kwargs: Any) -> None:
-        swap_details = {}
-        for key in self.swap_spec_kwargs:
-            if key in kwargs:
-                swap_details[key] = kwargs.pop(key)
-
+    def __init__(
+        self,
+        redirect_to: str,
+        *args: Any,
+        spec: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(redirect_to, *args, **kwargs)
-
-        swap_details["path"] = self["Location"]
-        swap_spec = json.dumps(swap_details)
-        self["HX-Location"] = swap_spec
+        set_location(self, self["Location"], spec=spec)
         del self["Location"]
 
 
@@ -135,5 +124,21 @@ def trigger_client_event(
         data = {name: params}
 
     response[header] = json.dumps(data, cls=DjangoJSONEncoder)
+
+    return response
+
+
+def set_location(
+    response: HttpResponseBase,
+    path: str,
+    spec: dict[str, Any] | None = None,
+) -> HttpResponseBase:
+
+    if spec:
+        try:
+            path = json.dumps({"path": path, **spec}, cls=DjangoJSONEncoder)
+        except json.JSONDecodeError as exc:
+            raise ValueError("Swap Spec parameters should be JSON Encodable.") from exc
+    response["HX-Location"] = path
 
     return response

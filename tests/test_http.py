@@ -15,6 +15,7 @@ from django_htmx.http import HttpResponseStopPolling
 from django_htmx.http import push_url
 from django_htmx.http import reswap
 from django_htmx.http import retarget
+from django_htmx.http import set_location
 from django_htmx.http import trigger_client_event
 
 
@@ -45,7 +46,9 @@ class HttpResponseClientRedirectTests(SimpleTestCase):
 
 class HttpResponseLocationTests(SimpleTestCase):
     def test_success(self):
-        response = HttpResponseLocation("https://example.com", target="#sample")
+        response = HttpResponseLocation(
+            "https://example.com", spec={"target": "#sample"}
+        )
 
         assert response.status_code == 200
         assert "Location" not in response
@@ -211,3 +214,26 @@ class TriggerClientEventTests(SimpleTestCase):
             response["HX-Trigger"]
             == '{"showMessage": {"uuid": "12345678-1234-5678-1234-567812345678"}}'
         )
+
+
+class SetLocationTests(SimpleTestCase):
+    def test_simple_success(self):
+        response = HttpResponse()
+
+        result = set_location(response, path="https://example.com")
+
+        assert result is response
+        assert response["HX-Location"] == "https://example.com"
+
+    def test_swap_spec_success(self):
+        response = HttpResponse()
+
+        result = set_location(
+            response,
+            path="https://example.com",
+            spec={"target": "#mydiv"},
+        )
+
+        assert result is response
+        swap_spec = json.loads(response["HX-location"])
+        assert swap_spec == {"path": "https://example.com", "target": "#mydiv"}
