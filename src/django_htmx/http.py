@@ -135,10 +135,7 @@ def set_location(
 ) -> HttpResponseBase:
 
     if spec:
-        try:
-            path = json.dumps({"path": path, **spec}, cls=DjangoJSONEncoder)
-        except json.JSONDecodeError as exc:
-            raise ValueError("Swap Spec parameters should be JSON Encodable.") from exc
-    response["HX-Location"] = path
+        path = json.dumps({"path": path, **spec}, cls=DjangoJSONEncoder)
 
+    response["HX-Location"] = path
     return response
