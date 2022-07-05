@@ -26,17 +26,18 @@ def main(argv: list[str] | None = None) -> int:
 
 def download_file(version: str, name: str) -> None:
     print(f"{name}...")
-    subprocess.run(
+    proc = subprocess.run(
         [
             "curl",
-            "--silent",
+            "--fail",
             "--location",
             f"https://unpkg.com/htmx.org@{version}/dist/{name}",
             "-o",
             f"example/static/{name}",
         ],
-        check=True,
     )
+    if proc.returncode != 0:
+        raise SystemExit(1)
     # Fix lack of trailing newline in minified files as otherwise pre-commit
     # has to fix it.
     if name.endswith(".min.js"):
