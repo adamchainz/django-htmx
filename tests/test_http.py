@@ -30,6 +30,14 @@ class HttpResponseClientRedirectTests(SimpleTestCase):
         assert response["HX-Redirect"] == "https://example.com"
         assert "Location" not in response
 
+    def test_repr(self):
+        response = HttpResponseClientRedirect("https://example.com")
+
+        assert repr(response) == (
+            '<HttpResponseClientRedirect status_code=200, "text/html; '
+            + 'charset=utf-8", url="https://example.com">'
+        )
+
 
 class HttpResponseClientRefreshTests(SimpleTestCase):
     def test_success(self):
