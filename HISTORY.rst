@@ -2,6 +2,8 @@
 History
 =======
 
+* Override ``HttpResponseClientRedirect.url`` property to fix ``HttpResponseClientRedirect.__repr__``.
+
 1.12.0 (2022-06-05)
 -------------------
 

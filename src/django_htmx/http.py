@@ -34,6 +34,10 @@ class HttpResponseClientRedirect(HttpResponseRedirectBase):
         self["HX-Redirect"] = self["Location"]
         del self["Location"]
 
+    @property
+    def url(self) -> str:
+        return self["HX-Redirect"]
+
 
 class HttpResponseClientRefresh(HttpResponse):
     def __init__(self) -> None:
