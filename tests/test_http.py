@@ -28,7 +28,9 @@ class HttpResponseClientRedirectTests(SimpleTestCase):
 
         assert response.status_code == 200
         assert response["HX-Redirect"] == "https://example.com"
-        assert "Location" not in response
+        # django-stubs missing method
+        # https://github.com/typeddjango/django-stubs/pull/1099
+        assert "Location" not in response  # type: ignore [operator]
 
     def test_repr(self):
         response = HttpResponseClientRedirect("https://example.com")

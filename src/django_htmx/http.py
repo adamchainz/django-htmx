@@ -15,6 +15,7 @@ if sys.version_info >= (3, 8):
 else:
     EventAfterType = str
 
+
 HTMX_STOP_POLLING = 286
 
 
@@ -63,7 +64,9 @@ def trigger_client_event(
             "Value for 'after' must be one of: 'receive', 'settle', or 'swap'."
         )
 
-    if header in response:
+    # django-stubs missing method
+    # https://github.com/typeddjango/django-stubs/pull/1099
+    if header in response:  # type: ignore [operator]
         value = response[header]
         try:
             data = json.loads(value)

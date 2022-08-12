@@ -6,19 +6,26 @@ from dataclasses import dataclass
 from django.core.paginator import Paginator
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import render
-from django.views.decorators.http import require_GET, require_http_methods
+from django.views.decorators.http import require_GET, require_http_methods, require_POST
 from faker import Faker
 
+from django_htmx.middleware import HtmxDetails
 from example.core.forms import OddNumberForm
 
 
+# Typing pattern recommended by django-stubs:
+# https://github.com/typeddjango/django-stubs#how-can-i-create-a-httprequest-thats-guaranteed-to-have-an-authenticated-user
+class HtmxHttpRequest(HttpRequest):
+    htmx: HtmxDetails
+
+
 @require_GET
-def index(request: HttpRequest) -> HttpResponse:
+def index(request: HtmxHttpRequest) -> HttpResponse:
     return render(request, "index.html")
 
 
 @require_GET
-def favicon(request: HttpRequest) -> HttpResponse:
+def favicon(request: HtmxHttpRequest) -> HttpResponse:
     return HttpResponse(
         (
             '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">'
@@ -33,12 +40,12 @@ def favicon(request: HttpRequest) -> HttpResponse:
 
 
 @require_GET
-def csrf_demo(request: HttpRequest) -> HttpResponse:
+def csrf_demo(request: HtmxHttpRequest) -> HttpResponse:
     return render(request, "csrf-demo.html")
 
 
-@require_http_methods(("POST",))
-def csrf_demo_checker(request: HttpRequest) -> HttpResponse:
+@require_POST
+def csrf_demo_checker(request: HtmxHttpRequest) -> HttpResponse:
     form = OddNumberForm(request.POST)
     if form.is_valid():
         number = form.cleaned_data["number"]
@@ -56,12 +63,12 @@ def csrf_demo_checker(request: HttpRequest) -> HttpResponse:
 
 
 @require_GET
-def error_demo(request: HttpRequest) -> HttpResponse:
+def error_demo(request: HtmxHttpRequest) -> HttpResponse:
     return render(request, "error-demo.html")
 
 
 @require_GET
-def error_demo_trigger(request: HttpRequest) -> HttpResponse:
+def error_demo_trigger(request: HtmxHttpRequest) -> HttpResponse:
     1 / 0
     return render(request, "error-demo.html")  # unreachable
 
@@ -73,12 +80,12 @@ def error_demo_trigger(request: HttpRequest) -> HttpResponse:
 
 
 @require_GET
-def middleware_tester(request: HttpRequest) -> HttpResponse:
+def middleware_tester(request: HtmxHttpRequest) -> HttpResponse:
     return render(request, "middleware-tester.html")
 
 
 @require_http_methods(["DELETE", "POST", "PUT"])
-def middleware_tester_table(request: HttpRequest) -> HttpResponse:
+def middleware_tester_table(request: HtmxHttpRequest) -> HttpResponse:
     return render(
         request,
         "middleware-tester-table.html",
@@ -104,7 +111,7 @@ people = [Person(id=i, name=faker.name()) for i in range(1, 235)]
 
 
 @require_GET
-def partial_rendering(request: HttpRequest) -> HttpResponse:
+def partial_rendering(request: HtmxHttpRequest) -> HttpResponse:
     # Standard Django pagination
     page_num = request.GET.get("page", "1")
     page = Paginator(object_list=people, per_page=10).get_page(page_num)

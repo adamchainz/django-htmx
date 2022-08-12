@@ -46,4 +46,5 @@ repos:
   hooks:
   - id: mypy
     additional_dependencies:
+    - django-stubs==1.12.0
     - types-python-dateutil
