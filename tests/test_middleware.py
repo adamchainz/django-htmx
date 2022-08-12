@@ -1,9 +1,25 @@
 from __future__ import annotations
 
-from django.http import HttpResponse
-from django.test import RequestFactory, SimpleTestCase
+from typing import Any, cast
 
-from django_htmx.middleware import HtmxMiddleware
+from django.core.handlers.wsgi import WSGIRequest
+from django.http import HttpResponse
+from django.http.response import HttpResponseBase
+from django.test import RequestFactory as BaseRequestFactory
+from django.test import SimpleTestCase
+
+from django_htmx.middleware import HtmxDetails, HtmxMiddleware
+
+
+class HtmxWSGIRequest(WSGIRequest):
+    htmx: HtmxDetails
+
+
+class RequestFactory(BaseRequestFactory):
+    def get(
+        self, path: str, data: Any = None, secure: bool = False, **extra: Any
+    ) -> HtmxWSGIRequest:
+        return cast(HtmxWSGIRequest, super().get(path, data, secure, **extra))
 
 
 def dummy_view(request):
@@ -136,7 +152,9 @@ class HtmxMiddlewareTests(SimpleTestCase):
         middleware = HtmxMiddleware(dummy_async_view)
         request = self.request_factory.get("/", HTTP_HX_REQUEST="true")
 
-        response = await middleware(request)
+        result = middleware(request)
+        assert not isinstance(result, HttpResponseBase)  # type narrow
+        response = await result
 
         assert isinstance(response, HttpResponse)
         assert bool(request.htmx) is True

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, Callable, Coroutine
+from typing import Any, Awaitable, Callable
 from urllib.parse import unquote
 
 from django.http import HttpRequest
@@ -14,7 +14,13 @@ class HtmxMiddleware:
     sync_capable = True
     async_capable = True
 
-    def __init__(self, get_response: Callable[[HttpRequest], HttpResponseBase]) -> None:
+    def __init__(
+        self,
+        get_response: (
+            Callable[[HttpRequest], HttpResponseBase]
+            | Callable[[HttpRequest], Awaitable[HttpResponseBase]]
+        ),
+    ) -> None:
         self.get_response = get_response
 
         if asyncio.iscoroutinefunction(self.get_response):
@@ -28,15 +34,17 @@ class HtmxMiddleware:
 
     def __call__(
         self, request: HttpRequest
-    ) -> HttpResponseBase | Coroutine[Any, Any, Any]:
+    ) -> HttpResponseBase | Awaitable[HttpResponseBase]:
         if self._is_coroutine:
             return self.__acall__(request)
-        request.htmx = HtmxDetails(request)
+        request.htmx = HtmxDetails(request)  # type: ignore [attr-defined]
         return self.get_response(request)
 
     async def __acall__(self, request: HttpRequest) -> HttpResponseBase:
-        request.htmx = HtmxDetails(request)
-        return await self.get_response(request)
+        request.htmx = HtmxDetails(request)  # type: ignore [attr-defined]
+        result = self.get_response(request)
+        assert not isinstance(result, HttpResponseBase)  # type narrow
+        return await result
 
 
 class HtmxDetails:
