@@ -62,8 +62,12 @@ Debug Error Handler
 htmx’s default behaviour when encountering an HTTP error is to discard the response content.
 This can make it hard to debug errors in development.
 
-The django-htmx script includes an error handler that’s active when debug mode is on.
+The django-htmx script includes an error handler that’s active when Django’s debug mode is on (``settings.DEBUG`` is ``True``).
 The handler detects responses with 404 and 500 status codes and replaces the page with their content.
 This change allows you to debug with Django’s default error responses as you would for a non-htmx request.
 
 See this in action in the “Error Demo” section of the :doc:`example project <example_project>`.
+
+.. hint::
+
+   This extension script should not be confused with htmx’s `debug extension <https://htmx.org/extensions/debug/>`__, which logs DOM events in the browser console.
