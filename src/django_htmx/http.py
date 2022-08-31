@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
-from typing import Any
+from typing import Any, TypeVar
 
 from django.core.serializers.json import DjangoJSONEncoder
 from django.http import HttpResponse
@@ -46,13 +46,16 @@ class HttpResponseClientRefresh(HttpResponse):
         self["HX-Refresh"] = "true"
 
 
+_R = TypeVar("_R", bound=HttpResponseBase)
+
+
 def trigger_client_event(
-    response: HttpResponseBase,
+    response: _R,
     name: str,
     params: dict[str, Any],
     *,
     after: EventAfterType = "receive",
-) -> HttpResponseBase:
+) -> _R:
     if after == "receive":
         header = "HX-Trigger"
     elif after == "settle":
