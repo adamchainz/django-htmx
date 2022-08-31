@@ -7,7 +7,7 @@ History
 
 * Improve type hints for ``trigger_client_event()`` by using a ``TypeVar``.
 
-  Thanks to Chris Tagger in `PR #260 <https://github.com/adamchainz/django-htmx/pull/260>`__.
+  Thanks to Chris Tapper in `PR #260 <https://github.com/adamchainz/django-htmx/pull/260>`__.
 
 1.12.1 (2022-07-29)
 -------------------
