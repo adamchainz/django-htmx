@@ -80,6 +80,15 @@ HTTP
                return render("event-finished.html", status=HTMX_STOP_POLLING)
            ...
 
+.. autofunction:: push_url
+
+   Modify the |HX-Push-Url header|__ of ``response`` to push a URL into the browser location history, and returns the response.
+
+   .. |HX-Push-Url header| replace:: ``HX-Push-Url`` header
+   __ https://htmx.org/headers/hx-push-url/
+
+   Calling ``push_url`` multiple times for the same ``response`` will replace the value of the header.
+
 .. autofunction:: trigger_client_event
 
    Modify the |HX-Trigger headers|__ of ``response`` to trigger client-side events, and returns the response.
