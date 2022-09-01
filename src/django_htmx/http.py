@@ -93,6 +93,19 @@ def retarget(response: _HttpResponse, target: str) -> _HttpResponse:
     return response
 
 
+def set_location(
+    response: HttpResponseBase,
+    path: str,
+    spec: dict[str, Any] | None = None,
+) -> HttpResponseBase:
+
+    if spec:
+        path = json.dumps({"path": path, **spec}, cls=DjangoJSONEncoder)
+
+    response["HX-Location"] = path
+    return response
+
+
 def trigger_client_event(
     response: _HttpResponse,
     name: str,
@@ -125,17 +138,4 @@ def trigger_client_event(
 
     response[header] = json.dumps(data, cls=DjangoJSONEncoder)
 
-    return response
-
-
-def set_location(
-    response: HttpResponseBase,
-    path: str,
-    spec: dict[str, Any] | None = None,
-) -> HttpResponseBase:
-
-    if spec:
-        path = json.dumps({"path": path, **spec}, cls=DjangoJSONEncoder)
-
-    response["HX-Location"] = path
     return response

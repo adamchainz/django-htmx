@@ -51,7 +51,9 @@ class HttpResponseLocationTests(SimpleTestCase):
         )
 
         assert response.status_code == 200
-        assert "Location" not in response
+        # django-stubs missing HttpResponseBase.__contains__ until:
+        # https://github.com/typeddjango/django-stubs/pull/1099
+        assert "Location" not in response  # type: ignore [operator]
         swap_spec = json.loads(response["HX-location"])
         assert swap_spec == {"path": "https://example.com", "target": "#sample"}
 
@@ -101,6 +103,29 @@ class RetargetTests(SimpleTestCase):
 
         assert response2 is response
         assert response["HX-Retarget"] == "#heading"
+
+
+class SetLocationTests(SimpleTestCase):
+    def test_simple_success(self):
+        response = HttpResponse()
+
+        result = set_location(response, path="https://example.com")
+
+        assert result is response
+        assert response["HX-Location"] == "https://example.com"
+
+    def test_swap_spec_success(self):
+        response = HttpResponse()
+
+        result = set_location(
+            response,
+            path="https://example.com",
+            spec={"target": "#mydiv"},
+        )
+
+        assert result is response
+        swap_spec = json.loads(response["HX-location"])
+        assert swap_spec == {"path": "https://example.com", "target": "#mydiv"}
 
 
 class TriggerClientEventTests(SimpleTestCase):
@@ -214,26 +239,3 @@ class TriggerClientEventTests(SimpleTestCase):
             response["HX-Trigger"]
             == '{"showMessage": {"uuid": "12345678-1234-5678-1234-567812345678"}}'
         )
-
-
-class SetLocationTests(SimpleTestCase):
-    def test_simple_success(self):
-        response = HttpResponse()
-
-        result = set_location(response, path="https://example.com")
-
-        assert result is response
-        assert response["HX-Location"] == "https://example.com"
-
-    def test_swap_spec_success(self):
-        response = HttpResponse()
-
-        result = set_location(
-            response,
-            path="https://example.com",
-            spec={"target": "#mydiv"},
-        )
-
-        assert result is response
-        swap_spec = json.loads(response["HX-location"])
-        assert swap_spec == {"path": "https://example.com", "target": "#mydiv"}
