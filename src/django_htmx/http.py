@@ -49,6 +49,11 @@ class HttpResponseClientRefresh(HttpResponse):
 _R = TypeVar("_R", bound=HttpResponseBase)
 
 
+def push_url(response: _R, url: str | Literal[False]) -> _R:
+    response["HX-Push-Url"] = "false" if url is False else url
+    return response
+
+
 def trigger_client_event(
     response: _R,
     name: str,

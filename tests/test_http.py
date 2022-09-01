@@ -10,6 +10,7 @@ from django_htmx.http import (
     HttpResponseClientRedirect,
     HttpResponseClientRefresh,
     HttpResponseStopPolling,
+    push_url,
     trigger_client_event,
 )
 
@@ -48,6 +49,22 @@ class HttpResponseClientRefreshTests(SimpleTestCase):
         assert response.status_code == 200
         assert response["Content-Type"] == "text/html; charset=utf-8"
         assert response["HX-Refresh"] == "true"
+
+
+class PushUrlTests(SimpleTestCase):
+    def test_success(self):
+        response = HttpResponse()
+
+        push_url(response, "/index.html")
+
+        assert response["HX-Push-Url"] == "/index.html"
+
+    def test_success_false(self):
+        response = HttpResponse()
+
+        push_url(response, False)
+
+        assert response["HX-Push-Url"] == "false"
 
 
 class TriggerClientEventTests(SimpleTestCase):
