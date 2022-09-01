@@ -82,7 +82,7 @@ HTTP
 
 .. autofunction:: push_url
 
-   Modify the |HX-Push-Url header|__ of ``response`` to push a URL into the browser location history, and returns the response.
+   Modify the |HX-Push-Url header|__ of ``response`` to push a URL into the browser location history, and return the response.
 
    .. |HX-Push-Url header| replace:: ``HX-Push-Url`` header
    __ https://htmx.org/headers/hx-push-url/
@@ -91,7 +91,7 @@ HTTP
 
 .. autofunction:: trigger_client_event
 
-   Modify the |HX-Trigger headers|__ of ``response`` to trigger client-side events, and returns the response.
+   Modify the |HX-Trigger headers|__ of ``response`` to trigger client-side events, and return the response.
    Takes the name of the event to trigger and any JSON-compatible parameters for it, and stores them in the appropriate header. Uses |DjangoJSONEncoder|__ for its extended data type support.
 
    .. |HX-Trigger headers| replace:: ``HX-Trigger`` headers
