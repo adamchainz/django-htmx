@@ -51,6 +51,22 @@ class HttpResponseClientRefreshTests(SimpleTestCase):
         assert response["HX-Refresh"] == "true"
 
 
+class PushUrlTests(SimpleTestCase):
+    def test_success(self):
+        response = HttpResponse()
+
+        push_url(response, "/index.html")
+
+        assert response["HX-Push-Url"] == "/index.html"
+
+    def test_success_false(self):
+        response = HttpResponse()
+
+        push_url(response, False)
+
+        assert response["HX-Push-Url"] == "false"
+
+
 class TriggerClientEventTests(SimpleTestCase):
     def test_fail_bad_after_value(self):
         response = HttpResponse()
@@ -154,19 +170,3 @@ class TriggerClientEventTests(SimpleTestCase):
             response["HX-Trigger"]
             == '{"showMessage": {"uuid": "12345678-1234-5678-1234-567812345678"}}'
         )
-
-
-class PushUrlTests(SimpleTestCase):
-    def test_success(self):
-        response = HttpResponse()
-
-        push_url(response, "/index.html")
-
-        assert response["HX-Push-Url"] == "/index.html"
-
-    def test_success_false(self):
-        response = HttpResponse()
-
-        push_url(response, False)
-
-        assert response["HX-Push-Url"] == "false"
