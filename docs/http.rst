@@ -93,7 +93,7 @@ HTTP
 .. autofunction:: trigger_client_event
 
    Modify the |HX-Trigger headers|__ of ``response`` to trigger client-side events, and return the response.
-   Takes the name of the event to trigger and any JSON-compatible parameters for it, and stores them in the appropriate header. Uses |DjangoJSONEncoder|__ for its extended data type support.
+   Takes the name of the event to trigger and (optionally) any JSON-compatible parameters for it, and stores them in the appropriate header. Uses |DjangoJSONEncoder|__ for its extended data type support.
 
    .. |HX-Trigger headers| replace:: ``HX-Trigger`` headers
    __ https://htmx.org/headers/hx-trigger/

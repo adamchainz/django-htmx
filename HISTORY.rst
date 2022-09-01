@@ -2,6 +2,10 @@
 History
 =======
 
+* Make the ``params`` argument of ``trigger_client_event()`` optional.
+
+  Thanks to Chris Tapper in `PR #263 <https://github.com/adamchainz/django-htmx/pull/263>`__.
+
 * Add ``django_htmx.http.push_url()`` for setting the browser location.
 
   Thanks to Chris Tapper in `PR #264 <https://github.com/adamchainz/django-htmx/pull/264>`__.
