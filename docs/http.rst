@@ -83,6 +83,7 @@ HTTP
 .. autofunction:: push_url
 
    Modify the |HX-Push-Url header|__ of ``response`` to push a URL into the browser location history, and return the response.
+   Pass a string with the URL to push, or ``False`` to prevent the location history from being updated.
 
    .. |HX-Push-Url header| replace:: ``HX-Push-Url`` header
    __ https://htmx.org/headers/hx-push-url/
