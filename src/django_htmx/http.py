@@ -94,10 +94,10 @@ def retarget(response: _HttpResponse, target: str) -> _HttpResponse:
 
 
 def set_location(
-    response: HttpResponseBase,
+    response: _HttpResponse,
     path: str,
     spec: dict[str, Any] | None = None,
-) -> HttpResponseBase:
+) -> _HttpResponse:
 
     if spec:
         path = json.dumps({"path": path, **spec}, cls=DjangoJSONEncoder)
