@@ -104,6 +104,14 @@ class TriggerClientEventTests(SimpleTestCase):
             response["HX-Trigger"] == '{"showConfetti": {"colours": ["purple", "red"]}}'
         )
 
+    def test_success_no_params(self):
+        response = HttpResponse()
+
+        result = trigger_client_event(response, "showConfetti")
+
+        assert result is response
+        assert response["HX-Trigger"] == '{"showConfetti": {}}'
+
     def test_success_streaming(self):
         response = StreamingHttpResponse(iter((b"hello",)))
 

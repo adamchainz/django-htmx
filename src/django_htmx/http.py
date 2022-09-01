@@ -57,10 +57,12 @@ def push_url(response: _R, url: str | Literal[False]) -> _R:
 def trigger_client_event(
     response: _R,
     name: str,
-    params: dict[str, Any],
+    params: dict[str, Any] | None = None,
     *,
     after: EventAfterType = "receive",
 ) -> _R:
+    params = params or {}
+
     if after == "receive":
         header = "HX-Trigger"
     elif after == "settle":
