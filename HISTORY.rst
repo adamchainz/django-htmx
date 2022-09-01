@@ -2,6 +2,10 @@
 History
 =======
 
+* Add ``django_htmx.http.push_url()`` for setting the browser location.
+
+  Thanks to Chris Tapper in `PR #264 <https://github.com/adamchainz/django-htmx/pull/264>`__.
+
 1.12.2 (2022-08-31)
 -------------------
 
