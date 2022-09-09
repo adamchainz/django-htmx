@@ -4,11 +4,11 @@
 #
 #    pip-compile
 #
-asgiref==3.5.0
+asgiref==3.5.2
     # via django
-django==4.0.3
+django==4.1.1
     # via -r requirements.in
-faker==13.3.0
+faker==14.2.0
     # via -r requirements.in
 python-dateutil==2.8.2
     # via faker
