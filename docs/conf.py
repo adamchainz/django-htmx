@@ -60,6 +60,16 @@ exclude_patterns = [
 # a list of builtin themes.
 #
 html_theme = "furo"
+html_theme_options = {
+    "dark_css_variables": {
+        "admonition-font-size": "100%",
+        "admonition-title-font-size": "100%",
+    },
+    "light_css_variables": {
+        "admonition-font-size": "100%",
+        "admonition-title-font-size": "100%",
+    },
+}
 
 # -- Options for LaTeX output ------------------------------------------
 
