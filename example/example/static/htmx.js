@@ -71,7 +71,7 @@ return (function () {
             createWebSocket: function(url){
                 return new WebSocket(url, []);
             },
-            version: "1.8.0"
+            version: "1.8.1"
         };
 
         /** @type {import("./htmx").HtmxInternalApi} */
@@ -821,7 +821,29 @@ return (function () {
             }
         }
 
-        function cleanUpElement(element) {
+        // based on https://gist.github.com/hyamamoto/fd435505d29ebfa3d9716fd2be8d42f0,
+        // derived from Java's string hashcode implementation
+        function stringHash(string, hash) {
+            var char = 0;
+            while (char < string.length){
+                hash = (hash << 5) - hash + string.charCodeAt(char++) | 0; // bitwise or ensures we have a 32-bit int
+            }
+            return hash;
+        }
+
+        function attributeHash(elt) {
+            var hash = 0;
+            for (var i = 0; i < elt.attributes.length; i++) {
+                var attribute = elt.attributes[i];
+                if(attribute.value){ // only include attributes w/ actual values (empty is same as non-existent)
+                    hash = stringHash(attribute.name, hash);
+                    hash = stringHash(attribute.value, hash);
+                }
+            }
+            return hash;
+        }
+
+        function deInitNode(element) {
             var internalData = getInternalData(element);
             if (internalData.webSocket) {
                 internalData.webSocket.close();
@@ -829,16 +851,18 @@ return (function () {
             if (internalData.sseEventSource) {
                 internalData.sseEventSource.close();
             }
-
-            triggerEvent(element, "htmx:beforeCleanupElement")
-
             if (internalData.listenerInfos) {
-                forEach(internalData.listenerInfos, function(info) {
-                    if (element !== info.on) {
+                forEach(internalData.listenerInfos, function (info) {
+                    if (info.on) {
                         info.on.removeEventListener(info.trigger, info.listener);
                     }
                 });
             }
+        }
+
+        function cleanUpElement(element) {
+            triggerEvent(element, "htmx:beforeCleanupElement")
+            deInitNode(element);
             if (element.children) { // IE
                 forEach(element.children, function(child) { cleanUpElement(child) });
             }
@@ -1390,7 +1414,7 @@ return (function () {
             if (!hasAttribute(elt,'data-hx-revealed') && isScrolledIntoView(elt)) {
                 elt.setAttribute('data-hx-revealed', 'true');
                 var nodeData = getInternalData(elt);
-                if (nodeData.initialized) {
+                if (nodeData.initHash === attributeHash(elt)) {
                     triggerEvent(elt, 'revealed');
                 } else {
                     // if the node isn't initialized, wait for it before triggering the request
@@ -1724,7 +1748,7 @@ return (function () {
             if (elt.querySelectorAll) {
                 var boostedElts = hasChanceOfBeingBoosted() ? ", a, form" : "";
                 var results = elt.querySelectorAll(VERB_SELECTOR + boostedElts + ", [hx-sse], [data-hx-sse], [hx-ws]," +
-                    " [data-hx-ws], [hx-ext], [hx-data-ext]");
+                    " [data-hx-ws], [hx-ext], [data-hx-ext]");
                 return results;
             } else {
                 return [];
@@ -1756,8 +1780,13 @@ return (function () {
                 return;
             }
             var nodeData = getInternalData(elt);
-            if (!nodeData.initialized) {
-                nodeData.initialized = true;
+            if (nodeData.initHash !== attributeHash(elt)) {
+
+                nodeData.initHash = attributeHash(elt);
+
+                // clean up any previously processed info
+                deInitNode(elt);
+
                 triggerEvent(elt, "htmx:beforeProcessNode")
 
                 if (elt.value) {
@@ -1972,6 +2001,15 @@ return (function () {
                     fragment = fragment.querySelector('[hx-history-elt],[data-hx-history-elt]') || fragment;
                     var historyElement = getHistoryElement();
                     var settleInfo = makeSettleInfo(historyElement);
+		    var title = findTitle(this.response);
+                    if (title) {
+                        var titleElt = find("title");
+                        if (titleElt) {
+                            titleElt.innerHTML = title;
+                        } else {
+                            window.document.title = title;
+                        }
+                    }
                     // @ts-ignore
                     swapInnerHTML(historyElement, fragment, settleInfo)
                     settleImmediately(settleInfo.tasks);
@@ -2015,6 +2053,8 @@ return (function () {
                 indicators = [elt];
             }
             forEach(indicators, function (ic) {
+                var internalData = getInternalData(ic);
+                internalData.requestCount = (internalData.requestCount || 0) + 1;
                 ic.classList["add"].call(ic.classList, htmx.config.requestClass);
             });
             return indicators;
@@ -2022,7 +2062,11 @@ return (function () {
 
         function removeRequestIndicatorClasses(indicators) {
             forEach(indicators, function (ic) {
-                ic.classList["remove"].call(ic.classList, htmx.config.requestClass);
+                var internalData = getInternalData(ic);
+                internalData.requestCount = (internalData.requestCount || 0) - 1;
+                if (internalData.requestCount === 0) {
+                    ic.classList["remove"].call(ic.classList, htmx.config.requestClass);
+                }
             });
         }
 
@@ -2126,7 +2170,8 @@ return (function () {
             var internalData = getInternalData(elt);
 
             // only validate when form is directly submitted and novalidate or formnovalidate are not set
-            var validate = matches(elt, 'form') && elt.noValidate !== true;
+            // or if the element has an explicit hx-validate="true" on it
+            var validate = (matches(elt, 'form') && elt.noValidate !== true) || getAttributeValue(elt, "hx-validate") === "true";
             if (internalData.lastButtonClicked) {
                 validate = validate && internalData.lastButtonClicked.formNoValidate !== true;
             }
@@ -2418,6 +2463,9 @@ return (function () {
             if (attributeValue) {
                 var str = attributeValue.trim();
                 var evaluateValue = evalAsDefault;
+                if (str === "unset") {
+                    return null;
+                }
                 if (str.indexOf("javascript:") === 0) {
                     str = str.substr(11);
                     evaluateValue = true;
