@@ -6,13 +6,13 @@
 #
 asgiref==3.5.2
     # via django
-django==4.1.1
+django==4.1.2
     # via -r requirements.in
-faker==14.2.0
+faker==15.1.1
     # via -r requirements.in
 python-dateutil==2.8.2
     # via faker
 six==1.16.0
     # via python-dateutil
-sqlparse==0.4.2
+sqlparse==0.4.3
     # via django
