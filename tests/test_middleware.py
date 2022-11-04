@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any
+from typing import cast
 
 from django.core.handlers.wsgi import WSGIRequest
 from django.http import HttpResponse
@@ -8,7 +9,8 @@ from django.http.response import HttpResponseBase
 from django.test import RequestFactory as BaseRequestFactory
 from django.test import SimpleTestCase
 
-from django_htmx.middleware import HtmxDetails, HtmxMiddleware
+from django_htmx.middleware import HtmxDetails
+from django_htmx.middleware import HtmxMiddleware
 
 
 class HtmxWSGIRequest(WSGIRequest):

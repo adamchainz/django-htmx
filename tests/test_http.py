@@ -3,16 +3,15 @@ from __future__ import annotations
 from uuid import UUID
 
 import pytest
-from django.http import HttpResponse, StreamingHttpResponse
+from django.http import HttpResponse
+from django.http import StreamingHttpResponse
 from django.test import SimpleTestCase
 
-from django_htmx.http import (
-    HttpResponseClientRedirect,
-    HttpResponseClientRefresh,
-    HttpResponseStopPolling,
-    push_url,
-    trigger_client_event,
-)
+from django_htmx.http import HttpResponseClientRedirect
+from django_htmx.http import HttpResponseClientRefresh
+from django_htmx.http import HttpResponseStopPolling
+from django_htmx.http import push_url
+from django_htmx.http import trigger_client_event
 
 
 class HttpResponseStopPollingTests(SimpleTestCase):

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, Awaitable, Callable
+from typing import Any
+from typing import Awaitable
+from typing import Callable
 from urllib.parse import unquote
 
 from django.http import HttpRequest

@@ -2,17 +2,15 @@ from __future__ import annotations
 
 from django.urls import path
 
-from example.core.views import (
-    csrf_demo,
-    csrf_demo_checker,
-    error_demo,
-    error_demo_trigger,
-    favicon,
-    index,
-    middleware_tester,
-    middleware_tester_table,
-    partial_rendering,
-)
+from example.core.views import csrf_demo
+from example.core.views import csrf_demo_checker
+from example.core.views import error_demo
+from example.core.views import error_demo_trigger
+from example.core.views import favicon
+from example.core.views import index
+from example.core.views import middleware_tester
+from example.core.views import middleware_tester_table
+from example.core.views import partial_rendering
 
 urlpatterns = [
     path("", index),
