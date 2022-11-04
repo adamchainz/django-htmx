@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 import sys
-from typing import Any, TypeVar
+from typing import Any
+from typing import TypeVar
 
 from django.core.serializers.json import DjangoJSONEncoder
 from django.http import HttpResponse
-from django.http.response import HttpResponseBase, HttpResponseRedirectBase
+from django.http.response import HttpResponseBase
+from django.http.response import HttpResponseRedirectBase
 
 if sys.version_info >= (3, 8):
     from typing import Literal
