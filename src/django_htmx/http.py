@@ -76,9 +76,7 @@ def trigger_client_event(
             "Value for 'after' must be one of: 'receive', 'settle', or 'swap'."
         )
 
-    # django-stubs missing method
-    # https://github.com/typeddjango/django-stubs/pull/1099
-    if header in response:  # type: ignore [operator]
+    if header in response:
         value = response[header]
         try:
             data = json.loads(value)
