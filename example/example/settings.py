@@ -14,7 +14,7 @@ SECRET_KEY = ")w%-67b9lurhzs*o2ow(e=n_^(n2!0_f*2+g+1*9tcn6_k58(f"
 ALLOWED_HOSTS = ["*"]
 
 INSTALLED_APPS = [
-    "example.core",
+    "example",
     "django_htmx",
     "django.contrib.staticfiles",
 ]
@@ -36,7 +36,7 @@ TEMPLATES = [
         "OPTIONS": {
             "context_processors": [
                 "django.template.context_processors.request",
-                "example.core.context_processors.debug",
+                "example.context_processors.debug",
             ]
         },
     }

@@ -13,7 +13,7 @@ from django.views.decorators.http import require_POST
 from faker import Faker
 
 from django_htmx.middleware import HtmxDetails
-from example.core.forms import OddNumberForm
+from example.forms import OddNumberForm
 
 
 # Typing pattern recommended by django-stubs:
