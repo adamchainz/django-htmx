@@ -82,13 +82,29 @@ HTTP
 
 .. autofunction:: push_url
 
-   Modify the |HX-Push-Url header|__ of ``response`` to push a URL into the browser location history, and return the response.
-   ``url`` should be the URL to push, or ``False`` to prevent the location history from being updated.
+   Set the |HX-Push-Url header|__ of ``response`` and return the response.
+   This header makes htmx push the given URL into the browser location history,
+   ``url`` should be the (relative) URL to push, or ``False`` to prevent the location history from being updated.
 
    .. |HX-Push-Url header| replace:: ``HX-Push-Url`` header
    __ https://htmx.org/headers/hx-push-url/
 
    Calling ``push_url`` multiple times for the same ``response`` will replace the value of the header.
+
+.. autofunction:: reswap
+
+   Set the |HX-Reswap header|__ of ``response``, and return the response.
+   This header overrides the `swap method <https://htmx.org/attributes/hx-swap/>`__ that htmx will use.
+
+   .. |HX-Reswap header| replace:: ``HX-Reswap`` header
+   __ https://htmx.org/reference/#response_headers
+
+.. autofunction:: retarget
+
+   Set the |HX-Retarget header|__ of ``response`` to override element that htmx will swap the content into, and return the response.
+
+   .. |HX-Retarget header| replace:: ``HX-Retarget`` header
+   __ https://htmx.org/reference/#response_headers
 
 .. autofunction:: trigger_client_event
 
