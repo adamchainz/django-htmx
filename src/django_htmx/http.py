@@ -56,6 +56,28 @@ def push_url(response: _HttpResponse, url: str | Literal[False]) -> _HttpRespons
     return response
 
 
+def reswap(
+    response: _HttpResponse,
+    method: Literal[
+        "innerHTML",
+        "outerHTML",
+        "beforebegin",
+        "afterbegin",
+        "beforeend",
+        "afterend",
+        "delete",
+        "none",
+    ],
+) -> _HttpResponse:
+    response["HX-Reswap"] = method
+    return response
+
+
+def retarget(response: _HttpResponse, target: str) -> _HttpResponse:
+    response["HX-Retarget"] = target
+    return response
+
+
 def trigger_client_event(
     response: _HttpResponse,
     name: str,

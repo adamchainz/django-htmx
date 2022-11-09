@@ -10,6 +10,10 @@ History
 
   Thanks to Chris Tapper in `PR #264 <https://github.com/adamchainz/django-htmx/pull/264>`__.
 
+* Add ``django_htmx.http.reswap()`` for setting the ``HX-Reswap`` header added in `htmx 1.8.0 <https://htmx.org/posts/2022-07-12-htmx-1.8.0-is-released/>`__.
+
+* Add ``django_htmx.http.retarget()`` for setting the ``HX-Retarget`` header added in `htmx 1.6.1 <https://htmx.org/posts/2021-11-22-htmx-1.6.1-is-released/>`__.
+
 1.12.2 (2022-08-31)
 -------------------
 
