@@ -79,7 +79,6 @@ Middleware
                 next_url = request.htmx.current_url_abs_path or ""
                 return HttpResponseClientRedirect(f"/activate-sudo/?next={next_url}")
 
-
    .. attribute:: history_restore_request
       :type: bool
 
