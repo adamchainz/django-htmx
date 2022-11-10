@@ -71,12 +71,6 @@ Middleware
           In [2]: request.htmx.current_url_abs_path
           Out[2]: "/dashboard/?year=2022"
 
-          In [3]: request.scheme
-          Out[3]: "https"
-
-          In [4]: request.get_host()
-          Out[4]: "example.com"
-
       This is useful for redirects:
 
       .. code-block:: python
