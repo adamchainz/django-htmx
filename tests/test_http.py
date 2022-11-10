@@ -51,9 +51,7 @@ class HttpResponseLocationTests(SimpleTestCase):
         )
 
         assert response.status_code == 200
-        # django-stubs missing HttpResponseBase.__contains__ until:
-        # https://github.com/typeddjango/django-stubs/pull/1099
-        assert "Location" not in response  # type: ignore [operator]
+        assert "Location" not in response
         swap_spec = json.loads(response["HX-location"])
         assert swap_spec == {"path": "https://example.com", "target": "#sample"}
 
