@@ -15,7 +15,6 @@ from django_htmx.http import HttpResponseStopPolling
 from django_htmx.http import push_url
 from django_htmx.http import reswap
 from django_htmx.http import retarget
-from django_htmx.http import set_location
 from django_htmx.http import trigger_client_event
 
 
@@ -46,14 +45,36 @@ class HttpResponseClientRedirectTests(SimpleTestCase):
 
 class HttpResponseLocationTests(SimpleTestCase):
     def test_success(self):
+        response = HttpResponseLocation("/home/")
+
+        assert response.status_code == 200
+        assert "Location" not in response
+        spec = json.loads(response["HX-Location"])
+        assert spec == {"path": "/home/"}
+
+    def test_success_complete(self):
         response = HttpResponseLocation(
-            "https://example.com", spec={"target": "#sample"}
+            "/home/",
+            source="#button",
+            event="doubleclick",
+            target="#main",
+            swap="innerHTML",
+            headers={"year": "2022"},
+            values={"banner": "true"},
         )
 
         assert response.status_code == 200
         assert "Location" not in response
-        swap_spec = json.loads(response["HX-location"])
-        assert swap_spec == {"path": "https://example.com", "target": "#sample"}
+        spec = json.loads(response["HX-Location"])
+        assert spec == {
+            "path": "/home/",
+            "source": "#button",
+            "event": "doubleclick",
+            "target": "#main",
+            "swap": "innerHTML",
+            "headers": {"year": "2022"},
+            "values": {"banner": "true"},
+        }
 
 
 class HttpResponseClientRefreshTests(SimpleTestCase):
@@ -101,29 +122,6 @@ class RetargetTests(SimpleTestCase):
 
         assert response2 is response
         assert response["HX-Retarget"] == "#heading"
-
-
-class SetLocationTests(SimpleTestCase):
-    def test_simple_success(self):
-        response = HttpResponse()
-
-        result = set_location(response, path="https://example.com")
-
-        assert result is response
-        assert response["HX-Location"] == "https://example.com"
-
-    def test_swap_spec_success(self):
-        response = HttpResponse()
-
-        result = set_location(
-            response,
-            path="https://example.com",
-            spec={"target": "#mydiv"},
-        )
-
-        assert result is response
-        swap_spec = json.loads(response["HX-location"])
-        assert swap_spec == {"path": "https://example.com", "target": "#mydiv"}
 
 
 class TriggerClientEventTests(SimpleTestCase):

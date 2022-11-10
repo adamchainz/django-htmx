@@ -29,21 +29,6 @@ class HttpResponseStopPolling(HttpResponse):
         self._reason_phrase = "Stop Polling"
 
 
-class HttpResponseLocation(HttpResponseRedirectBase):
-    status_code = 200
-
-    def __init__(
-        self,
-        redirect_to: str,
-        *args: Any,
-        spec: dict[str, Any] | None = None,
-        **kwargs: Any,
-    ) -> None:
-        super().__init__(redirect_to, *args, **kwargs)
-        set_location(self, self["Location"], spec=spec)
-        del self["Location"]
-
-
 class HttpResponseClientRedirect(HttpResponseRedirectBase):
     status_code = 200
 
@@ -61,6 +46,51 @@ class HttpResponseClientRefresh(HttpResponse):
     def __init__(self) -> None:
         super().__init__()
         self["HX-Refresh"] = "true"
+
+
+class HttpResponseLocation(HttpResponseRedirectBase):
+    status_code = 200
+
+    def __init__(
+        self,
+        redirect_to: str,
+        *args: Any,
+        source: str | None = None,
+        event: str | None = None,
+        target: str | None = None,
+        swap: Literal[
+            "innerHTML",
+            "outerHTML",
+            "beforebegin",
+            "afterbegin",
+            "beforeend",
+            "afterend",
+            "delete",
+            "none",
+            None,
+        ] = None,
+        values: dict[str, str] | None = None,
+        headers: dict[str, str] | None = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(redirect_to, *args, **kwargs)
+        spec: dict[str, str | dict[str, str]] = {
+            "path": self["Location"],
+        }
+        del self["Location"]
+        if source is not None:
+            spec["source"] = source
+        if event is not None:
+            spec["event"] = event
+        if target is not None:
+            spec["target"] = target
+        if swap is not None:
+            spec["swap"] = swap
+        if headers is not None:
+            spec["headers"] = headers
+        if values is not None:
+            spec["values"] = values
+        self["HX-Location"] = json.dumps(spec)
 
 
 _HttpResponse = TypeVar("_HttpResponse", bound=HttpResponseBase)
@@ -90,19 +120,6 @@ def reswap(
 
 def retarget(response: _HttpResponse, target: str) -> _HttpResponse:
     response["HX-Retarget"] = target
-    return response
-
-
-def set_location(
-    response: _HttpResponse,
-    path: str,
-    spec: dict[str, Any] | None = None,
-) -> _HttpResponse:
-
-    if spec:
-        path = json.dumps({"path": path, **spec}, cls=DjangoJSONEncoder)
-
-    response["HX-Location"] = path
     return response
 
 
