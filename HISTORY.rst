@@ -18,6 +18,10 @@ History
 
   Thanks to Ben Beecher in `PR #239 <https://github.com/adamchainz/django-htmx/pull/239>`__.
 
+* Add ``request.htmx.current_url_abs_path``, the absolute-path form of ``request.current_url``.
+
+  Thanks to Trey Hunner for the feature request in `Issue #259 <https://github.com/adamchainz/django-htmx/issues/259>`__.
+
 1.12.2 (2022-08-31)
 -------------------
 

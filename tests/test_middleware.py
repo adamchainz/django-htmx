@@ -78,6 +78,25 @@ class HtmxMiddlewareTests(SimpleTestCase):
         self.middleware(request)
         assert request.htmx.current_url == "https://example.com/?"
 
+    def test_current_url_abs_path_default(self):
+        request = self.request_factory.get("/")
+        self.middleware(request)
+        assert request.htmx.current_url_abs_path is None
+
+    def test_current_url_abs_path_set_same_domain(self):
+        request = self.request_factory.get(
+            "/", HTTP_HX_CURRENT_URL="http://testserver/duck/?quack=true#h2"
+        )
+        self.middleware(request)
+        assert request.htmx.current_url_abs_path == "/duck/?quack=true#h2"
+
+    def test_current_url_abs_path_set_different_domain(self):
+        request = self.request_factory.get(
+            "/", HTTP_HX_CURRENT_URL="https://example.com/duck/?quack=true#h2"
+        )
+        self.middleware(request)
+        assert request.htmx.current_url_abs_path is None
+
     def test_history_restore_request_false(self):
         request = self.request_factory.get("/", HTTP_HX_HISTORY_RESTORE_REQUEST="false")
         self.middleware(request)
