@@ -14,6 +14,10 @@ History
 
 * Add ``django_htmx.http.retarget()`` for setting the ``HX-Retarget`` header added in `htmx 1.6.1 <https://htmx.org/posts/2021-11-22-htmx-1.6.1-is-released/>`__.
 
+* Add ``HttpResponseLocation`` for sending a response with the ``HX-Location`` header.
+
+  Thanks to Ben Beecher in `PR #239 <https://github.com/adamchainz/django-htmx/pull/239>`__.
+
 1.12.2 (2022-08-31)
 -------------------
 
