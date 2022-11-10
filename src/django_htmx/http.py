@@ -48,6 +48,51 @@ class HttpResponseClientRefresh(HttpResponse):
         self["HX-Refresh"] = "true"
 
 
+class HttpResponseLocation(HttpResponseRedirectBase):
+    status_code = 200
+
+    def __init__(
+        self,
+        redirect_to: str,
+        *args: Any,
+        source: str | None = None,
+        event: str | None = None,
+        target: str | None = None,
+        swap: Literal[
+            "innerHTML",
+            "outerHTML",
+            "beforebegin",
+            "afterbegin",
+            "beforeend",
+            "afterend",
+            "delete",
+            "none",
+            None,
+        ] = None,
+        values: dict[str, str] | None = None,
+        headers: dict[str, str] | None = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(redirect_to, *args, **kwargs)
+        spec: dict[str, str | dict[str, str]] = {
+            "path": self["Location"],
+        }
+        del self["Location"]
+        if source is not None:
+            spec["source"] = source
+        if event is not None:
+            spec["event"] = event
+        if target is not None:
+            spec["target"] = target
+        if swap is not None:
+            spec["swap"] = swap
+        if headers is not None:
+            spec["headers"] = headers
+        if values is not None:
+            spec["values"] = values
+        self["HX-Location"] = json.dumps(spec)
+
+
 _HttpResponse = TypeVar("_HttpResponse", bound=HttpResponseBase)
 
 
