@@ -59,17 +59,17 @@ Middleware
       The absolute-path form of ``current_url``, that is the URL without scheme or netloc, or ``None`` for non-htmx requests.
 
       This value will also be ``None`` if the scheme and netloc do not match the request.
-      The could happen if the request is cross-origin, or if your Django is not configured correctly.
+      The could happen if the request is cross-origin, or if Django is not configured correctly.
 
       For example:
 
       .. code-block:: ipython
 
-          In [1]: request.htmx.current_url
-          Out[1]: "https://example.com/dashboard/?year=2022"
-
-          In [2]: request.htmx.current_url_abs_path
-          Out[2]: "/dashboard/?year=2022"
+          >>> request.htmx.current_url
+          'https://example.com/dashboard/?year=2022'
+          >>> # assuming request.scheme and request.get_host() match:
+          >>> request.htmx.current_url_abs_path
+          '/dashboard/?year=2022'
 
       This is useful for redirects:
 

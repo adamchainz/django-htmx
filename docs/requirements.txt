@@ -1,4 +1,3 @@
 django
 furo
-ipython
 sphinx
