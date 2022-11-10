@@ -9,7 +9,7 @@ History
 
   Thanks to Chris Tapper in `PR #263 <https://github.com/adamchainz/django-htmx/pull/263>`__.
 
-* Add ``django_htmx.http.push_url()`` for setting the browser location.
+* Add ``django_htmx.http.push_url()`` for setting the ``HX-Push-URL`` header.
 
   Thanks to Chris Tapper in `PR #264 <https://github.com/adamchainz/django-htmx/pull/264>`__.
 
