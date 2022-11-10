@@ -3,6 +3,9 @@ HTTP
 
 .. currentmodule:: django_htmx.http
 
+Response classes
+----------------
+
 .. autoclass:: HttpResponseClientRedirect
 
    htmx can trigger a client side redirect when it receives a response with the |HX-Redirect header|__.
@@ -44,6 +47,34 @@ HTTP
                return HttpResponseClientRefresh()
            ...
 
+.. autoclass:: HttpResponseLocation
+
+   An HTTP response class for sending the |HX-Location header|__.
+   This header makes htmx make a client-side “boosted” request, acting like a client side redirect with a page reload.
+
+   .. |HX-Location header| replace:: ``HX-Location`` header
+   __ https://htmx.org/headers/hx-location/
+
+   ``redirect_to`` should be the URL to redirect to, as per Django’s |HttpResponseRedirect|__.
+
+   .. |HttpResponseRedirect| replace:: ``HttpResponseRedirect``
+   __ https://docs.djangoproject.com/en/stable/ref/request-response/#django.http.HttpResponseRedirect
+
+   ``source``, ``event``, ``target``, ``swap``, ``values``, and ``headers`` are all optional, with meaning as `documented by htmx <https://htmx.org/headers/hx-location/>`__.
+
+   For example:
+
+   .. code-block:: python
+
+        from django_htmx.http import HttpResponseLocation
+
+
+        def wait_for_completion(request, action_id):
+            ...
+            if action.completed:
+                return HttpResponseLocation(f"/action/{action.id}/completed/")
+            ...
+
 .. autoclass:: HttpResponseStopPolling
 
    When using a `polling trigger <https://htmx.org/docs/#polling>`__, htmx will stop polling when it encounters a response with the special HTTP status code 286.
@@ -79,6 +110,9 @@ HTTP
            if event_finished():
                return render("event-finished.html", status=HTMX_STOP_POLLING)
            ...
+
+Response modifying functions
+----------------------------
 
 .. autofunction:: push_url
 
