@@ -6,6 +6,8 @@ from typing import Any
 from typing import Awaitable
 from typing import Callable
 from urllib.parse import unquote
+from urllib.parse import urlsplit
+from urllib.parse import urlunsplit
 
 from django.http import HttpRequest
 from django.http.response import HttpResponseBase
@@ -70,6 +72,20 @@ class HtmxDetails:
     @cached_property
     def current_url(self) -> str | None:
         return self._get_header_value("HX-Current-URL")
+
+    @cached_property
+    def current_url_abs_path(self) -> str | None:
+        url = self.current_url
+        if url is not None:
+            split = urlsplit(url)
+            if (
+                split.scheme == self.request.scheme
+                and split.netloc == self.request.get_host()
+            ):
+                url = urlunsplit(split._replace(scheme="", netloc=""))
+            else:
+                url = None
+        return url
 
     @cached_property
     def history_restore_request(self) -> bool:

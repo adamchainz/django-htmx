@@ -50,8 +50,34 @@ Middleware
    .. attribute:: current_url
       :type: str | None
 
-      The current URL of the browser, or ``None`` for non-htmx requests.
+      The current URL in the browser that htmx made this request from, or ``None`` for non-htmx requests.
       Based on the ``HX-Current-URL`` header.
+
+   .. attribute:: current_url_abs_path
+      :type: str | None
+
+      The absolute-path form of ``current_url``, that is the URL without scheme or netloc, or ``None`` for non-htmx requests.
+
+      This value will also be ``None`` if the scheme and netloc do not match the request.
+      The could happen if the request is cross-origin, or if Django is not configured correctly.
+
+      For example:
+
+      .. code-block:: ipython
+
+          >>> request.htmx.current_url
+          'https://example.com/dashboard/?year=2022'
+          >>> # assuming request.scheme and request.get_host() match:
+          >>> request.htmx.current_url_abs_path
+          '/dashboard/?year=2022'
+
+      This is useful for redirects:
+
+      .. code-block:: python
+
+            if not sudo_mode_active(request):
+                next_url = request.htmx.current_url_abs_path or ""
+                return HttpResponseClientRedirect(f"/activate-sudo/?next={next_url}")
 
    .. attribute:: history_restore_request
       :type: bool
