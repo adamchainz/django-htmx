@@ -66,7 +66,7 @@ HTTP
    :value: 286
 
    A constant for the HTTP status code 286.
-   You can use this instead of ``HttpResponseStopPolling`` to tell htmx to stop polling.
+   You can use this instead of ``HttpResponseStopPolling`` to stop htmx from polling.
 
    For example, with Django’s `render shortcut <https://docs.djangoproject.com/en/stable/topics/http/shortcuts/#django.shortcuts.render>`__:
 
@@ -82,48 +82,102 @@ HTTP
 
 .. autofunction:: push_url
 
-   Set the |HX-Push-Url header|__ of ``response`` and return the response.
-   This header makes htmx push the given URL into the browser location history,
-   ``url`` should be the (relative) URL to push, or ``False`` to prevent the location history from being updated.
+   Set the |HX-Push-Url header|__ of ``response`` and return it.
+   This header makes htmx push the given URL into the browser location history.
 
    .. |HX-Push-Url header| replace:: ``HX-Push-Url`` header
    __ https://htmx.org/headers/hx-push-url/
 
-   Calling ``push_url`` multiple times for the same ``response`` will replace the value of the header.
+   ``url`` should be the (relative) URL to push, or ``False`` to prevent the location history from being updated.
+
+   For example:
+
+   .. code-block:: python
+
+      from django_htmx.http import push_url
+
+
+      def leaf(request, leaf_id):
+          ...
+          if leaf is None:
+              # Directly render branch view
+              response = branch(request, branch=leaf.branch)
+              return push_url(response, f"/branch/{leaf.branch.id}")
+          ...
 
 .. autofunction:: reswap
 
-   Set the |HX-Reswap header|__ of ``response``, and return the response.
+   Set the |HX-Reswap header|__ of ``response`` and return it.
    This header overrides the `swap method <https://htmx.org/attributes/hx-swap/>`__ that htmx will use.
 
    .. |HX-Reswap header| replace:: ``HX-Reswap`` header
    __ https://htmx.org/reference/#response_headers
 
+   For example:
+
+   .. code-block:: python
+
+      from django_htmx.http import reswap
+
+
+      def employee_table_row(request):
+          ...
+          response = render(...)
+          if employee.is_boss:
+              reswap(response, "afterbegin")
+          return response
+
 .. autofunction:: retarget
 
-   Set the |HX-Retarget header|__ of ``response`` to override element that htmx will swap the content into, and return the response.
+   Set the |HX-Retarget header|__ of ``response`` and return it.
+   This header overrides the element that htmx will swap content into.
 
    .. |HX-Retarget header| replace:: ``HX-Retarget`` header
    __ https://htmx.org/reference/#response_headers
 
+   For example:
+
+   .. code-block:: python
+
+      from django.views.decorators.http import require_POST
+      from django_htmx.http import retarget
+
+
+      @require_POST
+      def add_widget(request):
+          ...
+
+          if form.is_valid():
+              # Rerender the whole table on success
+              response = render("widget-table.html", ...)
+              return retarget(response, "#widgets")
+
+          # Render just inline table row on failure
+          return render("widget-table-row.html", ...)
+
 .. autofunction:: trigger_client_event
 
-   Modify the |HX-Trigger headers|__ of ``response`` to trigger client-side events, and return the response.
-   Takes the name of the event to trigger and (optionally) any JSON-compatible parameters for it, and stores them in the appropriate header. Uses |DjangoJSONEncoder|__ for its extended data type support.
+   Modify one of the |HX-Trigger headers|__ of ``response`` and return it.
+   These headers make htmx trigger client-side events.
 
    .. |HX-Trigger headers| replace:: ``HX-Trigger`` headers
    __ https://htmx.org/headers/hx-trigger/
 
+   ``name`` is the name of the event to trigger.
+
+   ``params`` specifies optional JSON-compatible parameters for the event.
+   Uses |DjangoJSONEncoder|__ for its extended data type support.
+
    .. |DjangoJSONEncoder| replace:: ``DjangoJSONEncoder``
    __ https://docs.djangoproject.com/en/stable/topics/serialization/#django.core.serializers.json.DjangoJSONEncoder
 
-   Which of the ``HX-Trigger`` headers is modified depends on the value of ``after``:
+   ``after`` selects which of the ``HX-Trigger`` headers to modify:
 
    * ``"receive"``, the default, maps to ``HX-Trigger``
    * ``"settle"`` maps to ``HX-Trigger-After-Settle``
    * ``"swap"`` maps to ``HX-Trigger-After-Swap``
 
-   Calling ``trigger_client_event`` multiple times for the same ``response`` and ``after`` will add or replace the given event name and preserve others.
+   Calling ``trigger_client_event`` multiple times for the same ``response`` and ``after`` will update the appropriate header, preserving existing event specifications.
 
    For example:
 
