@@ -2,6 +2,9 @@
 History
 =======
 
+1.13.0 (2022-11-10)
+-------------------
+
 * Make the ``params`` argument of ``trigger_client_event()`` optional.
 
   Thanks to Chris Tapper in `PR #263 <https://github.com/adamchainz/django-htmx/pull/263>`__.
