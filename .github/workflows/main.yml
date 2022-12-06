@@ -36,10 +36,10 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip setuptools wheel
-        python -m pip install --upgrade tox tox-py
+        python -m pip install --upgrade tox
 
     - name: Run tox targets for ${{ matrix.python-version }}
-      run: tox --py current
+      run: tox --skip-missing-interpreters
 
     - name: Upload coverage data
       uses: actions/upload-artifact@v3
