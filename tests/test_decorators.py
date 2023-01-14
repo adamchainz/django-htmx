@@ -10,7 +10,8 @@ from django.test import RequestFactory as BaseRequestFactory
 from django.test import SimpleTestCase
 
 from django_htmx.decorators import htmx_view
-from django_htmx.middleware import HtmxDetails, HtmxMiddleware
+from django_htmx.middleware import HtmxDetails
+from django_htmx.middleware import HtmxMiddleware
 
 
 class HtmxWSGIRequest(WSGIRequest):
