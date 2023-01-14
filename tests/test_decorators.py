@@ -37,7 +37,7 @@ class HTMXDecoratorsTests(SimpleTestCase):
         self.middleware(request)
         func = mock.Mock()
         decorated_func = htmx_view(func)
-        response = decorated_func(request)
+        response = decorated_func(request)  # noqa: F841
         assert func.called
 
     def test_non_htmx_request(self):
@@ -45,5 +45,5 @@ class HTMXDecoratorsTests(SimpleTestCase):
         self.middleware(request)
         func = mock.Mock()
         decorated_func = htmx_view(func)
-        response = decorated_func(request)
+        response = decorated_func(request)  # noqa: F841
         assert not func.called
