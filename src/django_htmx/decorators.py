@@ -3,7 +3,8 @@ from __future__ import annotations
 from functools import wraps
 from typing import Callable
 
-from django.http import HttpRequest, HttpResponseNotFound
+from django.http import HttpRequest
+from django.http import HttpResponseNotFound
 
 
 def htmx_view(view_func: Callable):
