@@ -7,23 +7,23 @@ Changelog
 1.13.0 (2022-11-10)
 -------------------
 
-* Make the ``params`` argument of ``trigger_client_event()`` optional.
+* Make the ``params`` argument of :func:`.trigger_client_event()` optional.
 
   Thanks to Chris Tapper in `PR #263 <https://github.com/adamchainz/django-htmx/pull/263>`__.
 
-* Add ``django_htmx.http.push_url()`` for setting the ``HX-Push-URL`` header.
+* Add :func:`django_htmx.http.push_url()` for setting the ``HX-Push-URL`` header.
 
   Thanks to Chris Tapper in `PR #264 <https://github.com/adamchainz/django-htmx/pull/264>`__.
 
-* Add ``django_htmx.http.reswap()`` for setting the ``HX-Reswap`` header added in `htmx 1.8.0 <https://htmx.org/posts/2022-07-12-htmx-1.8.0-is-released/>`__.
+* Add :func:`django_htmx.http.reswap()` for setting the ``HX-Reswap`` header added in `htmx 1.8.0 <https://htmx.org/posts/2022-07-12-htmx-1.8.0-is-released/>`__.
 
-* Add ``django_htmx.http.retarget()`` for setting the ``HX-Retarget`` header added in `htmx 1.6.1 <https://htmx.org/posts/2021-11-22-htmx-1.6.1-is-released/>`__.
+* Add :func:`django_htmx.http.retarget()` for setting the ``HX-Retarget`` header added in `htmx 1.6.1 <https://htmx.org/posts/2021-11-22-htmx-1.6.1-is-released/>`__.
 
-* Add ``HttpResponseLocation`` for sending a response with the ``HX-Location`` header.
+* Add :class:`.HttpResponseLocation` for sending a response with the ``HX-Location`` header.
 
   Thanks to Ben Beecher in `PR #239 <https://github.com/adamchainz/django-htmx/pull/239>`__.
 
-* Add ``request.htmx.current_url_abs_path``, the absolute-path form of ``request.current_url``.
+* Add :attr:`request.htmx.current_url_abs_path <.current_url_abs_path>`, the absolute-path form of ``request.current_url``.
 
   Thanks to Trey Hunner for the feature request in `Issue #259 <https://github.com/adamchainz/django-htmx/issues/259>`__.
 
@@ -117,58 +117,49 @@ Changelog
 1.2.0 (2021-07-08)
 ------------------
 
-* Installation now requires adding ``"django_htmx"`` to your ``INSTALLED_APPS``
-  setting.
+* Installation now requires adding ``"django_htmx"`` to your ``INSTALLED_APPS`` setting.
 
-* Add extension script with debug error handler. To install it, follow the new
-  instructions in the README.
+* Add extension script with debug error handler.
+  To install it, follow the new instructions in the README.
 
-  htmx’s default behaviour is to discard error responses. The extension
-  overrides this in debug mode to shows Django’s debug error responses.
+  htmx’s default behaviour is to discard error responses.
+  The extension overrides this in debug mode to shows Django’s debug error responses.
 
-* Add ``django_htmx.http`` module with ``HttpResponseStopPolling`` class and
-  ``HTMX_STOP_POLLING`` constant.
+* Add ``django_htmx.http`` module with ``HttpResponseStopPolling`` class and ``HTMX_STOP_POLLING`` constant.
 
 1.1.0 (2021-06-03)
 ------------------
 
-* Support the ``HX-History-Restore-Request`` header, which was added in htmx
-  1.2.0. This is parsed into the ``request.htmx.history_restore_request``
-  attribute.
+* Support the ``HX-History-Restore-Request`` header, which was added in htmx 1.2.0.
+  This is parsed into the ``request.htmx.history_restore_request`` attribute.
 
-* Support the ``Triggering-Event`` header, which is sent by the
-  `event-header extension <https://htmx.org/extensions/event-header/>`__.
+* Support the ``Triggering-Event`` header, which is sent by the `event-header extension <https://htmx.org/extensions/event-header/>`__.
   This is parsed into the ``request.htmx.triggering_event`` attribute.
 
-* Stop distributing tests to reduce package size. Tests are not intended to be
-  run outside of the tox setup in the repository. Repackagers can use GitHub's
-  tarballs per tag.
+* Stop distributing tests to reduce package size.
+  Tests are not intended to be run outside of the tox setup in the repository.
+  Repackagers can use GitHub's tarballs per tag.
 
 1.0.1 (2021-02-08)
 ------------------
 
-* Remove ``X-HTTP-Method-Override`` handling from ``HtmxMiddleware``. This has
-  not been needed since htmx 0.0.5, when use of the header was extracted
-  to its ``method-override`` extension in `htmx commit
-  2305ae <https://github.com/bigskysoftware/htmx/commit/2305aed18e925da55f15dc5798db37ac0142f2b4>`__.
+* Remove ``X-HTTP-Method-Override`` handling from ``HtmxMiddleware``.
+  This has not been needed since htmx 0.0.5, when use of the header was extracted to its ``method-override`` extension in `htmx commit 2305ae <https://github.com/bigskysoftware/htmx/commit/2305aed18e925da55f15dc5798db37ac0142f2b4>`__.
 
 1.0.0 (2021-02-07)
 ------------------
 
 * Add ``HtmxMiddleware`` which handles request headers from htmx.
-* Add example app on GitHub repository which demonstrates using django-htmx
-  features.
-* Remove the ``{% htmx_script %}`` template tag. Include htmx on your pages
-  yourself - this allows you to better customize the way htmx is installed to
-  suit your project - for example by using the ``async`` script attribute or
-  by bundling it with extensions.
-* Remove the ``HTMXViewMixin``, ``{% htmx_include %}`` and ``{% htmx_attrs %}``
-  tags. Partial rendering can be done more with a simpler techinque - see
-  the demo page in the example app, added in
-  `Pull Request #30 <https://github.com/adamchainz/django-htmx/pull/30>`__.
+
+* Add example app on GitHub repository which demonstrates using django-htmx features.
+
+* Remove the ``{% htmx_script %}`` template tag.
+  Include htmx on your pages yourself - this allows you to better customize the way htmx is installed to suit your project - for example by using the ``async`` script attribute or by bundling it with extensions.
+
+* Remove the ``HTMXViewMixin``, ``{% htmx_include %}`` and ``{% htmx_attrs %}`` tags.
+  Partial rendering can be done more with a simpler techinque - see the demo page in the example app, added in `Pull Request #30 <https://github.com/adamchainz/django-htmx/pull/30>`__.
 
 0.1.4 (2020-06-30)
 ------------------
 
-* This version and those before explored what's possible with htmx and django,
-  but were not documented.
+* This version and those before explored what's possible with htmx and django, but were not documented.

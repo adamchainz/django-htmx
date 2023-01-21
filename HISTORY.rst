@@ -1,1 +1,1 @@
-See https://github.com/adamchainz/django-htmx/blob/main/CHANGELOG.rst
+See https://django-htmx.readthedocs.io/en/latest/changelog.html

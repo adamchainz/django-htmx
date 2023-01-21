@@ -16,6 +16,7 @@ __ https://htmx.org/
    http
    example_project
    tips
+   changelog
 
 
 Indices and tables
