@@ -7,7 +7,7 @@ django-htmx documentation
 __ https://htmx.org/
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
    :caption: Contents:
 
    installation
