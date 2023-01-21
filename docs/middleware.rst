@@ -63,7 +63,7 @@ Middleware
 
       For example:
 
-      .. code-block:: ipython
+      .. code-block:: pycon
 
           >>> request.htmx.current_url
           'https://example.com/dashboard/?year=2022'
