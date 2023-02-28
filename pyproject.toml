@@ -25,3 +25,10 @@ warn_unreachable = true
 [[tool.mypy.overrides]]
 module = "tests.*"
 allow_untyped_defs = true
+
+[tool.rstcheck]
+ignore_directives = [
+  "autoclass",
+  "autofunction",
+]
+report_level = "ERROR"
