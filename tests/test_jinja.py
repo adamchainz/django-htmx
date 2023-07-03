@@ -17,6 +17,5 @@ class DjangoHtmxScriptTests(SimpleTestCase):
             result = django_htmx_script()
 
         assert result == (
-            '<script type="text/javascript" src="django-htmx.js" '
-            + 'data-debug="True" defer></script>'
+            '<script src="django-htmx.js" data-debug="True" defer></script>'
         )
