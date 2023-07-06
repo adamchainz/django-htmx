@@ -122,6 +122,7 @@ def trigger_client_event(
     params: dict[str, Any] | None = None,
     *,
     after: Literal["receive", "settle", "swap"] = "receive",
+    encoder: type[DjangoJSONEncoder] = DjangoJSONEncoder,
 ) -> _HttpResponse:
     params = params or {}
 
@@ -146,6 +147,6 @@ def trigger_client_event(
     else:
         data = {name: params}
 
-    response[header] = json.dumps(data, cls=DjangoJSONEncoder)
+    response[header] = json.dumps(data, cls=encoder)
 
     return response

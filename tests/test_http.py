@@ -4,6 +4,7 @@ import json
 from uuid import UUID
 
 import pytest
+from django.core.serializers.json import DjangoJSONEncoder
 from django.http import HttpResponse
 from django.http import StreamingHttpResponse
 from django.test import SimpleTestCase
@@ -234,4 +235,31 @@ class TriggerClientEventTests(SimpleTestCase):
         assert (
             response["HX-Trigger"]
             == '{"showMessage": {"uuid": "12345678-1234-5678-1234-567812345678"}}'
+        )
+
+    def test_custom_json_encoder(self):
+        class BeanCounter:
+            def __init__(self, magic_bean_count: int):
+                self.magic_bean_count = magic_bean_count * 2
+
+        class MyEncoder(DjangoJSONEncoder):
+            def default(self, o):
+                if isinstance(o, BeanCounter):
+                    return {"magic_beans": o.magic_bean_count}
+
+                return super().default(o)
+
+        response = HttpResponse()
+        uuid_value = UUID("{12345678-1234-5678-1234-567812345678}")
+
+        trigger_client_event(
+            response,
+            "showMessage",
+            {"uuid": uuid_value, "beans": BeanCounter(1)},
+            encoder=MyEncoder,
+        )
+
+        assert response["HX-Trigger"] == (
+            '{"showMessage": {"uuid": "12345678-1234-5678-1234-567812345678", '
+            '"magic_beans": 2}}'
         )
