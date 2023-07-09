@@ -207,7 +207,11 @@ Response modifying functions
    * ``"settle"`` maps to ``HX-Trigger-After-Settle``
    * ``"swap"`` maps to ``HX-Trigger-After-Swap``
 
-   ``encoder`` specifies the JSON encoder to be used in generating the JSON. By default uses |DjangoJSONEncoder|__ for its extended data type support.
+   ``encoder`` specifies the |JSONEncoder|__ class used to generate the JSON.
+   Defaults to |DjangoJSONEncoder|__ for its extended data type support.
+
+   .. |JSONEncoder| replace:: ``JSONEncoder``
+   __ https://docs.python.org/3/library/json.html#json.JSONEncoder
 
    .. |DjangoJSONEncoder| replace:: ``DjangoJSONEncoder``
    __ https://docs.djangoproject.com/en/stable/topics/serialization/#django.core.serializers.json.DjangoJSONEncoder
