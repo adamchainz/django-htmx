@@ -200,16 +200,21 @@ Response modifying functions
    ``name`` is the name of the event to trigger.
 
    ``params`` specifies optional JSON-compatible parameters for the event.
-   Uses |DjangoJSONEncoder|__ for its extended data type support.
-
-   .. |DjangoJSONEncoder| replace:: ``DjangoJSONEncoder``
-   __ https://docs.djangoproject.com/en/stable/topics/serialization/#django.core.serializers.json.DjangoJSONEncoder
 
    ``after`` selects which of the ``HX-Trigger`` headers to modify:
 
    * ``"receive"``, the default, maps to ``HX-Trigger``
    * ``"settle"`` maps to ``HX-Trigger-After-Settle``
    * ``"swap"`` maps to ``HX-Trigger-After-Swap``
+
+   ``encoder`` specifies the |JSONEncoder|__ class used to generate the JSON.
+   Defaults to |DjangoJSONEncoder|__ for its extended data type support.
+
+   .. |JSONEncoder| replace:: ``JSONEncoder``
+   __ https://docs.python.org/3/library/json.html#json.JSONEncoder
+
+   .. |DjangoJSONEncoder| replace:: ``DjangoJSONEncoder``
+   __ https://docs.djangoproject.com/en/stable/topics/serialization/#django.core.serializers.json.DjangoJSONEncoder
 
    Calling ``trigger_client_event`` multiple times for the same ``response`` and ``after`` will update the appropriate header, preserving existing event specifications.
 
