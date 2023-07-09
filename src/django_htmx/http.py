@@ -122,7 +122,7 @@ def trigger_client_event(
     params: dict[str, Any] | None = None,
     *,
     after: Literal["receive", "settle", "swap"] = "receive",
-    encoder: type[DjangoJSONEncoder] = DjangoJSONEncoder,
+    encoder: type[json.JSONEncoder] = DjangoJSONEncoder,
 ) -> _HttpResponse:
     params = params or {}
 
