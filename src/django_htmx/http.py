@@ -1,21 +1,14 @@
 from __future__ import annotations
 
 import json
-import sys
 from typing import Any
+from typing import Literal
 from typing import TypeVar
 
 from django.core.serializers.json import DjangoJSONEncoder
 from django.http import HttpResponse
 from django.http.response import HttpResponseBase
 from django.http.response import HttpResponseRedirectBase
-
-if sys.version_info >= (3, 8):
-    from typing import Literal
-
-    EventAfterType = Literal["receive", "settle", "swap"]
-else:
-    EventAfterType = str
 
 
 HTMX_STOP_POLLING = 286
@@ -128,7 +121,7 @@ def trigger_client_event(
     name: str,
     params: dict[str, Any] | None = None,
     *,
-    after: EventAfterType = "receive",
+    after: Literal["receive", "settle", "swap"] = "receive",
 ) -> _HttpResponse:
     params = params or {}
 
