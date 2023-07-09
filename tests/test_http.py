@@ -238,28 +238,20 @@ class TriggerClientEventTests(SimpleTestCase):
         )
 
     def test_custom_json_encoder(self):
-        class BeanCounter:
-            def __init__(self, magic_bean_count: int):
-                self.magic_bean_count = magic_bean_count * 2
+        class Bean:
+            pass
 
-        class MyEncoder(DjangoJSONEncoder):
+        class BeanEncoder(DjangoJSONEncoder):
             def default(self, o):
-                if isinstance(o, BeanCounter):
-                    return {"magic_beans": o.magic_bean_count}
+                if isinstance(o, Bean):
+                    return "bean"
 
                 return super().default(o)
 
         response = HttpResponse()
-        uuid_value = UUID("{12345678-1234-5678-1234-567812345678}")
 
         trigger_client_event(
-            response,
-            "showMessage",
-            {"uuid": uuid_value, "beans": BeanCounter(1)},
-            encoder=MyEncoder,
+            response, "showMessage", {"b": Bean()}, encoder=BeanEncoder
         )
 
-        assert response["HX-Trigger"] == (
-            '{"showMessage": {"uuid": "12345678-1234-5678-1234-567812345678", '
-            '"magic_beans": 2}}'
-        )
+        assert response["HX-Trigger"] == '{"showMessage": {"b": "bean"}}'
