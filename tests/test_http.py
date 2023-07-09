@@ -251,7 +251,7 @@ class TriggerClientEventTests(SimpleTestCase):
         response = HttpResponse()
 
         trigger_client_event(
-            response, "showMessage", {"b": Bean()}, encoder=BeanEncoder
+            response, "showMessage", {"a": 1, "b": Bean()}, encoder=BeanEncoder
         )
 
-        assert response["HX-Trigger"] == '{"showMessage": {"b": "bean"}}'
+        assert response["HX-Trigger"] == '{"showMessage": {"a": 1, "b": "bean"}}'
