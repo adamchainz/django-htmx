@@ -14,9 +14,9 @@ from django_htmx.http import HttpResponseClientRefresh
 from django_htmx.http import HttpResponseLocation
 from django_htmx.http import HttpResponseStopPolling
 from django_htmx.http import push_url
+from django_htmx.http import reselect
 from django_htmx.http import reswap
 from django_htmx.http import retarget
-from django_htmx.http import reselect
 from django_htmx.http import trigger_client_event
 
 

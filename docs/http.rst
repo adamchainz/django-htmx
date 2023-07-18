@@ -190,7 +190,7 @@ Response modifying functions
           return render("widget-table-row.html", ...)
 
 .. autofunction:: reselect
-   
+
    Set the |HX-Reselect header|__ of ``response`` and return it.
    This header overrides the `select method <https://htmx.org/attributes/hx-select/>`__ that htmx will use.
 
