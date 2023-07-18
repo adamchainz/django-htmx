@@ -189,6 +189,32 @@ Response modifying functions
           # Render just inline table row on failure
           return render("widget-table-row.html", ...)
 
+.. autofunction:: reselect
+   
+   Set the |HX-Reselect header|__ of ``response`` and return it.
+   This header overrides the `select method <https://htmx.org/attributes/hx-select/>`__ that htmx will use.
+
+   .. |HX-Reselect header| replace:: ``HX-Reselect`` header
+   __ https://htmx.org/reference/#response_headers
+
+   For example:
+
+   .. code-block:: python
+
+    from django.views.decorators.http import require_POST
+    from django_htmx.http import reselect
+
+    @require_POST
+    def signup_form(request):
+        ...
+
+        if form.is_valid()
+            return render(request, "success.html", ...)
+
+        # Render only part of #form-errors
+        response = render("success.html", ...)
+        return reselect(response, "#form-errors")
+
 .. autofunction:: trigger_client_event
 
    Modify one of the |HX-Trigger headers|__ of ``response`` and return it.

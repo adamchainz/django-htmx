@@ -16,6 +16,7 @@ from django_htmx.http import HttpResponseStopPolling
 from django_htmx.http import push_url
 from django_htmx.http import reswap
 from django_htmx.http import retarget
+from django_htmx.http import reselect
 from django_htmx.http import trigger_client_event
 
 
@@ -123,6 +124,16 @@ class RetargetTests(SimpleTestCase):
 
         assert response2 is response
         assert response["HX-Retarget"] == "#heading"
+
+
+class ReselectTests(SimpleTestCase):
+    def test_success(self):
+        response = HttpResponse()
+
+        response2 = reselect(response, "#content")
+
+        assert response2 is response
+        assert response["HX-Reselect"] == "#content"
 
 
 class TriggerClientEventTests(SimpleTestCase):
