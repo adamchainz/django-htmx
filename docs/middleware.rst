@@ -59,7 +59,7 @@ Middleware
       The absolute-path form of ``current_url``, that is the URL without scheme or netloc, or ``None`` for non-htmx requests.
 
       This value will also be ``None`` if the scheme and netloc do not match the request.
-      The could happen if the request is cross-origin, or if Django is not configured correctly.
+      This could happen if the request is cross-origin, or if Django is not configured correctly.
 
       For example:
 
