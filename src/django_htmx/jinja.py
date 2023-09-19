@@ -9,7 +9,7 @@ def django_htmx_script() -> str:
     # Optimization: whilst the script has no behaviour outside of debug mode,
     # don't include it.
     if not settings.DEBUG:
-        return format_html("")
+        return ""
     return format_html(
         '<script src="{}" data-debug="{}" defer></script>',
         static("django-htmx.js"),
