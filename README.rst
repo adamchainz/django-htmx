@@ -25,8 +25,7 @@ Extensions for using Django with `htmx <https://htmx.org/>`__.
 
 ----
 
-**Want to work smarter and faster?**
-Check out my book `Boost Your Django DX <https://adamchainz.gumroad.com/l/byddx>`__ which covers many ways to improve your development experience.
+**Improve your Django and Git skills** with `my books <https://adamj.eu/books/>`__.
 
 ----
 
