@@ -1,5 +1,5 @@
-HTTP
-====
+HTTP tools
+==========
 
 .. currentmodule:: django_htmx.http
 
@@ -13,6 +13,15 @@ Response classes
 
    .. |HX-Redirect header| replace:: ``HX-Redirect`` header
    __ https://htmx.org/reference/#response_headers
+
+   :param redirect_to:
+      The path to redirect to, as per ``HttpResponseRedirect``.
+
+   :param args:
+      Other ``HTTPResponse`` parameters.
+
+   :param kwargs:
+      Other ``HTTPResponse`` parameters.
 
    For example:
 
@@ -55,12 +64,35 @@ Response classes
    .. |HX-Location header| replace:: ``HX-Location`` header
    __ https://htmx.org/headers/hx-location/
 
-   ``redirect_to`` should be the URL to redirect to, as per Django’s |HttpResponseRedirect|__.
+   :param redirect_to:
+      The path to redirect to, as per |HttpResponseRedirect|__.
 
-   .. |HttpResponseRedirect| replace:: ``HttpResponseRedirect``
-   __ https://docs.djangoproject.com/en/stable/ref/request-response/#django.http.HttpResponseRedirect
+      .. |HttpResponseRedirect| replace:: ``HttpResponseRedirect``
+      __ https://docs.djangoproject.com/en/stable/ref/request-response/#django.http.HttpResponseRedirect
 
-   ``source``, ``event``, ``target``, ``swap``, ``values``, and ``headers`` are all optional, with meaning as `documented by htmx <https://htmx.org/headers/hx-location/>`__.
+   :param source:
+      The source element of the request.
+
+   :param event:
+      The event that “triggered” the request.
+
+   :param target:
+      CSS selector to target.
+
+   :param swap:
+      How the response will be swapped into the target.
+
+   :param values:
+      values to submit with the request.
+
+   :param headers:
+      headers to submit with the request.
+
+   :param args:
+      Other ``HTTPResponse`` parameters.
+
+   :param kwargs:
+      Other ``HTTPResponse`` parameters.
 
    For example:
 
@@ -79,6 +111,12 @@ Response classes
 
    When using a `polling trigger <https://htmx.org/docs/#polling>`__, htmx will stop polling when it encounters a response with the special HTTP status code 286.
    ``HttpResponseStopPolling`` is a `custom response class <https://docs.djangoproject.com/en/stable/ref/request-response/#custom-response-classes>`__ with that status code.
+
+   :param args:
+      Other ``HTTPResponse`` parameters.
+
+   :param kwargs:
+      Other ``HTTPResponse`` parameters.
 
    For example:
 
@@ -122,7 +160,12 @@ Response modifying functions
    .. |HX-Push-Url header| replace:: ``HX-Push-Url`` header
    __ https://htmx.org/headers/hx-push-url/
 
-   ``url`` should be the (relative) URL to push, or ``False`` to prevent the location history from being updated.
+
+   :param response:
+      The response to modify and return.
+
+   :param url:
+      The (relative) URL to push, or ``False`` to prevent the location history from being updated.
 
    For example:
 
@@ -147,6 +190,12 @@ Response modifying functions
    .. |HX-Reswap header| replace:: ``HX-Reswap`` header
    __ https://htmx.org/reference/#response_headers
 
+   :param response:
+      The response to modify and return.
+
+   :param method:
+      The swap method.
+
    For example:
 
    .. code-block:: python
@@ -168,6 +217,12 @@ Response modifying functions
 
    .. |HX-Retarget header| replace:: ``HX-Retarget`` header
    __ https://htmx.org/reference/#response_headers
+
+   :param response:
+      The response to modify and return.
+
+   :param target:
+      CSS selector to target.
 
    For example:
 
@@ -194,29 +249,37 @@ Response modifying functions
    Modify one of the |HX-Trigger headers|__ of ``response`` and return it.
    These headers make htmx trigger client-side events.
 
+   Calling ``trigger_client_event`` multiple times for the same ``response`` and ``after`` will update the appropriate header, preserving existing event specifications.
+
    .. |HX-Trigger headers| replace:: ``HX-Trigger`` headers
    __ https://htmx.org/headers/hx-trigger/
 
-   ``name`` is the name of the event to trigger.
+   :param response:
+      The response to modify and return.
 
-   ``params`` specifies optional JSON-compatible parameters for the event.
+   :param name:
+      The name of the event to trigger.
 
-   ``after`` selects which of the ``HX-Trigger`` headers to modify:
+   :param params:
+      Optional JSON-compatible parameters for the event.
 
-   * ``"receive"``, the default, maps to ``HX-Trigger``
-   * ``"settle"`` maps to ``HX-Trigger-After-Settle``
-   * ``"swap"`` maps to ``HX-Trigger-After-Swap``
+   :param after:
+      Which ``HX-Trigger`` header to modify:
 
-   ``encoder`` specifies the |JSONEncoder|__ class used to generate the JSON.
-   Defaults to |DjangoJSONEncoder|__ for its extended data type support.
+      * ``"receive"``, the default, maps to ``HX-Trigger``
+      * ``"settle"`` maps to ``HX-Trigger-After-Settle``
+      * ``"swap"`` maps to ``HX-Trigger-After-Swap``
 
-   .. |JSONEncoder| replace:: ``JSONEncoder``
-   __ https://docs.python.org/3/library/json.html#json.JSONEncoder
+   :param encoder:
 
-   .. |DjangoJSONEncoder| replace:: ``DjangoJSONEncoder``
-   __ https://docs.djangoproject.com/en/stable/topics/serialization/#django.core.serializers.json.DjangoJSONEncoder
+      The |JSONEncoder|__ class used to generate the JSON.
+      Defaults to |DjangoJSONEncoder|__ for its extended data type support.
 
-   Calling ``trigger_client_event`` multiple times for the same ``response`` and ``after`` will update the appropriate header, preserving existing event specifications.
+      .. |JSONEncoder| replace:: ``JSONEncoder``
+      __ https://docs.python.org/3/library/json.html#json.JSONEncoder
+
+      .. |DjangoJSONEncoder| replace:: ``DjangoJSONEncoder``
+      __ https://docs.djangoproject.com/en/stable/topics/serialization/#django.core.serializers.json.DjangoJSONEncoder
 
    For example:
 
