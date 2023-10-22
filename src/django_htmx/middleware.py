@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import json
 from typing import Any
 from typing import Awaitable
@@ -9,6 +8,8 @@ from urllib.parse import unquote
 from urllib.parse import urlsplit
 from urllib.parse import urlunsplit
 
+from asgiref.sync import iscoroutinefunction
+from asgiref.sync import markcoroutinefunction
 from django.http import HttpRequest
 from django.http.response import HttpResponseBase
 from django.utils.functional import cached_property
@@ -26,29 +27,24 @@ class HtmxMiddleware:
         ),
     ) -> None:
         self.get_response = get_response
+        self.async_mode = iscoroutinefunction(self.get_response)
 
-        if asyncio.iscoroutinefunction(self.get_response):
+        if self.async_mode:
             # Mark the class as async-capable, but do the actual switch
             # inside __call__ to avoid swapping out dunder methods
-            self._is_coroutine = (
-                asyncio.coroutines._is_coroutine  # type: ignore [attr-defined]
-            )
-        else:
-            self._is_coroutine = None
+            markcoroutinefunction(self)
 
     def __call__(
         self, request: HttpRequest
     ) -> HttpResponseBase | Awaitable[HttpResponseBase]:
-        if self._is_coroutine:
+        if self.async_mode:
             return self.__acall__(request)
         request.htmx = HtmxDetails(request)  # type: ignore [attr-defined]
         return self.get_response(request)
 
     async def __acall__(self, request: HttpRequest) -> HttpResponseBase:
         request.htmx = HtmxDetails(request)  # type: ignore [attr-defined]
-        result = self.get_response(request)
-        assert not isinstance(result, HttpResponseBase)  # type narrow
-        return await result
+        return await self.get_response(request)  # type: ignore [no-any-return, misc]
 
 
 class HtmxDetails:
