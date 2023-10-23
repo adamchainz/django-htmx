@@ -18,9 +18,9 @@ Middleware
    .. automethod:: __bool__
 
       ``True`` if the request was made with htmx, otherwise ``False``.
-      This is based on the presence of the ``HX-Request`` header.
+      Detected by checking if the ``HX-Request`` header equals ``true``.
 
-      This allows you to switch behaviour for requests made with htmx like so:
+      This behaviour allows you to switch behaviour for requests made with htmx:
 
       .. code-block:: python
 
@@ -35,9 +35,9 @@ Middleware
       :type: bool
 
       ``True`` if the request came from an element with the ``hx-boost`` attribute.
-      Based on the ``HX-Boosted`` header.
+      Detected by checking if the ``HX-Boosted`` header equals ``true``.
 
-      You can use this attribute to change behaviour for boosted requests like so:
+      You can use this attribute to change behaviour for boosted requests:
 
       .. code-block:: python
 
@@ -82,8 +82,8 @@ Middleware
    .. attribute:: history_restore_request
       :type: bool
 
-      ``True`` if the request is for history restoration after a miss in the local
-      history cache. Based on the ``HX-History-Restore-Request`` header.
+      ``True`` if the request is for history restoration after a miss in the local history cache.
+      Detected by checking if the ``HX-History-Restore-Request`` header equals ``true``.
 
    .. attribute:: prompt
       :type: str | None
