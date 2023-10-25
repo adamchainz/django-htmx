@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import sys
+import tomllib
 from pathlib import Path
 
 # -- Path setup --------------------------------------------------------------
@@ -25,11 +26,10 @@ author = "Adam Johnson"
 
 
 def _get_version() -> str:
-    lines = (here / ".." / "setup.cfg").read_text().splitlines()
-    version_lines = [line.strip() for line in lines if line.startswith("version = ")]
-
-    assert len(version_lines) == 1
-    return version_lines[0].split(" = ")[1]
+    with (here / ".." / "pyproject.toml").open("rb") as fp:
+        data = tomllib.load(fp)
+    version: str = data["project"]["version"]
+    return version
 
 
 version = _get_version()
