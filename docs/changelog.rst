@@ -2,6 +2,10 @@
 Changelog
 =========
 
+* Fix ASGI compatibility on Python 3.12.
+
+  Thanks to Grigory Vydrin for the report in `Issue #381 <https://github.com/adamchainz/django-htmx/issues/381>`__.
+
 1.17.0 (2023-10-11)
 -------------------
 
