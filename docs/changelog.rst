@@ -2,6 +2,9 @@
 Changelog
 =========
 
+1.17.1 (2023-11-14)
+-------------------
+
 * Fix ASGI compatibility on Python 3.12.
 
   Thanks to Grigory Vydrin for the report in `Issue #381 <https://github.com/adamchainz/django-htmx/issues/381>`__.
