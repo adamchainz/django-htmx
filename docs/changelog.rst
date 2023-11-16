@@ -2,6 +2,8 @@
 Changelog
 =========
 
+* Fix asgiref dependency declaration.
+
 1.17.1 (2023-11-14)
 -------------------
 

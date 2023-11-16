@@ -10,7 +10,6 @@ version = "1.17.1"
 description = "Extensions for using Django with htmx."
 readme = {file = "README.rst", content-type = "text/x-rst"}
 keywords = [
-  "asgiref>=3.6",
   "Django",
 ]
 license = {text = "MIT"}
@@ -37,6 +36,7 @@ classifiers = [
   "Typing :: Typed",
 ]
 dependencies = [
+  "asgiref>=3.6",
   "Django>=3.2",
 ]
 [project.urls]
