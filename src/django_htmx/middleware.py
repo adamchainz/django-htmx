@@ -18,7 +18,7 @@ from django.utils.functional import cached_property
 class HtmxMiddleware:
     sync_capable = True
     async_capable = True
-    details_class = None
+    details_class = None  # type: ignore
 
     def __init__(
         self,
