@@ -18,7 +18,7 @@ from django.utils.functional import cached_property
 class HtmxMiddleware:
     sync_capable = True
     async_capable = True
-    details_class = None  # type: ignore
+    details_class = None
 
     def __init__(
         self,
@@ -41,11 +41,11 @@ class HtmxMiddleware:
     ) -> HttpResponseBase | Awaitable[HttpResponseBase]:
         if self.async_mode:
             return self.__acall__(request)
-        request.htmx = self.details_class(request)  # type: ignore [attr-defined]
+        request.htmx = self.details_class(request)  # type: ignore
         return self.get_response(request)
 
     async def __acall__(self, request: HttpRequest) -> HttpResponseBase:
-        request.htmx = self.details_class(request)  # type: ignore [attr-defined]
+        request.htmx = self.details_class(request)  # type: ignore
         return await self.get_response(request)  # type: ignore [no-any-return, misc]
 
 
