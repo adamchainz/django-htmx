@@ -8,9 +8,11 @@ from django.http import HttpResponse
 from django.http.response import HttpResponseBase
 from django.test import RequestFactory as BaseRequestFactory
 from django.test import SimpleTestCase
+from django.test.utils import override_settings
 
 from django_htmx.middleware import HtmxDetails
 from django_htmx.middleware import HtmxMiddleware
+from django_htmx.middleware import redirect_middleware
 
 
 class HtmxWSGIRequest(WSGIRequest):
@@ -179,3 +181,21 @@ class HtmxMiddlewareTests(SimpleTestCase):
 
         assert isinstance(response, HttpResponse)
         assert bool(request.htmx) is True
+
+
+class RedirectMiddlewareTests(SimpleTestCase):
+    def setUp(self):
+        self.factory = RequestFactory()
+        self.middleware = redirect_middleware(self.dummy_view)
+
+    def dummy_view(self, request):
+        return HttpResponse()
+
+    @override_settings(LOGIN_URL='/login/', LOGIN_REDIRECT_URL='/home/')
+    def test_redirect_middleware(self):
+        request = self.factory.get("/", HTTP_HX_REQUEST="true")
+        response = HttpResponse(status=302)
+        response["Location"] = settings.LOGIN_URL
+        response = self.middleware(request)
+        assert response.status_code == 204
+        assert response["HX-Redirect"] == f"{settings.LOGIN_URL}?next={settings.LOGIN_REDIRECT_URL}"
