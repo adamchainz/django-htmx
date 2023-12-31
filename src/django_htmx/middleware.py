@@ -7,12 +7,14 @@ from typing import Callable
 from urllib.parse import unquote
 from urllib.parse import urlsplit
 from urllib.parse import urlunsplit
+from urllib.parse import urlparse
 
 from asgiref.sync import iscoroutinefunction
 from asgiref.sync import markcoroutinefunction
 from django.http import HttpRequest
 from django.http.response import HttpResponseBase
 from django.utils.functional import cached_property
+from django.conf import settings
 
 
 class HtmxMiddleware:
@@ -112,10 +114,6 @@ class HtmxDetails:
             except json.JSONDecodeError:
                 value = None
         return value
-
-
-from urllib.parse import urlparse
-from django.conf import settings
 
 
 def redirect_middleware(get_response):
