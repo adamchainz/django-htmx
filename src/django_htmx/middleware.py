@@ -5,16 +5,16 @@ from typing import Any
 from typing import Awaitable
 from typing import Callable
 from urllib.parse import unquote
+from urllib.parse import urlparse
 from urllib.parse import urlsplit
 from urllib.parse import urlunsplit
-from urllib.parse import urlparse
 
 from asgiref.sync import iscoroutinefunction
 from asgiref.sync import markcoroutinefunction
+from django.conf import settings
 from django.http import HttpRequest
 from django.http.response import HttpResponseBase
 from django.utils.functional import cached_property
-from django.conf import settings
 
 
 class HtmxMiddleware:
