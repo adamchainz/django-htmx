@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 from typing import cast
 
+from django.conf import settings
 from django.core.handlers.wsgi import WSGIRequest
 from django.http import HttpResponse
 from django.http.response import HttpResponseBase
@@ -13,8 +14,6 @@ from django.test.utils import override_settings
 from django_htmx.middleware import HtmxDetails
 from django_htmx.middleware import HtmxMiddleware
 from django_htmx.middleware import redirect_middleware
-
-from django.conf import settings
 
 
 class HtmxWSGIRequest(WSGIRequest):
@@ -193,11 +192,14 @@ class RedirectMiddlewareTests(SimpleTestCase):
     def dummy_view(self, request):
         return HttpResponse()
 
-    @override_settings(LOGIN_URL='/login/', LOGIN_REDIRECT_URL='/home/')
+    @override_settings(LOGIN_URL="/login/", LOGIN_REDIRECT_URL="/home/")
     def test_redirect_middleware(self):
         request = self.factory.get("/", HTTP_HX_REQUEST="true")
         response = HttpResponse(status=302)
         response["Location"] = settings.LOGIN_URL
         response = self.middleware(request)
         assert response.status_code == 204
-        assert response["HX-Redirect"] == f"{settings.LOGIN_URL}?next={settings.LOGIN_REDIRECT_URL}"
+        assert (
+            response["HX-Redirect"]
+            == f"{settings.LOGIN_URL}?next={settings.LOGIN_REDIRECT_URL}"
+        )
