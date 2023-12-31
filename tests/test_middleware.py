@@ -195,6 +195,7 @@ class RedirectMiddlewareTests(SimpleTestCase):
     @override_settings(LOGIN_URL="/login/", LOGIN_REDIRECT_URL="/home/")
     def test_redirect_middleware(self):
         request = self.factory.get("/", HTTP_HX_REQUEST="true")
+        request["HX-Request"] = "true"
         response = HttpResponse(status=302)
         response["Location"] = settings.LOGIN_URL
         response = self.middleware(request)
