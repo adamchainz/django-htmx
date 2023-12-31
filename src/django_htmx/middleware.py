@@ -113,12 +113,14 @@ class HtmxDetails:
                 value = None
         return value
 
+
 from urllib.parse import urlparse
 from django.conf import settings
 
 
 def redirect_middleware(get_response):
     """Middleware to handle redirects for htmx requests for login required views"""
+
     def middleware(request):
         response = get_response(request)
         if request.headers.get("HX-Request") and response.status_code == 302:
