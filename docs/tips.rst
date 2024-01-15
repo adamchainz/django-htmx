@@ -104,3 +104,20 @@ Here, ``_base.html`` would be the main site base:
    </main>
 
 For an example of this in action, see the “Partial Rendering” page of the :doc:`example project <example_project>`.
+
+Type Hints
+----------
+
+For autocompletion with the `request.htmx` property and and to avoid type-checking errors, such as those identified by mypy, regarding a non-existent property, this package provides
+an `HttpRequest` subclass. This subclass adds the `htmx` property type hint to the request object. Here's how to use it:
+
+.. code-block:: python
+
+   from django_htmx.http import HttpRequest
+
+
+   def my_view(request: HtmxRequest) -> HttpResponse:
+       if request.htmx:
+           ...
+       else:
+           ...

@@ -3,15 +3,24 @@ from __future__ import annotations
 import json
 from typing import Any
 from typing import Literal
+from typing import TYPE_CHECKING
 from typing import TypeVar
 
 from django.core.serializers.json import DjangoJSONEncoder
+from django.http import HttpRequest as HttpRequestBase
 from django.http import HttpResponse
 from django.http.response import HttpResponseBase
 from django.http.response import HttpResponseRedirectBase
 
+if TYPE_CHECKING:
+    from .middleware import HtmxDetails
+
 
 HTMX_STOP_POLLING = 286
+
+
+class HttpRequest(HttpRequestBase):
+    htmx: HtmxDetails
 
 
 class HttpResponseStopPolling(HttpResponse):
