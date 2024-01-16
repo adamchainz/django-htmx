@@ -12,6 +12,7 @@ from django.views.decorators.http import require_http_methods
 from django.views.decorators.http import require_POST
 from faker import Faker
 
+from django_htmx.http import HttpResponseStopPolling, reswap
 from django_htmx.middleware import HtmxDetails
 from example.forms import OddNumberForm
 
@@ -74,6 +75,27 @@ def error_demo(request: HtmxHttpRequest) -> HttpResponse:
 def error_demo_trigger(request: HtmxHttpRequest) -> HttpResponse:
     1 / 0
     return render(request, "error-demo.html")  # unreachable
+
+
+# Polling Demo
+
+_countdown = None
+
+
+@require_GET
+def polling_demo(request: HtmxHttpRequest) -> HttpResponse:
+    global _countdown
+
+    if request.htmx:
+        try:
+            return HttpResponse(next(_countdown))
+        except StopIteration:
+            response = HttpResponseStopPolling()
+            reswap(response, "none")
+            return response
+
+    _countdown = iter(["Unos", "Dos", "Tres", "Catorce!"])
+    return render(request, "polling-demo.html")
 
 
 # Middleware tester
