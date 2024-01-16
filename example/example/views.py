@@ -12,7 +12,8 @@ from django.views.decorators.http import require_http_methods
 from django.views.decorators.http import require_POST
 from faker import Faker
 
-from django_htmx.http import HttpResponseStopPolling, reswap
+from django_htmx.http import HttpResponseStopPolling
+from django_htmx.http import reswap
 from django_htmx.middleware import HtmxDetails
 from example.forms import OddNumberForm
 
