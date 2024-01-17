@@ -136,17 +136,17 @@ This defines a partial named ``main`` that you can reference later. (The ``inlin
 
    @require_GET
    def partial_rendering(request: HttpRequest) -> HttpResponse:
-        template_name = "page.html"
-        if request.htmx:
-            template_name += "#main"
+       template_name = "page.html"
+       if request.htmx:
+           template_name += "#main"
 
-        return render(
-            request,
-            template_name,
-            {
-                # ...
-            },
-        )
+       return render(
+           request,
+           template_name,
+           {
+               # ...
+           },
+       )
 
 See the `django-template-partials`_ README for more details.
 
