@@ -140,13 +140,13 @@ This defines a partial named ``main`` that you can reference later. (The ``inlin
         if request.htmx:
             template_name += "#main"
 
-       return render(
-           request,
-           template_name,
-           {
-               # ...
-           },
-       )
+        return render(
+            request,
+            template_name,
+            {
+                # ...
+            },
+        )
 
 See the `django-template-partials`_ README for more details.
 
