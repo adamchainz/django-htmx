@@ -116,14 +116,14 @@ Once you've installed ``django-template-partials`` you can add the ``{% partiald
 
    {% extends _base.html %}
    {% block main %}
-      {% partialdef main inline %}      
-      
+      {% partialdef main inline %}
+
         CONTENT OF YOUR PAGE IS HERE
-      
+
       {% endpartialdef %}
    {% endblock main %}
 
-This defines a partial named ``main`` that you can reference later. (The ``inline`` parameter means the content of the partial is output as it's defined when rendering the whole template.)  
+This defines a partial named ``main`` that you can reference later. (The ``inline`` parameter means the content of the partial is output as it's defined when rendering the whole template.)
 
 ``django-template-partials`` is integrated with the Django template loader; in order to use just the partial you append the partial name to the template name, using the ``#`` anchor syntax familiar from HTML. Your view would look something like this:
 
@@ -137,9 +137,9 @@ This defines a partial named ``main`` that you can reference later. (The ``inlin
    @require_GET
    def partial_rendering(request: HttpRequest) -> HttpResponse:
         template_name = "page.html"
-        if request.htmx: 
+        if request.htmx:
             template_name += "#main"
-   
+
        return render(
            request,
            template_name,
@@ -148,6 +148,6 @@ This defines a partial named ``main`` that you can reference later. (The ``inlin
            },
        )
 
-See the `django-template-partials`_ README for more details. 
+See the `django-template-partials`_ README for more details.
 
 .. _django-template-partials: https://github.com/carltongibson/django-template-partials
