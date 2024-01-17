@@ -1,90 +1,95 @@
-{% extends base_template %}
+{% extends "_base.html" %}
+{% load partials %}
 
 {% block main %}
   <section>
     <p>
-      This example shows you how you can do partial rendering for htmx requests.
-      The view uses an alternative base template for requests made with htmx.
-      This base template only renders the <code>&lt;main&gt;</code> element, saving time and bandwidth.
+      This example shows you how you can do partial rendering for htmx requests using django-template-partials.
+      The view renders only the content of the table section partial for requests made with htmx, saving time and bandwidth.
       Paginate through the below list of randomly generated people to see this in action, and study the view and template.
     </p>
     <p><a href="https://django-htmx.readthedocs.io/en/latest/tips.html#partial-rendering">See more in the docs</a>.</p>
   </section>
 
-  <section>
-    <table>
-      <thead>
-        <tr>
-          <th>id</th>
-          <th>name</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for person in page.object_list %}
+  {% partialdef table-section inline %}
+  <article id="table">
+    <section>
+      <table>
+        <thead>
           <tr>
-            <td>{{ person.id }}</td>
-            <td>{{ person.name }}</td>
+            <th>id</th>
+            <th>name</th>
           </tr>
-        {% empty %}
-          <tr>
-            <td colspan="2">
-              No people on this page.
-            </td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </section>
+        </thead>
+        <tbody>
+          {% for person in page.object_list %}
+            <tr>
+              <td>{{ person.id }}</td>
+              <td>{{ person.name }}</td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="2">
+                No people on this page.
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
 
-  <section>
-    <!--
-      The htmx attributes set on the nav here are inherited by the child links.
-      hx-target tells where htmx to swap the fetched content in, and hx-swap
-      tells it how to swap it - by replacing the 'outerHTML' attribute of the
-      target, i.e. replacing the target's actual DOM node. hx-push-url tells
-      htmx to push the fetched URL into the browser history, so we can use
-      the backwards/forwards buttons to navigate these subpages.
-    -->
-    <nav hx-target="#main" hx-swap="outerHTML" hx-push-url="true">
-      <ul>
-        {% if page.number != 1 %}
+    <section>
+      <!--
+        The htmx attributes set on the nav here are inherited by the child links.
+        hx-target tells where htmx to swap the fetched content in, and hx-swap
+        tells it how to swap it - by replacing the 'outerHTML' attribute of the
+        target, i.e. replacing the target's actual DOM node. hx-push-url tells
+        htmx to push the fetched URL into the browser history, so we can use
+        the backwards/forwards buttons to navigate these subpages.
+      -->
+      <nav hx-target="#table" hx-swap="outerHTML" hx-push-url="true">
+        <ul>
+          {% if page.number != 1 %}
+            <li>
+              <!--
+                For each link we use hx-get to tell htmx to fetch that URL and
+                swap it in. We also repeat the URL in the href attribute so the
+                page works without JavaScript, and to ensure the link is
+                displayed as clickable.
+              -->
+              <a hx-get="?page=1" href="?page=1">
+                &laquo; First
+              </a>
+            </li>
+          {% endif %}
+          {% if page.has_previous %}
+            <li>
+              <a hx-get="?page={{ page.previous_page_number }}" href="?page={{ page.previous_page_number }}">
+                {{ page.previous_page_number }}
+              </a>
+            </li>
+          {% endif %}
           <li>
-            <!--
-              For each link we use hx-get to tell htmx to fetch that URL and
-              swap it in. We also repeat the URL in the href attribute so the
-              page works without JavaScript, and to ensure the link is
-              displayed as clickable.
-            -->
-            <a hx-get="?page=1" href="?page=1">
-              &laquo; First
-            </a>
+            {{ page.number }}
           </li>
-        {% endif %}
-        {% if page.has_previous %}
-          <li>
-            <a hx-get="?page={{ page.previous_page_number }}" href="?page={{ page.previous_page_number }}">
-              {{ page.previous_page_number }}
-            </a>
-          </li>
-        {% endif %}
-        <li>
-          {{ page.number }}
-        </li>
-        {% if page.has_next %}
-          <li>
-            <a hx-get="?page={{ page.next_page_number }}" href="?page={{ page.next_page_number }}">
-              {{ page.next_page_number }}
-            </a>
-          </li>
-        {% endif %}
-        {% if page.number != page.paginator.num_pages %}
-          <li>
-            <a hx-get="?page={{ page.paginator.num_pages }}" href="?page={{ page.paginator.num_pages }}">
-              &raquo; Last
-            </a>
-          </li>
-        {% endif %}
-      </ul>
-    </nav>
-  </section>
+          {% if page.has_next %}
+            <li>
+              <a hx-get="?page={{ page.next_page_number }}" href="?page={{ page.next_page_number }}">
+                {{ page.next_page_number }}
+              </a>
+            </li>
+          {% endif %}
+          {% if page.number != page.paginator.num_pages %}
+            <li>
+              <a hx-get="?page={{ page.paginator.num_pages }}" href="?page={{ page.paginator.num_pages }}">
+                &raquo; Last
+              </a>
+            </li>
+          {% endif %}
+        </ul>
+      </nav>
+    </section>
+  </article>
+  {% endpartialdef %}
+
 {% endblock main %}

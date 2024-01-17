@@ -17,6 +17,7 @@ INSTALLED_APPS = [
     "example",
     "django_htmx",
     "django.contrib.staticfiles",
+    "template_partials",
 ]
 
 MIDDLEWARE = [
