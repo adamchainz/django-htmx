@@ -1,5 +1,6 @@
 coverage[toml]
 django
+jinja2
 pytest
 pytest-django
 pytest-randomly
