@@ -30,25 +30,22 @@ Load and use the template tag in your base template, after your htmx ``<script>`
 Jinja Templates
 ^^^^^^^^^^^^^^^
 
-First, load the tag function into the globals of your `custom environment
-<https://docs.djangoproject.com/en/stable/topics/templates/#django.template.backends.jinja2.Jinja2>`__:
+In your jinja template configuration, add the ``django_htmx.jinja.DjangoHtmxExtension`` function to your extensions:
 
 .. code-block:: python
 
-    # myproject/jinja2.py
-    from jinja2 import Environment
-    from django_htmx.jinja import django_htmx_script
+    # settings.py
+    TEMPLATES = [
+        {
+            "BACKEND": "django.template.backends.jinja2.Jinja2",
+            "OPTIONS": {
+                "extensions": [
+                    "django_htmx.jinja.DjangoHtmxExtension",
+                ],
+            },
+        }
+    ]
 
-
-    def environment(**options):
-        env = Environment(**options)
-        env.globals.update(
-            {
-                # ...
-                "django_htmx_script": django_htmx_script,
-            }
-        )
-        return env
 
 Second, call the function in your base template, after your htmx ``<script>`` tag:
 

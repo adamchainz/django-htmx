@@ -3,6 +3,8 @@ from __future__ import annotations
 from django.conf import settings
 from django.templatetags.static import static
 from django.utils.html import format_html
+from jinja2.environment import Environment
+from jinja2.ext import Extension
 
 
 def django_htmx_script() -> str:
@@ -15,3 +17,9 @@ def django_htmx_script() -> str:
         static("django-htmx.js"),
         str(bool(settings.DEBUG)),
     )
+
+
+class DjangoHtmxExtension(Extension):
+    def __init__(self, environment: Environment) -> None:
+        super().__init__(environment)
+        environment.globals["django_htmx_script"] = django_htmx_script
