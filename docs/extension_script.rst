@@ -30,7 +30,7 @@ Load and use the template tag in your base template, after your htmx ``<script>`
 Jinja Templates
 ^^^^^^^^^^^^^^^
 
-In your jinja template configuration, add the ``django_htmx.jinja.DjangoHtmxExtension`` function to your extensions:
+In your jinja template configuration, add the ``django_htmx.jinja.DjangoHtmxExtension`` class to your extensions:
 
 .. code-block:: python
 
