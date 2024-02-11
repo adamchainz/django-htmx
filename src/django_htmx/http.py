@@ -10,7 +10,6 @@ from django.http import HttpResponse
 from django.http.response import HttpResponseBase
 from django.http.response import HttpResponseRedirectBase
 
-
 HTMX_STOP_POLLING = 286
 
 
