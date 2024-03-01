@@ -2,6 +2,9 @@
 Changelog
 =========
 
+1.17.3 (2024-03-01)
+-------------------
+
 * Change ``reswap()`` type hint for ``method`` to ``str``.
 
   Thanks to Dan Jacob for the report in `Issue #421 <https://github.com/adamchainz/django-htmx/issues/421>`__ and fix in `PR #422 <https://github.com/adamchainz/django-htmx/pull/422>`__.
