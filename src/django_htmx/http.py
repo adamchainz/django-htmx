@@ -93,19 +93,7 @@ def push_url(response: _HttpResponse, url: str | Literal[False]) -> _HttpRespons
     return response
 
 
-def reswap(
-    response: _HttpResponse,
-    method: Literal[
-        "innerHTML",
-        "outerHTML",
-        "beforebegin",
-        "afterbegin",
-        "beforeend",
-        "afterend",
-        "delete",
-        "none",
-    ],
-) -> _HttpResponse:
+def reswap(response: _HttpResponse, method: str) -> _HttpResponse:
     response["HX-Reswap"] = method
     return response
 
