@@ -1,12 +1,14 @@
-# -*- coding: utf-8 -*-
 """django-htmx related context processors.
 """
+
 from __future__ import annotations
-from django.http import HttpRequest
+
 from typing import Dict
 
+from django.http import HttpRequest
 
-def base_template(request: HttpRequest) -> Dict[str, str]:
+
+def base_template(request: HttpRequest) -> dict[str, str]:
     """Sets the base_template context variable.
 
     If the request is a htmx request, the `base_template` will be set to a partial template.
