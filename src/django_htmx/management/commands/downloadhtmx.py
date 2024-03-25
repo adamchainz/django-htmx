@@ -65,8 +65,9 @@ class Command(BaseCommand):
 
             with urlopen(url) as response:
                 if not actual_version:
-                    url1 = response.geturl()
-                    actual_version = urlparse(url1).path.split("/")[1].split("@")[-1]
+                    actual_version = (
+                        urlparse(response.geturl()).path.split("/")[1].split("@")[-1]
+                    )
 
                 with open(dest_dir / file, "wb") as fp:
                     fp.write(response.read())
