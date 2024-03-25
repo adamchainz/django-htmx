@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
+from typing import Any
 from urllib.parse import urlparse
 from urllib.parse import urlunparse
 from urllib.request import urlopen
