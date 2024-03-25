@@ -49,7 +49,7 @@ class Command(BaseCommand):
         if options["version"] is not None:
             package_spec += f"@{options['version']}"
 
-        actual_version = ""
+        actual_version = options["version"]
         for file in ["htmx.js", "ext/debug.js", "ext/event-header.js"]:
             self.stderr.write(self.style.HTTP_INFO(f"Downloading {file}"))
             url = urlunparse(
