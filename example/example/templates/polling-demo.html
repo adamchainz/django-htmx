@@ -1,0 +1,15 @@
+{% extends "_base.html" %}
+
+{% block main %}
+  <section>
+    <p>
+      This example shows how to use <a href="https://dev.htmx.org/attributes/hx-trigger/">the <code>hx-trigger</code> attribute</a> to poll a server for updates until it responds with <a href="https://dev.htmx.org/docs/#polling">HTTP 286</a>.
+    </p>
+  </section>
+  <section>
+    <blockquote hx-get="/polling-demo/" hx-trigger="every 1s" hx-target="find span">
+      "<span>...</span>"
+      <footer><i>- Bono, U2 - Vertigo, 2004</i></footer>
+    </blockquote>
+  </section>
+{% endblock %}
