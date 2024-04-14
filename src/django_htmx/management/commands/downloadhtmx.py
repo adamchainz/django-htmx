@@ -9,14 +9,12 @@ from urllib.parse import urlunparse
 from urllib.request import urlopen
 
 from django.conf import settings
-from django.core.checks import Tags
 from django.core.management.base import BaseCommand
 from django.core.management.base import CommandError
 
 
 class Command(BaseCommand):
     help = "Download the given htmx version and the extensions."
-    requires_system_checks = [Tags.staticfiles]
 
     def add_arguments(self, parser: ArgumentParser) -> None:
         parser.add_argument(
