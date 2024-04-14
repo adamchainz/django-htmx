@@ -14,15 +14,23 @@ from django.core.management.base import CommandError
 
 
 class Command(BaseCommand):
-    help = "Download the given htmx version and the extensions."
+    help = "Executes HTMX-related tasks"
 
     def add_arguments(self, parser: ArgumentParser) -> None:
-        parser.add_argument(
+        subcommands = parser.add_subparsers(
+            title="subcommands", dest="subcommand", required=True
+        )
+
+        download = subcommands.add_parser(
+            "download", help="download htmx (with extensions)"
+        )
+
+        download.add_argument(
             "version",
             nargs="?",
             help="version to download, e.g. '1.0.1. default: latest",
         )
-        parser.add_argument(
+        download.add_argument(
             "--dest",
             "-d",
             type=Path,
@@ -31,6 +39,12 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args: str, **options: Any) -> None:
+        subcommand = options.pop("subcommand", None)
+
+        if subcommand == "download":
+            return self._handle_download(*args, **options)
+
+    def _handle_download(self, *args: str, **options: Any) -> None:
         dest_dir = options["dest"]
         if dest_dir is None:
             if len(settings.STATICFILES_DIRS) == 0:
