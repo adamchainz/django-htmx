@@ -31,6 +31,13 @@ class Command(BaseCommand):
             help="version to download, e.g. '1.0.1. default: latest",
         )
         download.add_argument(
+            "--ext",
+            "-e",
+            action="append",
+            type=str,
+            help="additional extension to download. Can be specified multiple times",
+        )
+        download.add_argument(
             "--dest",
             "-d",
             type=Path,
@@ -59,7 +66,10 @@ class Command(BaseCommand):
             package_spec += f"@{options['version']}"
 
         actual_version = options["version"]
-        for file in ["htmx.js", "ext/debug.js", "ext/event-header.js"]:
+        files = ["htmx.js"]
+        if options["ext"] is not None:
+            files += [f"ext/{extension}" for extension in options["ext"]]
+        for file in files:
             self.stderr.write(self.style.HTTP_INFO(f"Downloading {file}"))
             url = urlunparse(
                 (
