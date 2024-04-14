@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import os
+from argparse import ArgumentParser
 from pathlib import Path
-from typing import TYPE_CHECKING
 from typing import Any
 from urllib.parse import urlparse
 from urllib.parse import urlunparse
@@ -12,9 +12,6 @@ from django.conf import settings
 from django.core.checks import Tags
 from django.core.management.base import BaseCommand
 from django.core.management.base import CommandError
-
-if TYPE_CHECKING:
-    from argparse import ArgumentParser
 
 
 class Command(BaseCommand):
