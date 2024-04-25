@@ -10,7 +10,6 @@ from django.http import HttpResponse
 from django.http.response import HttpResponseBase
 from django.http.response import HttpResponseRedirectBase
 
-
 HTMX_STOP_POLLING = 286
 
 
@@ -99,19 +98,7 @@ def replace_url(response: _HttpResponse, url: str | Literal[False]) -> _HttpResp
     return response
 
 
-def reswap(
-    response: _HttpResponse,
-    method: Literal[
-        "innerHTML",
-        "outerHTML",
-        "beforebegin",
-        "afterbegin",
-        "beforeend",
-        "afterend",
-        "delete",
-        "none",
-    ],
-) -> _HttpResponse:
+def reswap(response: _HttpResponse, method: str) -> _HttpResponse:
     response["HX-Reswap"] = method
     return response
 

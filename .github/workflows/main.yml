@@ -27,7 +27,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - uses: actions/setup-python@v4
+    - uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
         allow-prereleases: true
@@ -43,10 +43,10 @@ jobs:
       run: tox run -f py$(echo ${{ matrix.python-version }} | tr -d .)
 
     - name: Upload coverage data
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
-        name: coverage-data
-        path: '.coverage.*'
+        name: coverage-data-${{ matrix.python-version }}
+        path: '${{ github.workspace }}/.coverage.*'
 
   coverage:
     name: Coverage
@@ -55,27 +55,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
 
       - name: Install dependencies
         run: python -m pip install --upgrade coverage[toml]
 
       - name: Download data
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
-          name: coverage-data
+          path: ${{ github.workspace }}
+          pattern: coverage-data-*
+          merge-multiple: true
 
       - name: Combine coverage and fail if it's <100%
         run: |
           python -m coverage combine
           python -m coverage html --skip-covered --skip-empty
           python -m coverage report --fail-under=100
+          echo "## Coverage summary" >> $GITHUB_STEP_SUMMARY
+          python -m coverage report --format=markdown >> $GITHUB_STEP_SUMMARY
 
       - name: Upload HTML report
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: html-report
           path: htmlcov
