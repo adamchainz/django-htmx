@@ -12,6 +12,7 @@ from asgiref.sync import iscoroutinefunction
 from asgiref.sync import markcoroutinefunction
 from django.http import HttpRequest
 from django.http.response import HttpResponseBase
+from django.http.response import HttpResponseRedirect
 from django.utils.functional import cached_property
 
 
@@ -45,6 +46,49 @@ class HtmxMiddleware:
     async def __acall__(self, request: HttpRequest) -> HttpResponseBase:
         request.htmx = HtmxDetails(request)  # type: ignore [attr-defined]
         return await self.get_response(request)  # type: ignore [no-any-return, misc]
+
+
+class HtmxRedirectExternalMiddleware:
+    sync_capable = True
+    async_capable = True
+
+    def __init__(
+        self,
+        get_response: (
+            Callable[[HttpRequest], HttpResponseBase]
+            | Callable[[HttpRequest], Awaitable[HttpResponseBase]]
+        ),
+    ) -> None:
+        self.get_response = get_response
+        self.async_mode = iscoroutinefunction(self.get_response)
+
+        if self.async_mode:
+            markcoroutinefunction(self)
+
+    def __call__(
+        self, request: HttpRequest
+    ) -> HttpResponseBase | Awaitable[HttpResponseBase]:
+        if self.async_mode:
+            return self.__acall__(request)
+        response = self.get_response(request)
+        return self.aux(request, response)
+
+    async def __acall__(self, request: HttpRequest) -> HttpResponseBase:
+        response = await self.get_response(request)
+        return self.aux(request, response)
+
+    def aux(self, request: HttpRequest, response: HttpResponseBase) -> HttpResponseBase:
+        if not request.htmx or not isinstance(response, HttpResponseRedirect):
+            return response
+
+        url = response.url
+        if url.startswith(("https://", "http://", "//")) and not url.startswith(
+            request._current_scheme_host
+        ):
+            response["HX-Redirect"] = url
+            response.status_code = 204
+
+        return response
 
 
 class HtmxDetails:
