@@ -75,15 +75,15 @@ class HtmxRedirectExternalMiddleware:
 
     async def __acall__(self, request: HttpRequest) -> HttpResponseBase:
         response = await self.get_response(request)
-        return self.aux(request, response)
+        return self.aux(request, response)  # type: ignore [no-any-return, misc]
 
     def aux(self, request: HttpRequest, response: HttpResponseBase) -> HttpResponseBase:
-        if not request.htmx or not isinstance(response, HttpResponseRedirect):
+        if not request.htmx or not isinstance(response, HttpResponseRedirect):  # type: ignore [attr-defined]
             return response
 
         url = response.url
         if url.startswith(("https://", "http://", "//")) and not url.startswith(
-            request._current_scheme_host
+            request._current_scheme_host  # type: ignore [attr-defined]
         ):
             response["HX-Redirect"] = url
             response.status_code = 204
