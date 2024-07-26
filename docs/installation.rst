@@ -86,7 +86,7 @@ You can add htmx like so:
 
 .. note:: **Extensions**
 
-   You can adapt the above steps to set up `htmx’s extensions <https://htmx.org/extensions/#reference>`__ that you wish to use.
+   You can adapt the above steps to set up `htmx’s extensions <https://extensions.htmx.org/>`__ that you wish to use.
    Download them from htmx’s ``ext/`` folder into your project, and include their script tags after htmx, for example:
 
    .. code-block:: django
