@@ -14,6 +14,7 @@ from django_htmx.http import HttpResponseClientRefresh
 from django_htmx.http import HttpResponseLocation
 from django_htmx.http import HttpResponseStopPolling
 from django_htmx.http import push_url
+from django_htmx.http import replace_url
 from django_htmx.http import reswap
 from django_htmx.http import retarget
 from django_htmx.http import trigger_client_event
@@ -105,6 +106,24 @@ class PushUrlTests(SimpleTestCase):
 
         assert response2 is response
         assert response["HX-Push-Url"] == "false"
+
+
+class ReplaceUrlTests(SimpleTestCase):
+    def test_success(self):
+        response = HttpResponse()
+
+        response2 = replace_url(response, "/index.html")
+
+        assert response2 is response
+        assert response["HX-Replace-Url"] == "/index.html"
+
+    def test_success_false(self):
+        response = HttpResponse()
+
+        response2 = replace_url(response, False)
+
+        assert response2 is response
+        assert response["HX-Replace-Url"] == "false"
 
 
 class ReswapTests(SimpleTestCase):

@@ -186,6 +186,34 @@ Response modifying functions
               return push_url(response, f"/branch/{leaf.branch.id}")
           ...
 
+.. autofunction:: replace_url
+
+   Set the |HX-Replace-Url header|__ of ``response`` and return it.
+   This header causes htmx to replace the current URL in the browser location history.
+
+   .. |HX-Replace-Url header| replace:: ``HX-Replace-Url`` header
+   __ https://htmx.org/headers/hx-replace-url/
+
+   :param response:
+      The response to modify and return.
+
+   :param url:
+      The (relative) URL to replace, or ``False`` to prevent the location history from being updated.
+
+   For example:
+
+   .. code-block:: python
+
+      from django_htmx.http import replace_url
+
+
+      def dashboard(request):
+          ...
+          response = render(request, "dashboard.html", ...)
+          # Pretend the user was always on the dashboard, rather than wherever
+          # they were on before.
+          return replace_url(response, "/dashboard/")
+
 .. autofunction:: reswap
 
    Set the |HX-Reswap header|__ of ``response`` and return it.

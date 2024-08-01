@@ -96,6 +96,11 @@ def push_url(response: _HttpResponse, url: str | Literal[False]) -> _HttpRespons
     return response
 
 
+def replace_url(response: _HttpResponse, url: str | Literal[False]) -> _HttpResponse:
+    response["HX-Replace-Url"] = "false" if url is False else url
+    return response
+
+
 def reswap(response: _HttpResponse, method: str) -> _HttpResponse:
     response["HX-Reswap"] = method
     return response
