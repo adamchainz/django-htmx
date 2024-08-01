@@ -61,6 +61,7 @@ class HttpResponseLocation(HttpResponseRedirectBase):
             "none",
             None,
         ] = None,
+        select: str | None = None,
         values: dict[str, str] | None = None,
         headers: dict[str, str] | None = None,
         **kwargs: Any,
@@ -78,6 +79,8 @@ class HttpResponseLocation(HttpResponseRedirectBase):
             spec["target"] = target
         if swap is not None:
             spec["swap"] = swap
+        if select is not None:
+            spec["select"] = select
         if headers is not None:
             spec["headers"] = headers
         if values is not None:

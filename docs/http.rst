@@ -82,6 +82,9 @@ Response classes
    :param swap:
       How the response will be swapped into the target.
 
+   :param select:
+      Select the content that will be swapped from a response.
+
    :param values:
       values to submit with the request.
 

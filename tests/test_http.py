@@ -60,6 +60,7 @@ class HttpResponseLocationTests(SimpleTestCase):
             event="doubleclick",
             target="#main",
             swap="innerHTML",
+            select="#content",
             headers={"year": "2022"},
             values={"banner": "true"},
         )
@@ -73,6 +74,7 @@ class HttpResponseLocationTests(SimpleTestCase):
             "event": "doubleclick",
             "target": "#main",
             "swap": "innerHTML",
+            "select": "#content",
             "headers": {"year": "2022"},
             "values": {"banner": "true"},
         }
