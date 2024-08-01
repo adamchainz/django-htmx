@@ -20,16 +20,52 @@ Middleware
       ``True`` if the request was made with htmx, otherwise ``False``.
       Detected by checking if the ``HX-Request`` header equals ``true``.
 
-      This behaviour allows you to switch behaviour for requests made with htmx:
+      This method allows you to change content for requests made with htmx:
 
       .. code-block:: python
+
+          from django.shortcuts import render
+
 
           def my_view(request):
               if request.htmx:
                   template_name = "partial.html"
               else:
                   template_name = "complete.html"
-              return render(template_name, ...)
+              return render(request, template_name, ...)
+
+      .. admonition::
+
+         If you use HTTP caching, ensure any views that switch content with ``request.htmx`` add ``HX-Request`` to the |Vary header|__.
+         Django provides |the vary_on_headers() decorator|__ and |patch_vary_headers()|__ to do this.
+         For example:
+
+         .. |Vary header| replace:: ``Vary`` header
+         __ https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Vary
+
+         .. |the vary_on_headers() decorator| replace:: the ``vary_on_headers()`` decorator
+         __ https://docs.djangoproject.com/en/stable/topics/http/decorators/#django.views.decorators.vary.vary_on_headers
+
+         .. |patch_vary_headers()| replace:: ``patch_vary_headers()``
+         __ https://docs.djangoproject.com/en/stable/ref/utils/#django.utils.cache.patch_vary_headers
+
+         .. code-block:: python
+
+             from django.shortcuts import render
+             from django.views.decorators.cache import cache_control
+             from django.views.decorators.vary import vary_on_headers
+
+
+             @cache_control(max_age=300)
+             @vary_on_headers("HX-Request")
+             def my_view(request):
+                 if request.htmx:
+                     template_name = "partial.html"
+                 else:
+                     template_name = "complete.html"
+                 response = render(request, template_name, ...)
+                 patch_vary_headers(response, "HX-Request")
+                 return response
 
    .. attribute:: boosted
       :type: bool
