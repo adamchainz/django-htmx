@@ -2,6 +2,10 @@
 Changelog
 =========
 
+* Add ``select`` parameter to ``HttpResponseLocation``.
+
+  Thanks to Nikola Anović in `PR #462 <https://github.com/adamchainz/django-htmx/pull/462>`__.
+
 1.18.0 (2024-06-19)
 -------------------
 
