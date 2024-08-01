@@ -2,6 +2,10 @@
 Changelog
 =========
 
+* Add :func:`django_htmx.http.replace_url()` for setting the ``HX-Replace-URL`` header.
+
+  Thanks to Bogumil Schube in `PR #396 <https://github.com/adamchainz/django-htmx/pull/396>`__.
+
 * Add ``select`` parameter to ``HttpResponseLocation``.
 
   Thanks to Nikola Anović in `PR #462 <https://github.com/adamchainz/django-htmx/pull/462>`__.
