@@ -34,7 +34,7 @@ Middleware
                   template_name = "complete.html"
               return render(request, template_name, ...)
 
-      .. admonition::
+      .. admonition:: The ``Vary`` header
 
          If you use HTTP caching, ensure any views that switch content with ``request.htmx`` add ``HX-Request`` to the |Vary header|__.
          Django provides |the vary_on_headers() decorator|__ and |patch_vary_headers()|__ to do this.
