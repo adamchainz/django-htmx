@@ -6,7 +6,7 @@ Changelog
 
   Thanks to Bogumil Schube in `PR #396 <https://github.com/adamchainz/django-htmx/pull/396>`__.
 
-* Add ``select`` parameter to ``HttpResponseLocation``.
+* Add ``select`` parameter to :class:`.HttpResponseLocation`.
 
   Thanks to Nikola Anović in `PR #462 <https://github.com/adamchainz/django-htmx/pull/462>`__.
 
