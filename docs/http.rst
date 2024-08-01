@@ -144,12 +144,13 @@ Response classes
 
    .. code-block:: python
 
+       from django.shortcuts import render
        from django_htmx.http import HTMX_STOP_POLLING
 
 
        def my_pollable_view(request):
            if event_finished():
-               return render("event-finished.html", status=HTMX_STOP_POLLING)
+               return render(request, "event-finished.html", status=HTMX_STOP_POLLING)
            ...
 
 Response modifying functions
@@ -203,6 +204,7 @@ Response modifying functions
 
    .. code-block:: python
 
+      from django.shortcuts import render
       from django_htmx.http import reswap
 
 
@@ -231,6 +233,7 @@ Response modifying functions
 
    .. code-block:: python
 
+      from django.shortcuts import render
       from django.views.decorators.http import require_POST
       from django_htmx.http import retarget
 
@@ -241,11 +244,11 @@ Response modifying functions
 
           if form.is_valid():
               # Rerender the whole table on success
-              response = render("widget-table.html", ...)
+              response = render(request, "widget-table.html", ...)
               return retarget(response, "#widgets")
 
           # Render just inline table row on failure
-          return render("widget-table-row.html", ...)
+          return render(request, "widget-table-row.html", ...)
 
 .. autofunction:: trigger_client_event
 
@@ -288,11 +291,12 @@ Response modifying functions
 
    .. code-block:: python
 
+       from django.shortcuts import render
        from django_htmx.http import trigger_client_event
 
 
        def end_of_long_process(request):
-           response = render("end-of-long-process.html")
+           response = render(request, "end-of-long-process.html")
            return trigger_client_event(
                response,
                "showConfetti",
