@@ -11,6 +11,30 @@ Middleware
 
    See it action in the “Middleware Tester” section of the :doc:`example project <example_project>`.
 
+   .. admonition:: Update the ``Vary`` header
+
+      If you use HTTP caching, ensure any views that switch content with ``request.htmx`` attributes add the appropriate headers to the ``Vary`` header, per Django’s documentation section |Using Vary headers|__.
+      For example:
+
+      .. |Using Vary headers| replace:: Using ``Vary`` headers
+      __ https://docs.djangoproject.com/en/stable/topics/cache/#using-vary-headers
+
+      .. code-block:: python
+
+          from django.shortcuts import render
+          from django.views.decorators.cache import cache_control
+          from django.views.decorators.vary import vary_on_headers
+
+
+          @cache_control(max_age=300)
+          @vary_on_headers("HX-Request")
+          def my_view(request):
+              if request.htmx:
+                  template_name = "partial.html"
+              else:
+                  template_name = "complete.html"
+              return render(request, template_name, ...)
+
    .. hint::
 
        If you are type-checking your Django project, declare ``request.htmx`` as below in any custom ``HttpRequest`` classes, per `the pattern in django-stubs <https://github.com/typeddjango/django-stubs?tab=readme-ov-file#how-can-i-create-a-httprequest-thats-guaranteed-to-have-an-authenticated-user>`__.
@@ -46,39 +70,6 @@ Middleware
               else:
                   template_name = "complete.html"
               return render(request, template_name, ...)
-
-      .. admonition:: The ``Vary`` header
-
-         If you use HTTP caching, ensure any views that switch content with ``request.htmx`` add ``HX-Request`` to the |Vary header|__.
-         Django provides |the vary_on_headers() decorator|__ and |patch_vary_headers()|__ to do this.
-         For example:
-
-         .. |Vary header| replace:: ``Vary`` header
-         __ https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Vary
-
-         .. |the vary_on_headers() decorator| replace:: the ``vary_on_headers()`` decorator
-         __ https://docs.djangoproject.com/en/stable/topics/http/decorators/#django.views.decorators.vary.vary_on_headers
-
-         .. |patch_vary_headers()| replace:: ``patch_vary_headers()``
-         __ https://docs.djangoproject.com/en/stable/ref/utils/#django.utils.cache.patch_vary_headers
-
-         .. code-block:: python
-
-             from django.shortcuts import render
-             from django.views.decorators.cache import cache_control
-             from django.views.decorators.vary import vary_on_headers
-
-
-             @cache_control(max_age=300)
-             @vary_on_headers("HX-Request")
-             def my_view(request):
-                 if request.htmx:
-                     template_name = "partial.html"
-                 else:
-                     template_name = "complete.html"
-                 response = render(request, template_name, ...)
-                 patch_vary_headers(response, "HX-Request")
-                 return response
 
    .. attribute:: boosted
       :type: bool
