@@ -11,6 +11,19 @@ Middleware
 
    See it action in the “Middleware Tester” section of the :doc:`example project <example_project>`.
 
+   .. hint::
+
+       If you are type-checking your Django project, declare ``request.htmx`` as below in any custom ``HttpRequest`` classes, per `the pattern in django-stubs <https://github.com/typeddjango/django-stubs?tab=readme-ov-file#how-can-i-create-a-httprequest-thats-guaranteed-to-have-an-authenticated-user>`__.
+
+       .. code-block:: python
+
+          from django.http import HttpRequest as HttpRequestBase
+          from django_htmx.middleware import HtmxDetails
+
+
+          class HttpRequest(HttpRequestBase):
+              htmx: HtmxDetails
+
 .. class:: HtmxDetails
 
    This class provides shortcuts for reading the htmx-specific `request headers <https://htmx.org/reference/#request_headers>`__.
