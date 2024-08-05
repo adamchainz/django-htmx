@@ -6,6 +6,8 @@ django-htmx documentation
 .. |htmx| replace:: *htmx*
 __ https://htmx.org/
 
+This package provides some tools to make it easier to use htmx in your Django projects.
+
 .. toctree::
    :maxdepth: 1
    :caption: Contents:
