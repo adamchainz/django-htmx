@@ -10,6 +10,8 @@ Changelog
 
   Thanks to Nikola Anović in `PR #462 <https://github.com/adamchainz/django-htmx/pull/462>`__.
 
+* Add documentation notes under :class:`.HtmxMiddleware`, covering setting the ``Vary`` header for caching and type hinting ``request.htmx``.
+
 1.18.0 (2024-06-19)
 -------------------
 
