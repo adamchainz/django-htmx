@@ -11,9 +11,9 @@ Middleware
 
    See it action in the “Middleware Tester” section of the :doc:`example project <example_project>`.
 
-   .. admonition:: Update the ``Vary`` header
+   .. admonition:: Set the ``Vary`` header for cacheable responses
 
-      If you use HTTP caching, ensure any views that switch content with ``request.htmx`` attributes add the appropriate headers to the ``Vary`` header, per Django’s documentation section |Using Vary headers|__.
+      If you set HTTP caching headers, ensure any views that switch content with ``request.htmx`` attributes add the appropriate htmx headers to the ``Vary`` header, per Django’s documentation section |Using Vary headers|__.
       For example:
 
       .. |Using Vary headers| replace:: Using ``Vary`` headers
