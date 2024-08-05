@@ -2,6 +2,9 @@
 Changelog
 =========
 
+1.19.0 (2024-08-05)
+-------------------
+
 * Add :func:`django_htmx.http.replace_url()` for setting the ``HX-Replace-URL`` header.
 
   Thanks to Bogumil Schube in `PR #396 <https://github.com/adamchainz/django-htmx/pull/396>`__.
