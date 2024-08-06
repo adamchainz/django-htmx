@@ -104,3 +104,51 @@ Here, ``_base.html`` would be the main site base:
    </main>
 
 For an example of this in action, see the “Partial Rendering” page of the :doc:`example project <example_project>`.
+
+Using ``django-template-partials``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+There's a third-party package called `django-template-partials`_ that allows defining reusable named inline partials for the Django Template Language.
+
+Once you've installed ``django-template-partials`` you can add the ``{% partialdef %}`` tag to your template to mark the reusable section:
+
+.. code-block:: django
+
+   {% extends _base.html %}
+   {% load partials %}
+   {% block main %}
+      {% partialdef main inline %}
+
+        CONTENT OF YOUR PAGE IS HERE
+
+      {% endpartialdef %}
+   {% endblock main %}
+
+This defines a partial named ``main`` that you can reference later. (The ``inline`` parameter means the content of the partial is output as it's defined when rendering the whole template.)
+
+``django-template-partials`` is integrated with the Django template loader; in order to use just the partial you append the partial name to the template name, using the ``#`` anchor syntax familiar from HTML. Your view would look something like this:
+
+.. code-block:: python
+
+   from django.http import HttpRequest, HttpResponse
+   from django.shortcuts import render
+   from django.views.decorators.http import require_GET
+
+
+   @require_GET
+   def partial_rendering(request: HttpRequest) -> HttpResponse:
+       template_name = "page.html"
+       if request.htmx:
+           template_name += "#main"
+
+       return render(
+           request,
+           template_name,
+           {
+               # ...
+           },
+       )
+
+See the `django-template-partials`_ README for more details.
+
+.. _django-template-partials: https://github.com/carltongibson/django-template-partials
