@@ -115,6 +115,7 @@ Once you've installed ``django-template-partials`` you can add the ``{% partiald
 .. code-block:: django
 
    {% extends _base.html %}
+   {% load partials %}
    {% block main %}
       {% partialdef main inline %}
 
