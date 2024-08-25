@@ -130,7 +130,6 @@ def partial_rendering(request: HtmxHttpRequest) -> HttpResponse:
         request,
         template_name,
         {
-            "base_template": "_base.html",
             "page": page,
         },
     )

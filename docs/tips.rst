@@ -37,9 +37,50 @@ Partial Rendering
 For requests made with htmx, you may want to reduce the page content you render, since only part of the page gets updated.
 This is a small optimization compared to correctly setting up compression, caching, etc.
 
+Using template partials
+~~~~~~~~~~~~~~~~~~~~~~~
 
-TODO: Move the template-partials version here.
+There's a third-party package called `django-template-partials`_ that allows
+defining reusable named inline partials for the Django Template Language.
 
+Once you've installed ``django-template-partials`` you can add the ``{%
+partialdef %}`` tag to your template to mark the reusable section:
+
+
+TODO: Add template code here.
+
+
+
+Then in your view you can append the partial name to your template name in
+order to load only that fragment:
+
+.. code-block:: python
+
+    from django.http import HttpRequest, HttpResponse
+    from django.shortcuts import render
+    from django.views.decorators.http import require_GET
+
+
+    @require_GET
+    def partial_rendering(request: HtmxHttpRequest) -> HttpResponse:
+        # Standard Django pagination
+        page_num = request.GET.get("page", "1")
+        page = Paginator(object_list=people, per_page=10).get_page(page_num)
+
+        # The htmx magic - render just the `#table-section` partial for htmx
+        # requests, allowing us to skip rendering the unchanging parts of the
+        # template.
+        template_name = "partial-rendering.html"
+        if request.htmx:
+            template_name += "#table-section"
+
+        return render(
+            request,
+            template_name,
+            {
+                "page": page,
+            },
+        )
 
 Swapping the base template
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
