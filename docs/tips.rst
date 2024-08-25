@@ -64,10 +64,10 @@ partialdef %}`` tag to your template to mark the reusable section:
 {% endblock %}
 
 Here the core content for your table is contained by the ``table-section``
-partial. When the full page is rendered, the ``inline`` partial argument means
-that the table will be output as normal.
+partial. Due to the ``inline`` argument, when the full page is rendered the
+table will be output as normal.
 
-Then in your view, when you're making an HTMX request you can append the
+In your view, then, when you're making an HTMX request, you can append the
 partial name to your template name in order to render only that fragment:
 
 .. code-block:: python
