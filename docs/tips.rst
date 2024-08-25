@@ -37,6 +37,16 @@ Partial Rendering
 For requests made with htmx, you may want to reduce the page content you render, since only part of the page gets updated.
 This is a small optimization compared to correctly setting up compression, caching, etc.
 
+
+TODO: Move the template-partials version here.
+
+
+Swapping the base template
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Another technique, that's a little more manual, but good to have on-hand in
+case you need it, is to swap the base template in your view.
+
 You can use Django’s template inheritance to limit rendered content to only the affected section.
 In your view, set up a context variable for your base template like so:
 
