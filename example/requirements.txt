@@ -4,6 +4,8 @@ asgiref==3.8.1
     # via django
 django==5.0.7
     # via -r requirements.in
+django-template-partials==24.2
+    # via -r requirements.in
 faker==26.1.0
     # via -r requirements.in
 python-dateutil==2.9.0.post0
