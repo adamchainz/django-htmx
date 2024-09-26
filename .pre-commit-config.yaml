@@ -76,3 +76,7 @@ repos:
     additional_dependencies:
     - django-stubs==5.0.4
     - types-python-dateutil
+- repo: https://github.com/adamchainz/djade-pre-commit
+  rev: 1.0.0
+  hooks:
+  - id: djade
