@@ -7,7 +7,7 @@ Changelog
 1.19.0 (2024-08-05)
 -------------------
 
-* Add :func:`django_htmx.http.replace_url()` for setting the ``HX-Replace-URL`` header.
+* Add :func:`django_htmx.http.replace_url` for setting the ``HX-Replace-URL`` header.
 
   Thanks to Bogumil Schube in `PR #396 <https://github.com/adamchainz/django-htmx/pull/396>`__.
 
@@ -70,17 +70,17 @@ Changelog
 1.13.0 (2022-11-10)
 -------------------
 
-* Make the ``params`` argument of :func:`.trigger_client_event()` optional.
+* Make the ``params`` argument of :func:`.trigger_client_event` optional.
 
   Thanks to Chris Tapper in `PR #263 <https://github.com/adamchainz/django-htmx/pull/263>`__.
 
-* Add :func:`django_htmx.http.push_url()` for setting the ``HX-Push-URL`` header.
+* Add :func:`django_htmx.http.push_url` for setting the ``HX-Push-URL`` header.
 
   Thanks to Chris Tapper in `PR #264 <https://github.com/adamchainz/django-htmx/pull/264>`__.
 
-* Add :func:`django_htmx.http.reswap()` for setting the ``HX-Reswap`` header added in `htmx 1.8.0 <https://htmx.org/posts/2022-07-12-htmx-1.8.0-is-released/>`__.
+* Add :func:`django_htmx.http.reswap` for setting the ``HX-Reswap`` header added in `htmx 1.8.0 <https://htmx.org/posts/2022-07-12-htmx-1.8.0-is-released/>`__.
 
-* Add :func:`django_htmx.http.retarget()` for setting the ``HX-Retarget`` header added in `htmx 1.6.1 <https://htmx.org/posts/2021-11-22-htmx-1.6.1-is-released/>`__.
+* Add :func:`django_htmx.http.retarget` for setting the ``HX-Retarget`` header added in `htmx 1.6.1 <https://htmx.org/posts/2021-11-22-htmx-1.6.1-is-released/>`__.
 
 * Add :class:`.HttpResponseLocation` for sending a response with the ``HX-Location`` header.
 
