@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Awaitable
 from typing import Any
-from typing import Awaitable
 from typing import Callable
 from urllib.parse import unquote
 from urllib.parse import urlsplit
