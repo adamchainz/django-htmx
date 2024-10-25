@@ -119,19 +119,17 @@ def partial_rendering(request: HtmxHttpRequest) -> HttpResponse:
     page_num = request.GET.get("page", "1")
     page = Paginator(object_list=people, per_page=10).get_page(page_num)
 
-    # The htmx magic - use a different, minimal base template for htmx
+    # The htmx magic - render just the `#table-section` partial for htmx
     # requests, allowing us to skip rendering the unchanging parts of the
     # template.
+    template_name = "partial-rendering.html"
     if request.htmx:
-        base_template = "_partial.html"
-    else:
-        base_template = "_base.html"
+        template_name += "#table-section"
 
     return render(
         request,
-        "partial-rendering.html",
+        template_name,
         {
-            "base_template": base_template,
             "page": page,
         },
     )

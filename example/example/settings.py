@@ -16,6 +16,7 @@ ALLOWED_HOSTS = ["*"]
 INSTALLED_APPS = [
     "example",
     "django_htmx",
+    "template_partials",
     "django.contrib.staticfiles",
 ]
 
