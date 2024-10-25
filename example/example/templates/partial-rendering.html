@@ -4,7 +4,7 @@
 {% block main %}
   <section>
     <p>
-      This example shows you how you can do partial rendering for htmx requests using django-template-partials.
+      This example shows you how you can do partial rendering for htmx requests using <a href="https://github.com/carltongibson/django-template-partials">django-template-partials</a>.
       The view renders only the content of the table section partial for requests made with htmx, saving time and bandwidth.
       Paginate through the below list of randomly generated people to see this in action, and study the view and template.
     </p>
@@ -12,7 +12,7 @@
   </section>
 
   {% partialdef table-section inline %}
-  <article id="table">
+  <article id=table>
     <section>
       <table>
         <thead>
@@ -29,7 +29,7 @@
             </tr>
           {% empty %}
             <tr>
-              <td colspan="2">
+              <td colspan=2>
                 No people on this page.
               </td>
             </tr>
@@ -47,7 +47,7 @@
         htmx to push the fetched URL into the browser history, so we can use
         the backwards/forwards buttons to navigate these subpages.
       -->
-      <nav hx-target="#table" hx-swap="outerHTML" hx-push-url="true">
+      <nav hx-target=#table hx-swap=outerHTML hx-push-url=true>
         <ul>
           {% if page.number != 1 %}
             <li>

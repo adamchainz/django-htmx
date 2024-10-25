@@ -37,79 +37,81 @@ Partial Rendering
 For requests made with htmx, you may want to reduce the page content you render, since only part of the page gets updated.
 This is a small optimization compared to correctly setting up compression, caching, etc.
 
-Using template partials
-~~~~~~~~~~~~~~~~~~~~~~~
+Using django-template-partials
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-There's a third-party package called `django-template-partials`_ that allows
-defining reusable named inline partials for the Django Template Language.
+The `django-template-partials package <https://github.com/carltongibson/django-template-partials>`__ extends the Django Template Language with reusable sections called “partials”.
+It then allows you to render just one partial from a template.
 
-Once you've installed ``django-template-partials`` you can add the ``{%
-partialdef %}`` tag to your template to mark the reusable section:
+Install ``django-template-partials`` and add its ``{% partialdef %}`` tag around a template section:
 
-{% extends "_base.html" %}
-{% load partials %}
+.. code-block:: django
 
-{% block main %}
+    {% extends "_base.html" %}
 
-  ...
+    {% load partials %}
 
-  {% partialdef table-section inline %}
+    {% block main %}
 
-    Reusable table content here
+      <h1>Countries</h1>
 
-  {% endpartialdef %}
+      ...
 
-  ...
+      {% partialdef country-table inline %}
+        <table id=country-data>
+          <thead>...</thead>
+          <tbody>
+            {% for country in countries %}
+              ...
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endpartialdef %}
 
-{% endblock %}
+      ...
 
-Here the core content for your table is contained by the ``table-section``
-partial. Due to the ``inline`` argument, when the full page is rendered the
-table will be output as normal.
+    {% endblock main %}
 
-In your view, then, when you're making an HTMX request, you can append the
-partial name to your template name in order to render only that fragment:
+The above template defines a partial named ``country-table``, which renders some table of country data.
+The ``inline`` argument makes the partial render when the full page renders.
+
+In the view, you can select to render the partial for htmx requests.
+This is done by adding ``#`` and the partial name to the template name:
 
 .. code-block:: python
 
-    from django.http import HttpRequest, HttpResponse
     from django.shortcuts import render
-    from django.views.decorators.http import require_GET
+
+    from example.models import Country
 
 
-    @require_GET
-    def partial_rendering(request: HtmxHttpRequest) -> HttpResponse:
-        # Standard Django pagination
-        page_num = request.GET.get("page", "1")
-        page = Paginator(object_list=people, per_page=10).get_page(page_num)
-
-        # The htmx magic - render just the `#table-section` partial for htmx
-        # requests, allowing us to skip rendering the unchanging parts of the
-        # template.
-        template_name = "partial-rendering.html"
+    def country_listing(request):
+        template_name = "countries.html"
         if request.htmx:
-            template_name += "#table-section"
+            template_name += "#country-table"
+
+        countries = Country.objects.all()
 
         return render(
             request,
             template_name,
             {
-                "page": page,
+                "countries": countries,
             },
         )
 
-For an example of this in action, see the “Partial Rendering” page of the
-:doc:`example project <example_project>`.
+htmx requests will render only the partial, whilst full page requests will render the full page.
+This allows refreshing of the table without an extra view or separating the template contents from its context.
 
-See the `django-template-partials`_ README for more details.
+For an example of this in action, see the “Partial Rendering” page of the :doc:`example project <example_project>`.
 
-.. _django-template-partials: https://github.com/carltongibson/django-template-partials
+For more information, see `the django-template-partials documentation <https://github.com/carltongibson/django-template-partials>`__.
 
 Swapping the base template
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Another technique, that's a little more manual, but good to have on-hand in
-case you need it, is to swap the base template in your view.
+Another technique is to swap the base template in your view.
+This is a little more manual but good to have on-hand in case you need it,
 
 You can use Django’s template inheritance to limit rendered content to only the affected section.
 In your view, set up a context variable for your base template like so:
