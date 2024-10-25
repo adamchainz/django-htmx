@@ -6,6 +6,10 @@ Changelog
 
 * Support Python 3.13.
 
+* Updated :ref:`the partial rendering tip <partial-rendering>` to cover using django-template-partials.
+
+  Thanks to Carlton Gibson in `PR #413 <https://github.com/adamchainz/django-htmx/pull/413>`__.
+
 1.19.0 (2024-08-05)
 -------------------
 

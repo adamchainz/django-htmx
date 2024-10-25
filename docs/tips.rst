@@ -31,6 +31,8 @@ This snippet should work with both Django templates and Jinja.
 
 For an example of this in action, see the “CSRF Demo” page of the :doc:`example project <example_project>`.
 
+.. _partial-rendering:
+
 Partial Rendering
 -----------------
 
@@ -102,10 +104,12 @@ This is done by adding ``#`` and the partial name to the template name:
 
 htmx requests will render only the partial, whilst full page requests will render the full page.
 This allows refreshing of the table without an extra view or separating the template contents from its context.
+For a working example, see the “Partial Rendering” page of the :doc:`example project <example_project>`.
 
-For an example of this in action, see the “Partial Rendering” page of the :doc:`example project <example_project>`.
+It’s also possible to use a partial from within a separate view.
+This may be preferable if other customizations are required for htmx requests.
 
-For more information, see `the django-template-partials documentation <https://github.com/carltongibson/django-template-partials>`__.
+For more information on django-template-partials, see `its documentation <https://github.com/carltongibson/django-template-partials>`__.
 
 Swapping the base template
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
