@@ -18,9 +18,6 @@ authors = [
 requires-python = ">=3.9"
 classifiers = [
   "Development Status :: 5 - Production/Stable",
-  "Framework :: Django :: 3.2",
-  "Framework :: Django :: 4.0",
-  "Framework :: Django :: 4.1",
   "Framework :: Django :: 4.2",
   "Framework :: Django :: 5.0",
   "Framework :: Django :: 5.1",
@@ -39,7 +36,7 @@ classifiers = [
 ]
 dependencies = [
   "asgiref>=3.6",
-  "django>=3.2",
+  "django>=4.2",
 ]
 urls.Changelog = "https://django-htmx.readthedocs.io/en/latest/changelog.html"
 urls.Documentation = "https://django-htmx.readthedocs.io/"
