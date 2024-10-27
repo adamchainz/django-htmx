@@ -2,8 +2,8 @@
 Changelog
 =========
 
-Unreleased
-----------
+1.21.0 (2024-10-27)
+-------------------
 
 * Drop Django 3.2 to 4.1 support.
 
