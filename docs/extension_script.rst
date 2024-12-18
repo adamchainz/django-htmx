@@ -70,4 +70,4 @@ See this in action in the “Error Demo” section of the :doc:`example project 
 
 .. hint::
 
-   This extension script should not be confused with htmx’s `debug extension <https://htmx.org/extensions/debug/>`__, which logs DOM events in the browser console.
+   This extension script should not be confused with htmx’s `debug extension <https://github.com/bigskysoftware/htmx-extensions/blob/main/src/debug/README.md>`__, which logs DOM events in the browser console.

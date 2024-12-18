@@ -210,7 +210,7 @@ Changelog
 * Support the ``HX-History-Restore-Request`` header, which was added in htmx 1.2.0.
   This is parsed into the ``request.htmx.history_restore_request`` attribute.
 
-* Support the ``Triggering-Event`` header, which is sent by the `event-header extension <https://htmx.org/extensions/event-header/>`__.
+* Support the ``Triggering-Event`` header, which is sent by the `event-header extension <https://github.com/bigskysoftware/htmx-extensions/blob/main/src/event-header/README.md>`__.
   This is parsed into the ``request.htmx.triggering_event`` attribute.
 
 * Stop distributing tests to reduce package size.
