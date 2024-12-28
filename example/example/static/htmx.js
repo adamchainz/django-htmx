@@ -5122,8 +5122,7 @@ var htmx = (function() {
 
 /**
  * @typedef {Object} HtmxExtension
- * For version 1 HTMX: @see https://v1.htmx.org/extensions/#defining
- * For version 2 HTMX: @see https://htmx.org/extensions/building/
+ * @see https://htmx.org/extensions/#defining
  * @property {(api: any) => void} init
  * @property {(name: string, event: Event|CustomEvent) => boolean} onEvent
  * @property {(text: string, xhr: XMLHttpRequest, elt: Element) => string} transformResponse
