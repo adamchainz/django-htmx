@@ -47,9 +47,9 @@ Install htmx
 django-htmx does not include htmx itself, since it can work with many different versions.
 It’s up to you to add htmx (and any extensions) to your project.
 
-.. warning:: **JavaScript CDN’s**
+.. warning:: **JavaScript CDNs**
 
-   Avoid using JavaScript CDN’s like unpkg.com to include htmx (or any resources).
+   Avoid using JavaScript CDNs like unpkg.com to include htmx (or any resources).
    They reduce privacy, performance, and security - see `this post <https://blog.wesleyac.com/posts/why-not-javascript-cdn>`__.
 
 You can add htmx like so:

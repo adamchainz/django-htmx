@@ -141,7 +141,7 @@ Changelog
 * Move documentation from the README to `Read the Docs <https://django-htmx.readthedocs.io/>`__.
   Also expand it with sections on installing htmx, and configuring CSRF.
 
-  Thanks to Ben Beecher for intial setup in `PR #194 <https://github.com/adamchainz/django-htmx/pull/194>`__.
+  Thanks to Ben Beecher for initial setup in `PR #194 <https://github.com/adamchainz/django-htmx/pull/194>`__.
 
 * Add ``HttpResponseClientRefresh`` for telling htmx to reload the page.
 
@@ -234,7 +234,7 @@ Changelog
   Include htmx on your pages yourself - this allows you to better customize the way htmx is installed to suit your project - for example by using the ``async`` script attribute or by bundling it with extensions.
 
 * Remove the ``HTMXViewMixin``, ``{% htmx_include %}`` and ``{% htmx_attrs %}`` tags.
-  Partial rendering can be done more with a simpler techinque - see the demo page in the example app, added in `Pull Request #30 <https://github.com/adamchainz/django-htmx/pull/30>`__.
+  Partial rendering can be done more with a simpler technique - see the demo page in the example app, added in `Pull Request #30 <https://github.com/adamchainz/django-htmx/pull/30>`__.
 
 0.1.4 (2020-06-30)
 ------------------
