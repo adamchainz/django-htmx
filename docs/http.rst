@@ -8,8 +8,8 @@ Response classes
 
 .. autoclass:: HttpResponseClientRedirect
 
-   htmx can trigger a client side redirect when it receives a response with the |HX-Redirect header|__.
-   ``HttpResponseClientRedirect`` is a `HttpResponseRedirect <https://docs.djangoproject.com/en/stable/ref/request-response/#django.http.HttpResponseRedirect>`__ subclass for triggering such redirects.
+   htmx can trigger a client-side redirect when it receives a response with the |HX-Redirect header|__.
+   ``HttpResponseClientRedirect`` is a subclass of `HttpResponseRedirect <https://docs.djangoproject.com/en/stable/ref/request-response/#django.http.HttpResponseRedirect>`__ for triggering such redirects.
 
    .. |HX-Redirect header| replace:: ``HX-Redirect`` header
    __ https://htmx.org/reference/#response_headers
@@ -281,7 +281,7 @@ Response modifying functions
 .. autofunction:: trigger_client_event
 
    Modify one of the |HX-Trigger headers|__ of ``response`` and return it.
-   These headers make htmx trigger client-side events.
+   These headers enable htmx to trigger events on the client-side.
 
    Calling ``trigger_client_event`` multiple times for the same ``response`` and ``after`` will update the appropriate header, preserving existing event specifications.
 
