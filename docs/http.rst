@@ -281,7 +281,7 @@ Response modifying functions
 .. autofunction:: trigger_client_event
 
    Modify one of the |HX-Trigger headers|__ of ``response`` and return it.
-   These headers enable htmx to trigger events on the client-side.
+   These headers make htmx trigger client-side events.
 
    Calling ``trigger_client_event`` multiple times for the same ``response`` and ``after`` will update the appropriate header, preserving existing event specifications.
 
