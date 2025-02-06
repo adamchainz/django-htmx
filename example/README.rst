@@ -1,13 +1,13 @@
 Example Application
 ===================
 
-Use Python 3.12 to set up and run with these commands:
+Use Python 3.13 to set up and run with these commands:
 
 .. code-block:: sh
 
    python -m venv .venv
    source .venv/bin/activate
-   python -m pip install -r requirements.txt -e ..
+   python -m pip install -e .. -r requirements.txt
    DEBUG=1 python manage.py runserver
 
 Open it at http://127.0.0.1:8000/ .
