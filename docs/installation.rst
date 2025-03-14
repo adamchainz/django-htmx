@@ -27,7 +27,7 @@ Installation
            ...,
        ]
 
-3. Add the middleware:
+3. (Optional) Add the middleware:
 
    .. code-block:: python
 
@@ -39,7 +39,7 @@ Installation
 
    The middleware adds ``request.htmx``, as described in :doc:`middleware`.
 
-4. Add htmx and the django-htmx extension script to your pages with a :doc:`template tag <template_tags>`, available for Django templates and Jinja2.
+4. (Optional) Add htmx and the django-htmx extension script to your pages with a :doc:`template tag <template_tags>`, available for Django templates and Jinja2.
    In the typical case, with Django templates:
 
    .. code-block:: django
