@@ -2,6 +2,9 @@
 Changelog
 =========
 
+1.23.0 (2025-03-14)
+-------------------
+
 * Vendor htmx.
 
   You can now render an htmx script tag in your templates with:
