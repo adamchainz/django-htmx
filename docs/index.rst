@@ -14,7 +14,7 @@ This package provides some tools to make it easier to use htmx in your Django pr
 
    installation
    middleware
-   extension_script
+   template_tags
    http
    example_project
    tips

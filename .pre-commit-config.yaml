@@ -15,6 +15,11 @@ repos:
   - id: check-symlinks
   - id: check-toml
   - id: end-of-file-fixer
+    exclude: |
+      (?x)^(
+        example/example/static/ext/debug\.js
+        |src/django_htmx/static/django_htmx/htmx\.min\.js
+      )$
   - id: trailing-whitespace
 - repo: https://github.com/tox-dev/pyproject-fmt
   rev: v2.5.1

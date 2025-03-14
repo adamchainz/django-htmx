@@ -2,6 +2,19 @@
 Changelog
 =========
 
+* Vendor htmx.
+
+  You can now render an htmx script tag in your templates with:
+
+  .. code-block:: django
+
+      {% load django_htmx %}
+      {% htmx_script %}
+
+  No need to include htmx in your project separately.
+
+  See :doc:`template_tags` for more information.
+
 1.22.0 (2025-02-06)
 -------------------
 
