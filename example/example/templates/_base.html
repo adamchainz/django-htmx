@@ -11,7 +11,7 @@
   <!-- https://htmx.org/docs/#config -->
   <meta name="htmx-config" content='{"historyCacheSize": 15}'>
 
-  <script src="{% static 'htmx.js' %}" defer></script>
+  {% htmx_script %}
   <script src="{% static 'ext/debug.js' %}" defer></script>
   <script src="{% static 'ext/event-header.js' %}" defer></script>
 </head>

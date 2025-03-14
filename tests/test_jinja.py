@@ -4,6 +4,28 @@ from django.test import SimpleTestCase
 from django.test import override_settings
 
 from django_htmx.jinja import django_htmx_script
+from django_htmx.jinja import htmx_script
+
+
+class HtmxScriptTests(SimpleTestCase):
+    def test_default(self):
+        result = htmx_script()
+
+        assert result == '<script src="django_htmx/htmx.min.js" defer></script>'
+
+    def test_debug(self):
+        with override_settings(DEBUG=True):
+            result = htmx_script()
+
+        assert result == (
+            '<script src="django_htmx/htmx.min.js" defer></script>'
+            + '<script src="django_htmx/django-htmx.js" data-debug="True" defer></script>'
+        )
+
+    def test_unminified(self):
+        result = htmx_script(minified=False)
+
+        assert result == '<script src="django_htmx/htmx.js" defer></script>'
 
 
 class DjangoHtmxScriptTests(SimpleTestCase):
@@ -17,5 +39,5 @@ class DjangoHtmxScriptTests(SimpleTestCase):
             result = django_htmx_script()
 
         assert result == (
-            '<script src="django-htmx.js" data-debug="True" defer></script>'
+            '<script src="django_htmx/django-htmx.js" data-debug="True" defer></script>'
         )

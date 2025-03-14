@@ -182,3 +182,44 @@ Here, ``_base.html`` would be the main site base:
    <main id="main">
      {% block main %}{% endblock %}
    </main>
+
+.. _htmx-extensions:
+
+Install htmx extensions
+-----------------------
+
+django-htmx vendors htmx and can render it with the ``{% htmx_script %}`` :doc:`template tag <template_tags>`.
+However, it does not include any of `the many htmx extensions <https://htmx.org/extensions/>`__, so it’s up to you to add such extensions to your project.
+
+Avoid using JavaScript CDNs like unpkg.com to include extensions, or any other resources.
+They reduce privacy, performance, and security - see `this blog post <https://blog.wesleyac.com/posts/why-not-javascript-cdn>`__.
+
+Instead, download extension scripts into your project’s static files and serve them directly.
+Include their script tags after your htmx ``<script>`` tag (from ``{% htmx_script %}`` or otherwise).
+For example, if you were using the `WebSocket extension <https://htmx.org/extensions/ws/>`__, you might:
+
+1. Download ``ws.min.js`` from the latest release:
+
+   .. code-block:: sh
+
+       curl -L https://unpkg.com/htmx-ext-ws/dist/ws.min.js -o example/static/htmx-ext-ws.min.js
+
+2. Include it in your base template:
+
+   .. code-block:: django
+      :emphasize-lines: 7
+
+       {% load django_htmx static %}
+       <!doctype html>
+       <html>
+         <head>
+           ...
+           {% htmx_script %}
+           <script src="{% static 'htmx-ext-ws.min.js' %}" defer></script>
+         </head>
+         <body>
+           ...
+         </body>
+       </html>
+
+For another example, see the :doc:`example project <example_project>`, which includes two extensions and a Python script to download their latest versions (``download_htmx_extensions.py``).
