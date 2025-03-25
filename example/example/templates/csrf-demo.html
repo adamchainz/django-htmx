@@ -7,18 +7,22 @@
     </p>
   </section>
   <section>
+    <p>
+      View the source to see how it works!
+    </p>
+  </section>
+  <section>
     <!--
-      Note you can place the hx-headers attribute on your <body> tag so it
-      affects all requests, reducing repetition.
+      Add hx-headers to pass the CSRF token.
 
-      The header name may be changed with the CSRF_HEADER_NAME setting;
-      https://docs.djangoproject.com/en/stable/ref/settings/#std:setting-CSRF_HEADER_NAME
+      This is normally best done on the <body>, to affect all requests, but
+      this demo uses the <form> so all hx attributes are in one place.
 
-      Note we use {{ csrf_token }} instead of {% csrf_token %} to get the
-      variable rather than a rendered HTML <input>.
+      See:
+      https://django-htmx.readthedocs.io/en/latest/tips.html#make-htmx-pass-the-csrf-token
     -->
     <form hx-post="/csrf-demo/checker/"
-          hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+          hx-headers='{"x-csrftoken": "{{ csrf_token }}"}'
           hx-target="#result">
       <label for="id_number">
         Number:
