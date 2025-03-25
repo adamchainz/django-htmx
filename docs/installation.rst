@@ -39,11 +39,15 @@ Installation
 
    The middleware adds ``request.htmx``, as described in :doc:`middleware`.
 
-4. (Optional) Add htmx and the django-htmx extension script to your pages with a :doc:`template tag <template_tags>`, available for Django templates and Jinja2.
+4. (Optional) Update your base template to:
+
+   1. Add htmx and the django-htmx extension script to your pages with a :doc:`template tag <template_tags>`, available for Django templates and Jinja2.
+   2. Add Django’s CSRF token to all htmx requests, so POST requests work, per :ref:`this tip <tips-csrf-token>`.
+
    In the typical case, with Django templates:
 
    .. code-block:: django
-      :emphasize-lines: 6
+      :emphasize-lines: 1,6,8
 
        {% load django_htmx %}
        <!doctype html>
@@ -52,7 +56,7 @@ Installation
            ...
            {% htmx_script %}
          </head>
-         <body>
+         <body hx-headers='{"x-csrftoken": "{{ csrf_token }}"}'>
            ...
          </body>
        </html>
