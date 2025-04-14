@@ -2,21 +2,17 @@
 #    uv pip compile --universal requirements.in -o requirements.txt
 asgiref==3.8.1
     # via django
-django==5.1.6
+django==5.2
     # via
     #   -r requirements.in
     #   django-template-partials
 django-template-partials==24.4
     # via -r requirements.in
-faker==35.2.0
+faker==37.1.0
     # via -r requirements.in
-python-dateutil==2.9.0.post0
-    # via faker
-six==1.17.0
-    # via python-dateutil
 sqlparse==0.5.3
     # via django
-typing-extensions==4.12.2
-    # via faker
-tzdata==2025.1 ; sys_platform == 'win32'
-    # via django
+tzdata==2025.2
+    # via
+    #   django
+    #   faker
