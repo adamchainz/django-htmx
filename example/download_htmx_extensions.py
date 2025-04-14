@@ -13,11 +13,6 @@ ext_dir = Path(__file__).parent.resolve() / "example/static/ext"
 
 
 def main() -> int:
-    # Per: https://github.com/bigskysoftware/htmx-extensions/tree/main/src/debug
-    download_file(
-        "https://unpkg.com/htmx-ext-debug/debug.js",
-        ext_dir / "debug.js",
-    )
     # Per: https://github.com/bigskysoftware/htmx-extensions/tree/main/src/event-header
     download_file(
         "https://unpkg.com/htmx-ext-event-header/event-header.js",

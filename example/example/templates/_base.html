@@ -12,16 +12,15 @@
   <meta name="htmx-config" content='{"historyCacheSize": 15}'>
 
   {% htmx_script %}
-  <script src="{% static 'ext/debug.js' %}" defer></script>
   <script src="{% static 'ext/event-header.js' %}" defer></script>
+  <script src="{% static 'app.js' %}" defer></script>
 </head>
 
 <!--
   Enable htmx extensions for all requests:
-  * debug: https://github.com/bigskysoftware/htmx-extensions/blob/main/src/debug/README.md
   * event-header: https://github.com/bigskysoftware/htmx-extensions/blob/main/src/event-header/README.md
 -->
-<body hx-ext="debug, event-header">
+<body hx-ext=event-header>
   <header>
     <nav>
       <h1>
