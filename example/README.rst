@@ -8,7 +8,7 @@ Use Python 3.13 to set up and run with these commands:
    python -m venv .venv
    source .venv/bin/activate
    python -m pip install -e .. -r requirements.txt
-   DEBUG=1 python manage.py runserver
+   python manage.py runserver
 
 Open it at http://127.0.0.1:8000/ .
 
