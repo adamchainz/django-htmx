@@ -21,13 +21,13 @@ django-htmx
    :target: https://github.com/pre-commit/pre-commit
    :alt: pre-commit
 
+----
+
+.. figure:: https://raw.githubusercontent.com/adamchainz/django-htmx/main/docs/_static/logo.svg
+  :alt: django-htmx logo
+  :align: center
+
 Extensions for using Django with `htmx <https://htmx.org/>`__.
-
-----
-
-**Improve your Django and Git skills** with `my books <https://adamj.eu/books/>`__.
-
-----
 
 Documentation
 -------------
