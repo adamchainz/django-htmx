@@ -6,7 +6,14 @@ django-htmx documentation
 .. |htmx| replace:: *htmx*
 __ https://htmx.org/
 
-This package provides some tools to make it easier to use htmx in your Django projects.
+----
+
+**Improve your Django and Git skills** with `my books <https://adamj.eu/books/>`__.
+
+----
+
+Welcome to the documentation for django-htmx.
+This package provides an easy way to include htmx in your Django projects and tools to interact with htmx’s HTTP extensions.
 
 .. toctree::
    :maxdepth: 1
