@@ -32,4 +32,4 @@ Extensions for using Django with `htmx <https://htmx.org/>`__.
 Documentation
 -------------
 
-Please see https://django-htmx.readthedocs.io/ .
+Please see https://django-htmx.readthedocs.io/.
