@@ -27,10 +27,7 @@ repos:
   - id: typos
     exclude: |
       (?x)^(
-        .*\.min\.css
-        |.*\.min\.js
-        |.*\.css\.map
-        |.*\.js\.map
+        .*\.min\.js
         |.*\.svg
       )$
 - repo: https://github.com/tox-dev/pyproject-fmt
