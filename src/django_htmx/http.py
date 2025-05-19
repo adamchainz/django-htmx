@@ -1,14 +1,11 @@
 from __future__ import annotations
 
 import json
-from typing import Any
-from typing import Literal
-from typing import TypeVar
+from typing import Any, Literal, TypeVar
 
 from django.core.serializers.json import DjangoJSONEncoder
 from django.http import HttpResponse
-from django.http.response import HttpResponseBase
-from django.http.response import HttpResponseRedirectBase
+from django.http.response import HttpResponseBase, HttpResponseRedirectBase
 
 HTMX_STOP_POLLING = 286
 

@@ -5,19 +5,20 @@ from uuid import UUID
 
 import pytest
 from django.core.serializers.json import DjangoJSONEncoder
-from django.http import HttpResponse
-from django.http import StreamingHttpResponse
+from django.http import HttpResponse, StreamingHttpResponse
 from django.test import SimpleTestCase
 
-from django_htmx.http import HttpResponseClientRedirect
-from django_htmx.http import HttpResponseClientRefresh
-from django_htmx.http import HttpResponseLocation
-from django_htmx.http import HttpResponseStopPolling
-from django_htmx.http import push_url
-from django_htmx.http import replace_url
-from django_htmx.http import reswap
-from django_htmx.http import retarget
-from django_htmx.http import trigger_client_event
+from django_htmx.http import (
+    HttpResponseClientRedirect,
+    HttpResponseClientRefresh,
+    HttpResponseLocation,
+    HttpResponseStopPolling,
+    push_url,
+    replace_url,
+    reswap,
+    retarget,
+    trigger_client_event,
+)
 
 
 class HttpResponseStopPollingTests(SimpleTestCase):

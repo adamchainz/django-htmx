@@ -2,6 +2,7 @@
 """
 Download htmx to django_htmx/static/htmx.min.js.
 """
+
 from __future__ import annotations
 
 import argparse
