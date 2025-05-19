@@ -4,12 +4,9 @@ import time
 from dataclasses import dataclass
 
 from django.core.paginator import Paginator
-from django.http import HttpRequest
-from django.http import HttpResponse
+from django.http import HttpRequest, HttpResponse
 from django.shortcuts import render
-from django.views.decorators.http import require_GET
-from django.views.decorators.http import require_http_methods
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_GET, require_http_methods, require_POST
 from faker import Faker
 
 from django_htmx.middleware import HtmxDetails
@@ -72,7 +69,7 @@ def error_demo(request: HtmxHttpRequest) -> HttpResponse:
 
 @require_GET
 def error_demo_trigger(request: HtmxHttpRequest) -> HttpResponse:
-    1 / 0
+    _ = 1 / 0
     return render(request, "error-demo.html")  # unreachable
 
 

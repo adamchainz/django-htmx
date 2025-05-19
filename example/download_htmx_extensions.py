@@ -4,6 +4,7 @@ Download the htmx version and the extensions we're using.
 
 This is only intended for maintaining the example app.
 """
+
 from __future__ import annotations
 
 import subprocess

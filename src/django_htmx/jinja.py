@@ -3,8 +3,7 @@ from __future__ import annotations
 from django.conf import settings
 from django.templatetags.static import static
 from django.utils.html import format_html
-from django.utils.safestring import SafeString
-from django.utils.safestring import mark_safe
+from django.utils.safestring import SafeString, mark_safe
 
 
 def htmx_script(*, minified: bool = True) -> SafeString:

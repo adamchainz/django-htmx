@@ -2,14 +2,10 @@ from __future__ import annotations
 
 import json
 from collections.abc import Awaitable
-from typing import Any
-from typing import Callable
-from urllib.parse import unquote
-from urllib.parse import urlsplit
-from urllib.parse import urlunsplit
+from typing import Any, Callable
+from urllib.parse import unquote, urlsplit, urlunsplit
 
-from asgiref.sync import iscoroutinefunction
-from asgiref.sync import markcoroutinefunction
+from asgiref.sync import iscoroutinefunction, markcoroutinefunction
 from django.http import HttpRequest
 from django.http.response import HttpResponseBase
 from django.utils.functional import cached_property
@@ -53,9 +49,8 @@ class HtmxDetails:
 
     def _get_header_value(self, name: str) -> str | None:
         value = self.request.headers.get(name) or None
-        if value:
-            if self.request.headers.get(f"{name}-URI-AutoEncoded") == "true":
-                value = unquote(value)
+        if value and self.request.headers.get(f"{name}-URI-AutoEncoded") == "true":
+            value = unquote(value)
         return value
 
     def __bool__(self) -> bool:
