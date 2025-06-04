@@ -1,6 +1,0 @@
-behaviour
-deserialized
-django
-htmx
-Jinja
-middleware
