@@ -6,7 +6,7 @@ requires = [
 
 [project]
 name = "django-htmx"
-version = "1.23.0"
+version = "1.23.1"
 description = "Extensions for using Django with htmx."
 readme = "README.rst"
 keywords = [
