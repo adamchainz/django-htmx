@@ -45,6 +45,7 @@ extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.intersphinx",
     "sphinx.ext.viewcode",
+    "sphinx_copybutton",
 ]
 
 # List of patterns, relative to source directory, that match files and
