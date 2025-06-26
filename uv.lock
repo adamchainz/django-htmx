@@ -346,6 +346,7 @@ docs = [
     { name = "sphinx", version = "7.4.7", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10' or (extra == 'group-11-django-htmx-django42' and extra == 'group-11-django-htmx-django50') or (extra == 'group-11-django-htmx-django42' and extra == 'group-11-django-htmx-django51') or (extra == 'group-11-django-htmx-django42' and extra == 'group-11-django-htmx-django52') or (extra == 'group-11-django-htmx-django50' and extra == 'group-11-django-htmx-django51') or (extra == 'group-11-django-htmx-django50' and extra == 'group-11-django-htmx-django52') or (extra == 'group-11-django-htmx-django51' and extra == 'group-11-django-htmx-django52')" },
     { name = "sphinx", version = "8.1.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.10.*' or (extra == 'group-11-django-htmx-django42' and extra == 'group-11-django-htmx-django50') or (extra == 'group-11-django-htmx-django42' and extra == 'group-11-django-htmx-django51') or (extra == 'group-11-django-htmx-django42' and extra == 'group-11-django-htmx-django52') or (extra == 'group-11-django-htmx-django50' and extra == 'group-11-django-htmx-django51') or (extra == 'group-11-django-htmx-django50' and extra == 'group-11-django-htmx-django52') or (extra == 'group-11-django-htmx-django51' and extra == 'group-11-django-htmx-django52')" },
     { name = "sphinx", version = "8.2.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' or (extra == 'group-11-django-htmx-django42' and extra == 'group-11-django-htmx-django50') or (extra == 'group-11-django-htmx-django42' and extra == 'group-11-django-htmx-django51') or (extra == 'group-11-django-htmx-django42' and extra == 'group-11-django-htmx-django52') or (extra == 'group-11-django-htmx-django50' and extra == 'group-11-django-htmx-django51') or (extra == 'group-11-django-htmx-django50' and extra == 'group-11-django-htmx-django52') or (extra == 'group-11-django-htmx-django51' and extra == 'group-11-django-htmx-django52')" },
+    { name = "sphinx-build-compatibility" },
     { name = "sphinx-copybutton" },
 ]
 test = [
@@ -369,6 +370,7 @@ django52 = [{ name = "django", marker = "python_full_version >= '3.10'", specifi
 docs = [
     { name = "furo", specifier = ">=2024.8.6" },
     { name = "sphinx", specifier = ">=7.4.7" },
+    { name = "sphinx-build-compatibility", git = "https://github.com/readthedocs/sphinx-build-compatibility" },
     { name = "sphinx-copybutton", specifier = ">=0.5.2" },
 ]
 test = [
@@ -753,6 +755,17 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/98/0b/a866924ded68efec7a1759587a4e478aec7559d8165fac8b2ad1c0e774d6/sphinx_basic_ng-1.0.0b2.tar.gz", hash = "sha256:9ec55a47c90c8c002b5960c57492ec3021f5193cb26cebc2dc4ea226848651c9", size = 20736, upload-time = "2023-07-08T18:40:54.166Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3c/dd/018ce05c532a22007ac58d4f45232514cd9d6dd0ee1dc374e309db830983/sphinx_basic_ng-1.0.0b2-py3-none-any.whl", hash = "sha256:eb09aedbabfb650607e9b4b68c9d240b90b1e1be221d6ad71d61c52e29f7932b", size = 22496, upload-time = "2023-07-08T18:40:52.659Z" },
+]
+
+[[package]]
+name = "sphinx-build-compatibility"
+version = "0.0.1"
+source = { git = "https://github.com/readthedocs/sphinx-build-compatibility#58aabc5f207c6c2421f23d3578adc0b14af57047" }
+dependencies = [
+    { name = "requests" },
+    { name = "sphinx", version = "7.4.7", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10' or (extra == 'group-11-django-htmx-django42' and extra == 'group-11-django-htmx-django50') or (extra == 'group-11-django-htmx-django42' and extra == 'group-11-django-htmx-django51') or (extra == 'group-11-django-htmx-django42' and extra == 'group-11-django-htmx-django52') or (extra == 'group-11-django-htmx-django50' and extra == 'group-11-django-htmx-django51') or (extra == 'group-11-django-htmx-django50' and extra == 'group-11-django-htmx-django52') or (extra == 'group-11-django-htmx-django51' and extra == 'group-11-django-htmx-django52')" },
+    { name = "sphinx", version = "8.1.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.10.*' or (extra == 'group-11-django-htmx-django42' and extra == 'group-11-django-htmx-django50') or (extra == 'group-11-django-htmx-django42' and extra == 'group-11-django-htmx-django51') or (extra == 'group-11-django-htmx-django42' and extra == 'group-11-django-htmx-django52') or (extra == 'group-11-django-htmx-django50' and extra == 'group-11-django-htmx-django51') or (extra == 'group-11-django-htmx-django50' and extra == 'group-11-django-htmx-django52') or (extra == 'group-11-django-htmx-django51' and extra == 'group-11-django-htmx-django52')" },
+    { name = "sphinx", version = "8.2.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' or (extra == 'group-11-django-htmx-django42' and extra == 'group-11-django-htmx-django50') or (extra == 'group-11-django-htmx-django42' and extra == 'group-11-django-htmx-django51') or (extra == 'group-11-django-htmx-django42' and extra == 'group-11-django-htmx-django52') or (extra == 'group-11-django-htmx-django50' and extra == 'group-11-django-htmx-django51') or (extra == 'group-11-django-htmx-django50' and extra == 'group-11-django-htmx-django52') or (extra == 'group-11-django-htmx-django51' and extra == 'group-11-django-htmx-django52')" },
 ]
 
 [[package]]
