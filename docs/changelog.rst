@@ -2,6 +2,9 @@
 Changelog
 =========
 
+1.23.2 (2025-06-27)
+-------------------
+
 * Upgrade the vendored htmx to `version 2.0.6 <https://github.com/bigskysoftware/htmx/blob/master/CHANGELOG.md#206---2025-06-27>`__.
 
 1.23.1 (2025-06-21)
