@@ -289,7 +289,7 @@ var htmx = (function() {
     location,
     /** @type {typeof internalEval} */
     _: null,
-    version: '2.0.5'
+    version: '2.0.6'
   }
   // Tsc madness part 2
   htmx.onLoad = onLoadHelper
@@ -2435,7 +2435,9 @@ var htmx = (function() {
       if (elt.form && elt.type === 'submit') {
         return true
       }
-      if (elt instanceof HTMLAnchorElement && elt.href &&
+      elt = elt.closest('a')
+      // @ts-ignore check for a link wrapping the event elt or if elt is a link. elt will be link so href check is fine
+      if (elt && elt.href &&
         (elt.getAttribute('href') === '#' || elt.getAttribute('href').indexOf('#') !== 0)) {
         return true
       }
