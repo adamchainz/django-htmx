@@ -4,7 +4,7 @@ import time
 from dataclasses import dataclass
 
 from django.core.paginator import Paginator
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponse, HttpResponseServerError
 from django.shortcuts import render
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 from faker import Faker
@@ -71,6 +71,11 @@ def error_demo(request: HtmxHttpRequest) -> HttpResponse:
 def error_demo_trigger(request: HtmxHttpRequest) -> HttpResponse:
     _ = 1 / 0
     return render(request, "error-demo.html")  # unreachable
+
+
+@require_GET
+def error_demo_custom(request: HtmxHttpRequest) -> HttpResponse:
+    return HttpResponseServerError("Woops.")
 
 
 # Middleware tester

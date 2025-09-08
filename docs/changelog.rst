@@ -7,6 +7,10 @@ Unreleased
 
 * Support Python 3.14.
 
+* Fix crashes in the extension script for custom error pages.
+
+  Thanks to S Foster for the report in `Issue #546 <https://github.com/adamchainz/django-htmx/issues/546>`__.
+
 1.23.2 (2025-06-27)
 -------------------
 

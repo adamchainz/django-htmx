@@ -11,11 +11,16 @@
 
         document.children[0].innerHTML = xhr.response;
 
-        // Run Django’s inline script
-        // (1, eval) wtf - see https://stackoverflow.com/questions/9107240/1-evalthis-vs-evalthis-in-javascript
-        (1, eval)(document.scripts[0].innerText);
-        // Need to directly call Django’s onload function since browser won’t
-        window.onload();
+        // Run inline scripts, which Django’s error pages use
+        for (const script of document.scripts) {
+          // (1, eval) wtf - see https://stackoverflow.com/questions/9107240/1-evalthis-vs-evalthis-in-javascript
+          (1, eval)(script.innerText);
+        }
+
+        // Run window.onload function if defined, which Django’s error pages use
+        if (typeof window.onload === "function") {
+          window.onload();
+        }
       }
     });
   }
