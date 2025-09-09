@@ -282,9 +282,9 @@ name = "django"
 version = "4.2.23"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version < '3.10'",
     "python_full_version >= '3.11'",
     "python_full_version == '3.10.*'",
+    "python_full_version < '3.10'",
 ]
 dependencies = [
     { name = "asgiref", marker = "python_full_version < '3.10' or extra == 'group-11-django-htmx-django42' or (extra == 'group-11-django-htmx-django50' and extra == 'group-11-django-htmx-django51') or (extra == 'group-11-django-htmx-django50' and extra == 'group-11-django-htmx-django52') or (extra == 'group-11-django-htmx-django51' and extra == 'group-11-django-htmx-django52')" },
@@ -352,7 +352,7 @@ wheels = [
 
 [[package]]
 name = "django-htmx"
-version = "1.23.2"
+version = "1.24.0"
 source = { editable = "." }
 dependencies = [
     { name = "asgiref" },
