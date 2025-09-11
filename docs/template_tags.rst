@@ -19,7 +19,7 @@ __ https://developer.mozilla.org/en-US/docs/Web/HTML/Element/script#defer
 The ``htmx_script`` template tag renders two script tags for:
 
 1. The vendored version of htmx included in django-htmx.
-   The current vendored version of htmx is 2.0.6.
+   The current vendored version of htmx is 2.0.7.
    (`htmx release notes <https://github.com/bigskysoftware/htmx/releases>`__.)
 
 2. django-htmx’s extension script, when |settings.DEBUG|__ is ``True``.
