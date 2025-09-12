@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import json
 from collections.abc import Awaitable
-from typing import Any, Callable
+from typing import Any, Callable, cast
 from urllib.parse import unquote, urlsplit, urlunsplit
 
 from asgiref.sync import iscoroutinefunction, markcoroutinefunction
-from django.http import HttpRequest
+from django.http import HttpRequest, HttpResponse
 from django.http.response import HttpResponseBase
 from django.utils.functional import cached_property
 
@@ -107,3 +107,36 @@ class HtmxDetails:
             except json.JSONDecodeError:
                 value = None
         return value
+
+
+class HTMXRedirectMiddleware:
+    """
+    Middleware to handle HTMX redirects properly.
+
+    Converts standard 301/302 redirects to HTMX-friendly redirects when the request
+    comes from HTMX by:
+    1. Adding HX-Redirect header with the redirect location
+    2. Changing status code to 200
+
+    This solves the issue where HTMX intercepts 302 redirects and makes AJAX requests
+    to the redirect location instead of performing a proper browser redirect.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request: HttpRequest) -> HttpResponse:
+        response = cast(HttpResponse, self.get_response(request))
+
+        # Check if this is an HTMX request and the response is a redirect
+        if response.status_code in [301, 302] and request.headers.get("HX-Request"):
+            # Get the redirect location from either HX-Redirect header or Location header
+            redirect_location = response.headers.get(
+                "HX-Redirect", response.headers.get("Location")
+            )
+
+            if redirect_location:
+                response.headers["HX-Redirect"] = redirect_location
+                response.status_code = 200
+
+        return response
