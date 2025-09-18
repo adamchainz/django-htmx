@@ -57,6 +57,8 @@ Pass ``minified=False`` to render the non-minified version:
 
 This may be useful when debugging htmx behaviour.
 
+On Django 6.0+, the ``<script>`` tags will include with `the Content Security Policy (CSP) nonce <https://docs.djangoproject.com/en/6.0/howto/csp/#nonce-config>`__, if it’s present in the context.
+
 Jinja
 ^^^^^
 
@@ -106,6 +108,12 @@ Pass ``minified=False`` to render the non-minified version:
 
 This may be useful when debugging htmx behaviour.
 
+To use a CSP nonce, pass it to the function as ``nonce``:
+
+.. code-block:: jinja
+
+    {{ htmx_script(nonce=csp_nonce) }}
+
 ``django_htmx_script``
 ----------------------
 
@@ -132,6 +140,8 @@ Load and use the template tag after your htmx ``<script>`` tag:
         ...
       </body>
     </html>
+
+On Django 6.0+, the ``<script>`` tag will include with `the Content Security Policy (CSP) nonce <https://docs.djangoproject.com/en/6.0/howto/csp/#nonce-config>`__, if it’s present in the context.
 
 Jinja
 ^^^^^
@@ -173,6 +183,12 @@ Second, call the function in a variable in your ``<head>`` tag, typically in a b
         ...
       </body>
     </html>
+
+To use a CSP nonce, pass it to the function as ``nonce``:
+
+.. code-block:: jinja
+
+    {{ django_htmx_script(nonce=csp_nonce) }}
 
 .. _django-htmx-extension-script:
 

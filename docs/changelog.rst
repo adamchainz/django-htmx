@@ -7,6 +7,10 @@ Unreleased
 
 * Support Django 6.0.
 
+* Add CSP nonce support to the template tags.
+
+  Thanks to waifudegen for the report in `Issue #542 <https://github.com/adamchainz/django-htmx/issues/542>`__.
+
 1.24.1 (2025-09-11)
 -------------------
 

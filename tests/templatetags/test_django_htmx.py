@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import secrets
+
 from django.template import Context, Template
 from django.test import SimpleTestCase, override_settings
 
@@ -9,6 +11,17 @@ class HtmxScriptTests(SimpleTestCase):
         result = Template("{% load django_htmx %}{% htmx_script %}").render(Context())
 
         assert result == '<script src="django_htmx/htmx.min.js" defer></script>'
+
+    def test_default_nonce(self):
+        nonce = secrets.token_urlsafe(16)
+        result = Template("{% load django_htmx %}{% htmx_script %}").render(
+            Context({"csp_nonce": nonce})
+        )
+
+        assert (
+            result
+            == f'<script src="django_htmx/htmx.min.js" defer nonce="{nonce}"></script>'
+        )
 
     def test_debug(self):
         with override_settings(DEBUG=True):
@@ -21,12 +34,35 @@ class HtmxScriptTests(SimpleTestCase):
             + '<script src="django_htmx/django-htmx.js" data-debug="True" defer></script>'
         )
 
+    def test_debug_nonce(self):
+        nonce = secrets.token_urlsafe(16)
+        with override_settings(DEBUG=True):
+            result = Template("{% load django_htmx %}{% htmx_script %}").render(
+                Context({"csp_nonce": nonce})
+            )
+
+        assert result == (
+            f'<script src="django_htmx/htmx.min.js" defer nonce="{nonce}"></script>'
+            + f'<script src="django_htmx/django-htmx.js" data-debug="True" defer nonce="{nonce}"></script>'
+        )
+
     def test_unminified(self):
         result = Template(
             "{% load django_htmx %}{% htmx_script minified=False %}"
         ).render(Context())
 
         assert result == '<script src="django_htmx/htmx.js" defer></script>'
+
+    def test_unminified_nonce(self):
+        nonce = secrets.token_urlsafe(16)
+        result = Template(
+            "{% load django_htmx %}{% htmx_script minified=False %}"
+        ).render(Context({"csp_nonce": nonce}))
+
+        assert (
+            result
+            == f'<script src="django_htmx/htmx.js" defer nonce="{nonce}"></script>'
+        )
 
 
 class DjangoHtmxScriptTests(SimpleTestCase):
@@ -37,7 +73,7 @@ class DjangoHtmxScriptTests(SimpleTestCase):
 
         assert result == ""
 
-    def test_debug_success(self):
+    def test_debug(self):
         with override_settings(DEBUG=True):
             result = Template("{% load django_htmx %}{% django_htmx_script %}").render(
                 Context()
@@ -45,4 +81,15 @@ class DjangoHtmxScriptTests(SimpleTestCase):
 
         assert result == (
             '<script src="django_htmx/django-htmx.js" data-debug="True" defer></script>'
+        )
+
+    def test_debug_nonce(self):
+        nonce = secrets.token_urlsafe(16)
+        with override_settings(DEBUG=True):
+            result = Template("{% load django_htmx %}{% django_htmx_script %}").render(
+                Context({"csp_nonce": nonce})
+            )
+
+        assert result == (
+            f'<script src="django_htmx/django-htmx.js" data-debug="True" defer nonce="{nonce}"></script>'
         )
