@@ -4,6 +4,8 @@ Changelog
 
 * Improve typing of ``reswap()`` to only accept valid HTMX swap methods.
 
+  Thanks to Thibaut Decombe in `PR #555 <https://github.com/adamchainz/django-htmx/pull/555>`__.
+
 1.25.0 (2025-09-18)
 -------------------
 
