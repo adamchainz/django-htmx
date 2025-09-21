@@ -2,12 +2,12 @@
 Changelog
 =========
 
-* The django-htmx extension script now displays responses with status codes 400 (bad request) and 403 (forbidden), like the existing support for codes 404 and 500.
+* The :ref:`django-htmx-extension-script` now displays responses with status codes 400 (bad request) and 403 (forbidden), like the existing support for codes 404 and 500.
   This change can help you debug
 
   `Issue #521 <https://github.com/adamchainz/django-htmx/issues/521>`__.
 
-* Improve typing of ``reswap()`` to only accept valid HTMX swap methods.
+* Improve typing of :func:`.reswap` to only accept valid HTMX swap methods.
 
   Thanks to Thibaut Decombe in `PR #555 <https://github.com/adamchainz/django-htmx/pull/555>`__.
 
