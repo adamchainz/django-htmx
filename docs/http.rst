@@ -220,7 +220,7 @@ Response modifying functions
    This header overrides the `swap method <https://htmx.org/attributes/hx-swap/>`__ that htmx will use.
 
    .. |HX-Reswap header| replace:: ``HX-Reswap`` header
-   __ https://htmx.org/reference/#response_headers
+   __ https://htmx.org/docs/#response-headers:~:text=HX%2DReswap
 
    :param response:
       The response to modify and return.
@@ -249,7 +249,7 @@ Response modifying functions
    This header overrides the element that htmx will swap content into.
 
    .. |HX-Retarget header| replace:: ``HX-Retarget`` header
-   __ https://htmx.org/reference/#response_headers
+   __ https://htmx.org/docs/#response-headers:~:text=HX%2DRetarget
 
    :param response:
       The response to modify and return.
@@ -277,6 +277,20 @@ Response modifying functions
 
           # Render just inline table row on failure
           return render(request, "widget-table-row.html", ...)
+
+.. autofunction:: reselect
+
+   Set the |HX-Reselect header|__ of ``response`` and return it.
+   This header overrides the selection of the response that htmx will swap into the target.
+
+   .. |HX-Reselect header| replace:: ``HX-Reselect`` header
+   __ https://htmx.org/docs/#response-headers:~:text=HX%2DReselect
+
+   :param response:
+      The response to modify and return.
+
+   :param selectori:
+      CSS selector of what to select.
 
 .. autofunction:: trigger_client_event
 

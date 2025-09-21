@@ -114,6 +114,11 @@ def retarget(response: _HttpResponse, target: str) -> _HttpResponse:
     return response
 
 
+def reselect(response: _HttpResponse, selector: str) -> _HttpResponse:
+    response["HX-Reselect"] = selector
+    return response
+
+
 def trigger_client_event(
     response: _HttpResponse,
     name: str,
