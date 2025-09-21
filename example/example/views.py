@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 
+from django.core.exceptions import PermissionDenied, SuspiciousOperation
 from django.core.paginator import Paginator
 from django.http import HttpRequest, HttpResponse, HttpResponseServerError
 from django.shortcuts import render
@@ -68,14 +69,26 @@ def error_demo(request: HtmxHttpRequest) -> HttpResponse:
 
 
 @require_GET
-def error_demo_trigger(request: HtmxHttpRequest) -> HttpResponse:
+def error_demo_400(request: HtmxHttpRequest) -> HttpResponse:
+    raise SuspiciousOperation("What are you doing??")
+
+
+@require_GET
+def error_demo_403(request: HtmxHttpRequest) -> HttpResponse:
+    raise PermissionDenied("Access denied!")
+
+
+@require_GET
+def error_demo_500(request: HtmxHttpRequest) -> HttpResponse:
     _ = 1 / 0
     return render(request, "error-demo.html")  # unreachable
 
 
 @require_GET
-def error_demo_custom(request: HtmxHttpRequest) -> HttpResponse:
-    return HttpResponseServerError("Woops.")
+def error_demo_500_custom(request: HtmxHttpRequest) -> HttpResponse:
+    return HttpResponseServerError(
+        "<h1>😱 Woops</h1><p>This is our fancy custom 500 page.</p>"
+    )
 
 
 # Middleware tester

@@ -198,7 +198,7 @@ django-htmx extension script
 This script, rendered by either of the above template tags when ``settings.DEBUG`` is ``True``, extends htmx with an error handler.
 htmx’s default behaviour when encountering an HTTP error is to discard the response content, which can make it hard to debug errors.
 
-This script adds an error handler that detects responses with 404 and 500 status codes and replaces the page with their content.
+This script adds an error handler that detects responses with 400, 403, 404, and 500 status codes and replaces the page with their content.
 This change exposes Django’s default error responses, allowing you to debug as you would for a non-htmx request.
 
 See the script in action in the “Error Demo” section of the :doc:`example project <example_project>`.
