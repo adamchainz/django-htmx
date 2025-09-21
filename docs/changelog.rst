@@ -2,6 +2,8 @@
 Changelog
 =========
 
+* Improve typing of ``reswap()`` to only accept valid HTMX swap methods.
+
 1.25.0 (2025-09-18)
 -------------------
 
