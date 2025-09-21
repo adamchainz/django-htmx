@@ -7,6 +7,10 @@ Changelog
 
   `Issue #521 <https://github.com/adamchainz/django-htmx/issues/521>`__.
 
+* Add :func:`.reselect` to set the ``HX-Reselect`` header.
+
+  `Issue #559 <https://github.com/adamchainz/django-htmx/issues/559>`__.
+
 * Improve typing of :func:`.reswap` to only accept valid HTMX swap methods.
 
   Thanks to Thibaut Decombe in `PR #555 <https://github.com/adamchainz/django-htmx/pull/555>`__.
