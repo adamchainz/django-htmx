@@ -9,6 +9,17 @@ from django.http.response import HttpResponseBase, HttpResponseRedirectBase
 
 HTMX_STOP_POLLING = 286
 
+SwapMethod = Literal[
+    "innerHTML",
+    "outerHTML",
+    "beforebegin",
+    "afterbegin",
+    "beforeend",
+    "afterend",
+    "delete",
+    "none",
+]
+
 
 class HttpResponseStopPolling(HttpResponse):
     status_code = HTMX_STOP_POLLING
@@ -47,17 +58,7 @@ class HttpResponseLocation(HttpResponseRedirectBase):
         source: str | None = None,
         event: str | None = None,
         target: str | None = None,
-        swap: Literal[
-            "innerHTML",
-            "outerHTML",
-            "beforebegin",
-            "afterbegin",
-            "beforeend",
-            "afterend",
-            "delete",
-            "none",
-            None,
-        ] = None,
+        swap: SwapMethod | None = None,
         select: str | None = None,
         values: dict[str, str] | None = None,
         headers: dict[str, str] | None = None,
@@ -98,7 +99,7 @@ def replace_url(response: _HttpResponse, url: str | Literal[False]) -> _HttpResp
     return response
 
 
-def reswap(response: _HttpResponse, method: str) -> _HttpResponse:
+def reswap(response: _HttpResponse, method: SwapMethod) -> _HttpResponse:
     response["HX-Reswap"] = method
     return response
 
