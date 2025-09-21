@@ -11,6 +11,11 @@ Changelog
 
   Thanks to Thibaut Decombe in `PR #555 <https://github.com/adamchainz/django-htmx/pull/555>`__.
 
+* Prevent :class:`.HttpResponseClientRedirect` from being called with ``preserve_request=True``, which was added to `redirect responses <https://docs.djangoproject.com/en/stable/ref/request-response/#django.http.HttpResponseRedirect>`__ in Django 5.2.
+  It doesn’t make sense in the context of a client-side redirect, which always returns a status code of 200, and would crash anyway.
+
+  `Issue #517 <https://github.com/adamchainz/django-htmx/issues/517>`__.
+
 1.25.0 (2025-09-18)
 -------------------
 
