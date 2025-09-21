@@ -21,18 +21,28 @@
     </p>
   </section>
   <section>
-    <button hx-get="/error-demo/trigger/">
-      Try divide by zero
+    <button hx-get="/error-demo/400/">
+      400: Make a bad request
+    </button>
+  </section>
+  <section>
+    <button hx-get="/error-demo/403/">
+      403: Try to access something forbidden
     </button>
   </section>
   <section>
     <button hx-get="/bermuda-triangle/">
-      Fetch non-existent page
+      404: Try to fetch a non-existent page
     </button>
   </section>
   <section>
-    <button hx-get="/error-demo/custom/">
-      Fetch custom 500 view
+    <button hx-get="/error-demo/500/">
+      500: Try to divide by zero
+    </button>
+  </section>
+  <section>
+    <button hx-get="/error-demo/500-custom/">
+      500: Try a custom 500 view
     </button>
   </section>
 {% endblock main %}

@@ -5,7 +5,7 @@
   if (isDebug) {
     document.addEventListener("htmx:beforeOnLoad", function (event) {
       const xhr = event.detail.xhr;
-      if (xhr.status == 500 || xhr.status == 404) {
+      if (xhr.status == 400 || xhr.status == 403 || xhr.status == 404 || xhr.status == 500 ) {
         // Tell htmx to stop processing this response
         event.stopPropagation();
 
