@@ -28,7 +28,7 @@ Changelog
 
 * Support Django 6.0.
 
-* Add CSP nonce support to the template tags.
+* Add Content Security Policy (CSP) nonce support to the template tags.
 
   Thanks to waifudegen for the report in `Issue #542 <https://github.com/adamchainz/django-htmx/issues/542>`__.
 
