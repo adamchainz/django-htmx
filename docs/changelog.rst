@@ -2,6 +2,9 @@
 Changelog
 =========
 
+1.26.0 (2025-09-22)
+-------------------
+
 * The :ref:`django-htmx-extension-script` now displays responses with status codes 400 (bad request) and 403 (forbidden), like the existing support for codes 404 and 500.
   This change can help you debug
 
