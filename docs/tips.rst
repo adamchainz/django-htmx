@@ -93,7 +93,7 @@ This is done by adding ``#`` and the partial name to the template name:
             template_name += "#country-table"
 
         countries = Country.objects.all()
-        
+
         return render(
             request,
             template_name,

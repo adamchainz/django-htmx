@@ -40,4 +40,3 @@ def download_file(url: str, destination: Path) -> None:
 
 if __name__ == "__main__":
     raise SystemExit(main())
- 
