@@ -1,2 +1,2 @@
-django>=6.0a1
+django~=6.0a1
 faker
