@@ -46,7 +46,7 @@ Using template partials
 
 Django 6.0 introduced built-in support for template partials.
 This feature allows you to render just one partial from a template, which is particularly useful for htmx requests.
-If you are using Django < 6.0, you can use the `django-template-partials <https://github.com/carltongibson/django-template-partials>`__ package. 
+If you are using Django < 6.0, you can use the `django-template-partials <https://github.com/carltongibson/django-template-partials>`__ package.
 The only major difference is the usage of the ``{% load partials %}`` tag at the top of the template.
 
 Define a partial using the ``{% partialdef %}`` tag around a template section:
@@ -54,7 +54,7 @@ Define a partial using the ``{% partialdef %}`` tag around a template section:
 .. code-block:: django
 
     {% extends "_base.html" %}
-   
+
     {# {% load partials %}  Only needed for Django < 6.0; not required for Django >= 6.0 #}
 
     {% block main %}
