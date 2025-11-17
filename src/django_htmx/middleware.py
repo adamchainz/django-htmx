@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Awaitable
-from typing import Any, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any
 from urllib.parse import unquote, urlsplit, urlunsplit
 
 from asgiref.sync import iscoroutinefunction, markcoroutinefunction
