@@ -4,6 +4,10 @@ Changelog
 
 * Drop Python 3.9 support.
 
+* Fix CSP nonce support in the template tags when they’re the first use of ``csp_nonce``.
+
+  `PR #572 <https://github.com/adamchainz/django-htmx/pull/572>`__.
+
 1.26.0 (2025-09-22)
 -------------------
 
