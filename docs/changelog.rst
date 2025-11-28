@@ -2,6 +2,9 @@
 Changelog
 =========
 
+1.27.0 (2025-11-28)
+-------------------
+
 * Drop Python 3.9 support.
 
 * Fix CSP nonce support in the template tags when they’re the first use of ``csp_nonce``.
