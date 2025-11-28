@@ -8,7 +8,7 @@ from django.utils.safestring import SafeString, mark_safe
 
 def htmx_script(*, minified: bool = True, nonce: str | None = None) -> SafeString:
     path = f"django_htmx/htmx{'.min' if minified else ''}.js"
-    if nonce:
+    if nonce is not None:
         result = format_html(
             '<script src="{}" defer nonce="{}"></script>',
             static(path),
@@ -29,7 +29,7 @@ def django_htmx_script(*, nonce: str | None = None) -> SafeString:
     # don't include it.
     if not settings.DEBUG:
         return mark_safe("")
-    if nonce:
+    if nonce is not None:
         return format_html(
             '<script src="{}" data-debug="{}" defer nonce="{}"></script>',
             static("django_htmx/django-htmx.js"),
