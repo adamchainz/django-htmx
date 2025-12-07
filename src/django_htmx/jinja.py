@@ -45,8 +45,9 @@ def htmx_script(
         if ext_name not in HTMX_EXT_NAMES:
             raise ValueError(f"Unknown HTMX extension: [{ext_name}]")
 
+        path = f"django_htmx/htmx-ext-{ext_name}.js"
         result += format_html(
-            '<script src="{}.js defer{}></script>', static(path), nonce_str
+            '<script src="{}" defer{}></script>', static(path), nonce_str
         )
 
     if settings.DEBUG:
