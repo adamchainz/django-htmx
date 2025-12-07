@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
 # Hide development server warning
 # https://docs.djangoproject.com/en/stable/ref/django-admin/#envvar-DJANGO_RUNSERVER_HIDE_WARNING
 os.environ["DJANGO_RUNSERVER_HIDE_WARNING"] = "true"
+
+sys.path.append(str(Path(__file__).parent.parent.parent.joinpath("src")))
+
 
 BASE_DIR = Path(__file__).parent
 
