@@ -129,14 +129,6 @@ addopts = """\
 django_find_project = false
 xfail_strict = true
 
-[tool.coverage.run]
-branch = true
-parallel = true
-source = [
-  "django_htmx",
-  "tests",
-]
-
 [tool.coverage.paths]
 source = [
   "src",
@@ -145,6 +137,14 @@ source = [
 
 [tool.coverage.report]
 show_missing = true
+
+[tool.coverage.run]
+branch = true
+parallel = true
+source = [
+  "django_htmx",
+  "tests",
+]
 
 [tool.mypy]
 enable_error_code = [
