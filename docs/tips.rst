@@ -185,6 +185,44 @@ Here, ``_base.html`` would be the main site base:
      {% block main %}{% endblock %}
    </main>
 
+Caching Partials
+~~~~~~~~~~~~~~~~
+
+When serving partial responses for htmx requests, special care must be taken with caching.
+If the response behavior depends on the ``request.htmx`` attribute, you should include a ``Vary: HX-Request`` header.
+This ensures that clients (and intermediaries) cache htmx and non-htmx responses separately. For more details, see the `htmx documentation. <https://htmx.org/docs/#caching>`__
+
+In Django, you can handle this easily using built-in decorators:
+
+.. code-block:: python
+
+   from django.http import HttpRequest, HttpResponse
+   from django.shortcuts import render
+   from django.views.decorators.cache import cache_page
+   from django.views.decorators.http import require_GET
+   from django.views.decorators.vary import vary_on_headers
+
+
+   @require_GET
+   @cache_page(60 * 15)
+   @vary_on_headers("HX-Request")
+   def partial_rendering(request: HttpRequest) -> HttpResponse:
+       if request.htmx:
+           base_template = "_partial.html"
+       else:
+           base_template = "_base.html"
+
+       ...
+
+       return render(
+           request,
+           "page.html",
+           {
+               "base_template": base_template,
+               # ...
+           },
+       )
+
 .. _htmx-extensions:
 
 Install htmx extensions
