@@ -72,6 +72,7 @@ jobs:
         with:
           path: .coverage
           pattern: coverage-data-*
+          merge-multiple: true
 
       # list the contents of `.coverage`
       - run: ls -l .coverage
