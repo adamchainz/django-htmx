@@ -8,6 +8,7 @@ from typing import Any
 # https://docs.djangoproject.com/en/stable/ref/django-admin/#envvar-DJANGO_RUNSERVER_HIDE_WARNING
 os.environ["DJANGO_RUNSERVER_HIDE_WARNING"] = "true"
 
+
 BASE_DIR = Path(__file__).parent
 
 DEBUG = True
