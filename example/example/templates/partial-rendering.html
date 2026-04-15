@@ -1,10 +1,9 @@
 {% extends "_base.html" %}
-{% load partials %}
 
 {% block main %}
   <section>
     <p>
-      This example shows you how you can do partial rendering for htmx requests using <a href="https://github.com/carltongibson/django-template-partials">django-template-partials</a>.
+      This example shows you how you can do partial rendering for htmx requests using Django 6.0's built-in template partials.
       The view renders only the content of the table section partial for requests made with htmx, saving time and bandwidth.
       Paginate through the below list of randomly generated people to see this in action, and study the view and template.
     </p>
