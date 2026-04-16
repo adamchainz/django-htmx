@@ -8,10 +8,8 @@ from urllib.parse import unquote, urlsplit, urlunsplit
 from asgiref.sync import iscoroutinefunction, markcoroutinefunction
 from django.http import HttpRequest
 from django.http.response import HttpResponseBase
-from django.utils.functional import cached_property
-
-
 from django.utils.cache import patch_vary_headers
+from django.utils.functional import cached_property
 
 
 class HtmxMiddleware:

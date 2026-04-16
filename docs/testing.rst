@@ -19,6 +19,7 @@ Testing tools for htmx views.
 
        client = HtmxClient()
 
+
        def test_htmx_view(self):
            response = client.get("/my-view/", htmx=True)
            assert response.status_code == 200
