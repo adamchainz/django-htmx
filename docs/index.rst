@@ -23,6 +23,7 @@ This package provides an easy way to include htmx in your Django projects and to
    middleware
    template_tags
    http
+   testing
    example_project
    tips
    changelog

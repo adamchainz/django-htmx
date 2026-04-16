@@ -14,6 +14,7 @@ from django_htmx.testing import HtmxClient
 def echo_view(request: Any) -> HttpResponse:
     return HttpResponse(json.dumps(dict(request.headers)))
 
+
 urlpatterns = [
     path("echo/", echo_view),
 ]
