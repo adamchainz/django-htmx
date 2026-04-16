@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Awaitable, cast
+from collections.abc import Awaitable
+from typing import Any, cast
 
 from django.core.handlers.wsgi import WSGIRequest
 from django.http import HttpResponse
