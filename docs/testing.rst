@@ -20,6 +20,7 @@ The ``django_htmx.testing`` module provides tools to simplify this.
 
        client = HtmxClient()
 
+
        def test_htmx_view(self):
            # Simple htmx request
            response = client.get("/my-view/", htmx=True)
