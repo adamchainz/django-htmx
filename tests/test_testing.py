@@ -22,7 +22,6 @@ urlpatterns = [
 
 @override_settings(ROOT_URLCONF=__name__)
 class HtmxClientTests(SimpleTestCase):
-    # Basic: htmx=True just sets HX-Request
     def test_htmx_true_sets_hx_request(self):
         client = HtmxClient()
         response = client.get("/echo/", htmx=True)
@@ -30,7 +29,6 @@ class HtmxClientTests(SimpleTestCase):
         headers = json.loads(response.content)
         assert headers.get("Hx-Request") == "true"
 
-    # Dict form: additional headers get set alongside HX-Request
     def test_htmx_dict_sets_target(self):
         client = HtmxClient()
         response = client.get("/echo/", htmx={"target": "#dogs"})
@@ -86,7 +84,6 @@ class HtmxClientTests(SimpleTestCase):
         with pytest.raises(ValueError, match="Unknown htmx kwarg"):
             client.get("/echo/", htmx={"typo_key": "bad"})
 
-    # No htmx kwarg at all means a normal non-HTMX request
     def test_no_htmx_kwarg_is_a_normal_request(self):
         client = HtmxClient()
         response = client.get("/echo/")
@@ -94,7 +91,6 @@ class HtmxClientTests(SimpleTestCase):
         headers = json.loads(response.content)
         assert "Hx-Request" not in headers
 
-    # Works with POST too, not just GET
     def test_htmx_works_on_post(self):
         client = HtmxClient()
         response = client.post("/echo/", htmx={"target": "#form-result"})
@@ -102,3 +98,12 @@ class HtmxClientTests(SimpleTestCase):
         headers = json.loads(response.content)
         assert headers.get("Hx-Request") == "true"
         assert headers.get("Hx-Target") == "#form-result"
+
+    @override_settings(
+        MIDDLEWARE=["django_htmx.middleware.HtmxMiddleware"],
+    )
+    def test_with_middleware_includes_vary_header(self):
+        client = HtmxClient()
+        response = client.get("/echo/", htmx=True)
+        assert response.has_header("Vary")
+        assert "HX-Request" in response["Vary"]

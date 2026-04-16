@@ -177,3 +177,21 @@ class HtmxMiddlewareTests(SimpleTestCase):
 
         assert isinstance(response, HttpResponse)
         assert bool(request.htmx) is True
+
+    def test_vary_header(self):
+        request = self.request_factory.get("/")
+        response = self.middleware(request)
+        assert response.has_header("Vary")
+        assert "HX-Request" in response["Vary"]
+
+    async def test_vary_header_async(self):
+        async def dummy_async_view(request):
+            return HttpResponse("Hello!")
+
+        middleware = HtmxMiddleware(dummy_async_view)
+        request = self.request_factory.get("/")
+        result = middleware(request)
+        response = await result
+
+        assert response.has_header("Vary")
+        assert "HX-Request" in response["Vary"]

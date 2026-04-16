@@ -11,29 +11,15 @@ Middleware
 
    See it action in the “Middleware Tester” section of the :doc:`example project <example_project>`.
 
-   .. admonition:: Set the ``Vary`` header for cacheable responses
-
-      If you set HTTP caching headers, ensure any views that switch content with ``request.htmx`` attributes add the appropriate htmx headers to the ``Vary`` header, per Django’s documentation section |Using Vary headers|__.
-      For example:
-
-      .. |Using Vary headers| replace:: Using ``Vary`` headers
-      __ https://docs.djangoproject.com/en/stable/topics/cache/#using-vary-headers
-
-      .. code-block:: python
-
-          from django.shortcuts import render
-          from django.views.decorators.cache import cache_control
-          from django.views.decorators.vary import vary_on_headers
-
-
-          @cache_control(max_age=300)
-          @vary_on_headers("HX-Request")
-          def my_view(request):
-              if request.htmx:
-                  template_name = "partial.html"
-              else:
-                  template_name = "complete.html"
-              return render(request, template_name, ...)
+    .. admonition:: Automatic ``Vary`` header
+ 
+       The middleware automatically adds ``HX-Request`` to the ``Vary`` header of all responses.
+       This ensures that browsers and caches correctly distinguish between partial and full page requests for the same URL, preventing "broken" pages when navigating history or using caches.
+ 
+       If you switch content based on other htmx headers (like ``HX-Target``), you should still add those manually using Django’s |Using Vary headers|__.
+ 
+       .. |Using Vary headers| replace:: Using ``Vary`` headers
+       __ https://docs.djangoproject.com/en/stable/topics/cache/#using-vary-headers
 
    .. hint::
 

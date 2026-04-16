@@ -3,8 +3,7 @@ Testing
 
 .. currentmodule:: django_htmx.testing
 
-Testing htmx views can be repetitive as they usually switch behaviour based on htmx-specific headers.
-The ``django_htmx.testing`` module provides tools to simplify this.
+Testing tools for htmx views.
 
 .. class:: HtmxClient
 
@@ -21,7 +20,6 @@ The ``django_htmx.testing`` module provides tools to simplify this.
        client = HtmxClient()
 
        def test_htmx_view(self):
-           # Simple htmx request
            response = client.get("/my-view/", htmx=True)
            assert response.status_code == 200
 
@@ -31,7 +29,6 @@ The ``django_htmx.testing`` module provides tools to simplify this.
    .. code-block:: python
 
        def test_htmx_target(self):
-           # Request with a specific target
            response = client.get("/my-view/", htmx={"target": "#info-pane"})
            assert response.status_code == 200
 

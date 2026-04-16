@@ -4,8 +4,6 @@ from typing import Any
 
 from django.test.client import Client
 
-# Maps the short kwarg names a test author would write to the real HX-* headers.
-# Keys match the property names on HtmxDetails so they feel familiar.
 _HTMX_HEADER_MAP = {
     "boosted": "HTTP_HX_BOOSTED",
     "current_url": "HTTP_HX_CURRENT_URL",

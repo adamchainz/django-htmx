@@ -11,6 +11,9 @@ from django.http.response import HttpResponseBase
 from django.utils.functional import cached_property
 
 
+from django.utils.cache import patch_vary_headers
+
+
 class HtmxMiddleware:
     sync_capable = True
     async_capable = True
@@ -36,11 +39,15 @@ class HtmxMiddleware:
         if self.async_mode:
             return self.__acall__(request)
         request.htmx = HtmxDetails(request)  # type: ignore [attr-defined]
-        return self.get_response(request)
+        response = self.get_response(request)
+        patch_vary_headers(response, ["HX-Request"])
+        return response
 
     async def __acall__(self, request: HttpRequest) -> HttpResponseBase:
         request.htmx = HtmxDetails(request)  # type: ignore [attr-defined]
-        return await self.get_response(request)  # type: ignore [no-any-return, misc]
+        response = await self.get_response(request)  # type: ignore [no-any-return, misc]
+        patch_vary_headers(response, ["HX-Request"])
+        return response
 
 
 class HtmxDetails:
