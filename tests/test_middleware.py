@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any, Awaitable, cast
 
 from django.core.handlers.wsgi import WSGIRequest
 from django.http import HttpResponse
@@ -180,7 +180,7 @@ class HtmxMiddlewareTests(SimpleTestCase):
 
     def test_vary_header(self):
         request = self.request_factory.get("/")
-        response = self.middleware(request)
+        response = cast(HttpResponse, self.middleware(request))
         assert response.has_header("Vary")
         assert "HX-Request" in response["Vary"]
 
@@ -190,7 +190,7 @@ class HtmxMiddlewareTests(SimpleTestCase):
 
         middleware = HtmxMiddleware(dummy_async_view)
         request = self.request_factory.get("/")
-        result = middleware(request)
+        result = cast(Awaitable[HttpResponse], middleware(request))
         response = await result
 
         assert response.has_header("Vary")
