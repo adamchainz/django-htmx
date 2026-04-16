@@ -37,13 +37,13 @@ class HtmxMiddleware:
         if self.async_mode:
             return self.__acall__(request)
         request.htmx = HtmxDetails(request)  # type: ignore [attr-defined]
-        response = self.get_response(request)
-        patch_vary_headers(cast(HttpResponseBase, response), ["HX-Request"])
+        response = cast(HttpResponseBase, self.get_response(request))
+        patch_vary_headers(response, ["HX-Request"])
         return response
 
     async def __acall__(self, request: HttpRequest) -> HttpResponseBase:
         request.htmx = HtmxDetails(request)  # type: ignore [attr-defined]
-        response = await self.get_response(request)  # type: ignore [misc]
+        response = cast(HttpResponseBase, await self.get_response(request))
         patch_vary_headers(response, ["HX-Request"])
         return response
 
