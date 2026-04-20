@@ -55,6 +55,7 @@ class HtmxClientTests(SimpleTestCase):
 
     def test_direct_headers(self) -> None:
         from django.test import Client
+
         client = Client()
         response = client.get("/htmx-test/", headers={"HX-Request": "true"})
         data = response.json()

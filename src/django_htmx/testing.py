@@ -41,8 +41,7 @@ class HtmxClientMixin:
                     except KeyError:
                         valid_keys = sorted(_HTMX_HEADER_MAP)
                         raise ValueError(
-                            f"Unknown htmx kwarg {key!r}. "
-                            f"Valid keys are: {valid_keys}."
+                            f"Unknown htmx kwarg {key!r}. Valid keys are: {valid_keys}."
                         ) from None
                     headers.setdefault(header_name, str(value))
 
