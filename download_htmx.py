@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env uv run --script --no-project
 """
 Download htmx to django_htmx/static/htmx.min.js.
 """
