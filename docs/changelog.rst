@@ -2,6 +2,10 @@
 Changelog
 =========
 
+* Upgrade the vendored htmx 2 to `version 2.0.10 <https://github.com/bigskysoftware/htmx/blob/master/CHANGELOG.md#2010---2026-04-21>`__.
+
+  `PR #594 <https://github.com/adamchainz/django-htmx/pull/594>`__.
+
 1.28.0 (2026-07-12)
 -------------------
 
