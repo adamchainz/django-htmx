@@ -2,6 +2,9 @@
 Changelog
 =========
 
+
+* Upgrade the vendored htmx to `version 2.0.10 <https://github.com/bigskysoftware/htmx/blob/master/CHANGELOG.md#2010---2026-04-21>`__.
+
 1.27.0 (2025-11-28)
 -------------------
 

@@ -280,7 +280,7 @@ var htmx = (function() {
        */
       historyRestoreAsHxRequest: true,
       /**
-       * Weather to report input validation errors to the end user and update focus to the first input that fails validation.
+       * Whether to report input validation errors to the end user and update focus to the first input that fails validation.
        * This should always be enabled as this matches default browser form submit behaviour
        * @type boolean
        * @default false
@@ -296,7 +296,7 @@ var htmx = (function() {
     location,
     /** @type {typeof internalEval} */
     _: null,
-    version: '2.0.7'
+    version: '2.0.10'
   }
   // Tsc madness part 2
   htmx.onLoad = onLoadHelper
@@ -525,6 +525,9 @@ var htmx = (function() {
    * @returns {Document}
    */
   function parseHTML(resp) {
+    if ('parseHTMLUnsafe' in Document) {
+      return Document.parseHTMLUnsafe(resp)
+    }
     const parser = new DOMParser()
     return parser.parseFromString(resp, 'text/html')
   }
@@ -841,10 +844,11 @@ var htmx = (function() {
    * @returns {string}
    */
   function normalizePath(path) {
-    // use dummy base URL to allow normalize on path only
-    const url = new URL(path, 'http://x')
-    if (url) {
+    try {
+      const url = new URL(path, window.location.href)
       path = url.pathname + url.search
+    } catch (e) {
+      // fallback for malformed URLs
     }
     // remove trailing slash, unless index page
     if (path != '/') {
@@ -1505,7 +1509,7 @@ var htmx = (function() {
       oobElement.parentNode.removeChild(oobElement)
     } else {
       oobElement.parentNode.removeChild(oobElement)
-      triggerErrorEvent(getDocument().body, 'htmx:oobErrorNoTarget', { content: oobElement })
+      triggerErrorEvent(getDocument().body, 'htmx:oobErrorNoTarget', { content: oobElement, target: selector })
     }
     return oobValue
   }
@@ -1556,10 +1560,8 @@ var htmx = (function() {
     forEach(fragment.querySelectorAll('[id]'), function(newNode) {
       const id = getRawAttribute(newNode, 'id')
       if (id && id.length > 0) {
-        const normalizedId = id.replace("'", "\\'")
-        const normalizedTag = newNode.tagName.replace(':', '\\:')
         const parentElt = asParentNode(parentNode)
-        const oldNode = parentElt && parentElt.querySelector(normalizedTag + "[id='" + normalizedId + "']")
+        const oldNode = parentElt && parentElt.querySelector(CSS.escape(newNode.tagName) + '#' + CSS.escape(id))
         if (oldNode && oldNode !== parentElt) {
           const newAttributes = newNode.cloneNode()
           cloneAttributes(newNode, oldNode)
@@ -1972,10 +1974,10 @@ var htmx = (function() {
         }
       }
 
-      target.classList.remove(htmx.config.swappingClass)
+      removeClassFromElement(target, htmx.config.swappingClass)
       forEach(settleInfo.elts, function(elt) {
         if (elt.classList) {
-          elt.classList.add(htmx.config.settlingClass)
+          addClassToElement(elt, htmx.config.settlingClass)
         }
         triggerEvent(elt, 'htmx:afterSwap', swapOptions.eventInfo)
       })
@@ -1993,7 +1995,7 @@ var htmx = (function() {
         })
         forEach(settleInfo.elts, function(elt) {
           if (elt.classList) {
-            elt.classList.remove(htmx.config.settlingClass)
+            removeClassFromElement(elt, htmx.config.settlingClass)
           }
           triggerEvent(elt, 'htmx:afterSettle', swapOptions.eventInfo)
         })
@@ -3108,7 +3110,7 @@ var htmx = (function() {
       htmx.logger(elt, eventName, detail)
     }
     if (detail.error) {
-      logError(detail.error)
+      logError(detail.error + (detail.target ? ', ' + detail.target : ''))
       triggerEvent(elt, 'htmx:error', { errorInfo: detail })
     }
     let eventResult = elt.dispatchEvent(event)
@@ -3126,7 +3128,7 @@ var htmx = (function() {
   //= ===================================================================
   // History Support
   //= ===================================================================
-  let currentPathForHistory = location.pathname + location.search
+  let currentPathForHistory
 
   /**
    * @param {string} path
@@ -3137,6 +3139,8 @@ var htmx = (function() {
       sessionStorage.setItem('htmx-current-path-for-history', path)
     }
   }
+
+  setCurrentPathForHistory(location.pathname + location.search)
 
   /**
    * @returns {Element}
@@ -3372,7 +3376,7 @@ var htmx = (function() {
     forEach(indicators, function(ic) {
       const internalData = getInternalData(ic)
       internalData.requestCount = (internalData.requestCount || 0) + 1
-      ic.classList.add.call(ic.classList, htmx.config.requestClass)
+      addClassToElement(ic, htmx.config.requestClass)
     })
     return indicators
   }
@@ -3389,8 +3393,10 @@ var htmx = (function() {
     forEach(disabledElts, function(disabledElement) {
       const internalData = getInternalData(disabledElement)
       internalData.requestCount = (internalData.requestCount || 0) + 1
-      disabledElement.setAttribute('disabled', '')
-      disabledElement.setAttribute('data-disabled-by-htmx', '')
+      if (!disabledElement.hasAttribute('disabled')) {
+        disabledElement.setAttribute('disabled', '')
+        disabledElement.setAttribute('data-disabled-by-htmx', '')
+      }
     })
     return disabledElts
   }
@@ -3407,12 +3413,12 @@ var htmx = (function() {
     forEach(indicators, function(ic) {
       const internalData = getInternalData(ic)
       if (internalData.requestCount === 0) {
-        ic.classList.remove.call(ic.classList, htmx.config.requestClass)
+        removeClassFromElement(ic, htmx.config.requestClass)
       }
     })
     forEach(disabled, function(disabledElement) {
       const internalData = getInternalData(disabledElement)
-      if (internalData.requestCount === 0) {
+      if (internalData.requestCount === 0 && disabledElement.hasAttribute('data-disabled-by-htmx')) {
         disabledElement.removeAttribute('disabled')
         disabledElement.removeAttribute('data-disabled-by-htmx')
       }
@@ -4073,7 +4079,10 @@ var htmx = (function() {
             targetOverride: resolvedTarget,
             swapOverride: context.swap,
             select: context.select,
-            returnPromise: true
+            returnPromise: true,
+            push: context.push,
+            replace: context.replace,
+            selectOOB: context.selectOOB
           })
       }
     } else {
@@ -4688,8 +4697,10 @@ var htmx = (function() {
     const requestPath = responseInfo.pathInfo.finalRequestPath
     const responsePath = responseInfo.pathInfo.responsePath
 
-    const pushUrl = getClosestAttributeValue(elt, 'hx-push-url')
-    const replaceUrl = getClosestAttributeValue(elt, 'hx-replace-url')
+    let pushUrl = responseInfo.etc.push || getClosestAttributeValue(elt, 'hx-push-url')
+    let replaceUrl = responseInfo.etc.replace || getClosestAttributeValue(elt, 'hx-replace-url')
+    if (pushUrl === 'false') pushUrl = null
+    if (replaceUrl === 'false') replaceUrl = null
     const elementIsBoosted = getInternalData(elt).boosted
 
     let saveType = null
@@ -4707,11 +4718,6 @@ var htmx = (function() {
     }
 
     if (path) {
-    // false indicates no push, return empty object
-      if (path === 'false') {
-        return {}
-      }
-
       // true indicates we want to follow wherever the server ended up sending us
       if (path === 'true') {
         path = responsePath || requestPath // if there is no response path, go with the original request path
@@ -4774,7 +4780,7 @@ var htmx = (function() {
   }
 
   /**
-   * Resolve the Retarget selector and throw if not found
+   * Resove the Retarget selector and throw if not found
    * @param {Element} elt
    * @param {String} target
    * @returns {Element}
@@ -4808,19 +4814,17 @@ var htmx = (function() {
     }
 
     if (hasHeader(xhr, /HX-Location:/i)) {
-      saveCurrentPageToHistory()
       let redirectPath = xhr.getResponseHeader('HX-Location')
-      /** @type {HtmxAjaxHelperContext&{path:string}} */
-      var redirectSwapSpec
+      /** @type {HtmxAjaxHelperContext&{path?:string}} */
+      var redirectSwapSpec = {}
       if (redirectPath.indexOf('{') === 0) {
         redirectSwapSpec = parseJSON(redirectPath)
         // what's the best way to throw an error if the user didn't include this
         redirectPath = redirectSwapSpec.path
         delete redirectSwapSpec.path
       }
-      ajaxHelper('get', redirectPath, redirectSwapSpec).then(function() {
-        pushUrlIntoHistory(redirectPath)
-      })
+      redirectSwapSpec.push = redirectSwapSpec.push ?? 'true'
+      ajaxHelper('get', redirectPath, redirectSwapSpec)
       return
     }
 
@@ -4909,7 +4913,7 @@ var htmx = (function() {
         swapSpec.ignoreTitle = ignoreTitle
       }
 
-      target.classList.add(htmx.config.swappingClass)
+      addClassToElement(target, htmx.config.swappingClass)
 
       if (responseInfoSelect) {
         selectOverride = responseInfoSelect
@@ -4919,7 +4923,7 @@ var htmx = (function() {
         selectOverride = xhr.getResponseHeader('HX-Reselect')
       }
 
-      const selectOOB = getClosestAttributeValue(elt, 'hx-select-oob')
+      const selectOOB = etc.selectOOB || getClosestAttributeValue(elt, 'hx-select-oob')
       const select = getClosestAttributeValue(elt, 'hx-select')
 
       swap(target, serverResponse, swapSpec, {
@@ -5118,7 +5122,7 @@ var htmx = (function() {
       "[hx-trigger='restored'],[data-hx-trigger='restored']"
     )
     body.addEventListener('htmx:abort', function(evt) {
-      const target = evt.target
+      const target = (/** @type {CustomEvent} */(evt)).detail.elt || evt.target
       const internalData = getInternalData(target)
       if (internalData && internalData.xhr) {
         internalData.xhr.abort()
@@ -5238,6 +5242,9 @@ var htmx = (function() {
  * @property {Object|FormData} [values]
  * @property {Record<string,string>} [headers]
  * @property {string} [select]
+ * @property {string} [push]
+ * @property {string} [replace]
+ * @property {string} [selectOOB]
  */
 
 /**
@@ -5284,6 +5291,9 @@ var htmx = (function() {
  * @property {Object|FormData} [values]
  * @property {boolean} [credentials]
  * @property {number} [timeout]
+ * @property {string} [push]
+ * @property {string} [replace]
+ * @property {string} [selectOOB]
  */
 
 /**
