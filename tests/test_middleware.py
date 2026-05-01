@@ -164,6 +164,11 @@ class HtmxMiddlewareTests(SimpleTestCase):
         self.middleware(request)
         assert request.htmx.triggering_event == {"target": None}
 
+    def test_vary_header_sync(self):
+        request = self.request_factory.get("/")
+        response = cast(HttpResponse, self.middleware(request))
+        assert response.headers["Vary"] == "HX-Request"
+
     async def test_async(self):
         async def dummy_async_view(request):
             return HttpResponse("Hello!")
@@ -177,3 +182,16 @@ class HtmxMiddlewareTests(SimpleTestCase):
 
         assert isinstance(response, HttpResponse)
         assert bool(request.htmx) is True
+
+    async def test_vary_header_async(self):
+        async def dummy_async_view(request):
+            return HttpResponse("Hello!")
+
+        middleware = HtmxMiddleware(dummy_async_view)
+        request = self.request_factory.get("/")
+
+        result = middleware(request)
+        assert not isinstance(result, HttpResponseBase)
+        response = await result
+
+        assert response.headers["Vary"] == "HX-Request"
