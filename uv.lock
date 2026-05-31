@@ -372,9 +372,9 @@ name = "django"
 version = "5.2.14"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
+    "python_full_version >= '3.12'",
     "python_full_version == '3.11.*'",
     "python_full_version < '3.11'",
-    "python_full_version >= '3.12'",
 ]
 dependencies = [
     { name = "asgiref", marker = "(python_full_version < '3.12' and extra != 'group-11-django-htmx-django42' and extra != 'group-11-django-htmx-django50' and extra != 'group-11-django-htmx-django51') or extra == 'group-11-django-htmx-django52' or (extra == 'group-11-django-htmx-django42' and extra == 'group-11-django-htmx-django50') or (extra == 'group-11-django-htmx-django42' and extra == 'group-11-django-htmx-django51') or (extra == 'group-11-django-htmx-django42' and extra == 'group-11-django-htmx-django60') or (extra == 'group-11-django-htmx-django50' and extra == 'group-11-django-htmx-django51') or (extra == 'group-11-django-htmx-django50' and extra == 'group-11-django-htmx-django60') or (extra == 'group-11-django-htmx-django51' and extra == 'group-11-django-htmx-django60')" },
@@ -440,6 +440,10 @@ docs = [
     { name = "sphinx-build-compatibility" },
     { name = "sphinx-copybutton" },
 ]
+example = [
+    { name = "django-template-partials" },
+    { name = "faker" },
+]
 test = [
     { name = "coverage", extra = ["toml"] },
     { name = "pytest" },
@@ -465,11 +469,31 @@ docs = [
     { name = "sphinx-build-compatibility", git = "https://github.com/readthedocs/sphinx-build-compatibility?rev=4f304bd4562cdc96316f4fec82b264ca379d23e0" },
     { name = "sphinx-copybutton", specifier = ">=0.5.2" },
 ]
+example = [
+    { name = "django-template-partials" },
+    { name = "faker" },
+]
 test = [
     { name = "coverage", extras = ["toml"] },
     { name = "pytest", specifier = ">=9" },
     { name = "pytest-django" },
     { name = "pytest-randomly" },
+]
+
+[[package]]
+name = "django-template-partials"
+version = "25.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "django", version = "4.2.30", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-11-django-htmx-django42' or (extra == 'group-11-django-htmx-django50' and extra == 'group-11-django-htmx-django51') or (extra == 'group-11-django-htmx-django50' and extra == 'group-11-django-htmx-django52') or (extra == 'group-11-django-htmx-django50' and extra == 'group-11-django-htmx-django60') or (extra == 'group-11-django-htmx-django51' and extra == 'group-11-django-htmx-django52') or (extra == 'group-11-django-htmx-django51' and extra == 'group-11-django-htmx-django60') or (extra == 'group-11-django-htmx-django52' and extra == 'group-11-django-htmx-django60')" },
+    { name = "django", version = "5.0.14", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-11-django-htmx-django50' or (extra == 'group-11-django-htmx-django42' and extra == 'group-11-django-htmx-django51') or (extra == 'group-11-django-htmx-django42' and extra == 'group-11-django-htmx-django52') or (extra == 'group-11-django-htmx-django42' and extra == 'group-11-django-htmx-django60') or (extra == 'group-11-django-htmx-django51' and extra == 'group-11-django-htmx-django52') or (extra == 'group-11-django-htmx-django51' and extra == 'group-11-django-htmx-django60') or (extra == 'group-11-django-htmx-django52' and extra == 'group-11-django-htmx-django60')" },
+    { name = "django", version = "5.1.15", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'group-11-django-htmx-django51' or (extra == 'group-11-django-htmx-django42' and extra == 'group-11-django-htmx-django50') or (extra == 'group-11-django-htmx-django50' and extra == 'group-11-django-htmx-django52') or (extra == 'group-11-django-htmx-django50' and extra == 'group-11-django-htmx-django60') or (extra == 'group-11-django-htmx-django52' and extra == 'group-11-django-htmx-django60') or (extra == 'group-11-django-htmx-django42' and extra != 'group-11-django-htmx-django51' and extra == 'group-11-django-htmx-django52') or (extra == 'group-11-django-htmx-django42' and extra != 'group-11-django-htmx-django51' and extra == 'group-11-django-htmx-django60')" },
+    { name = "django", version = "5.2.14", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and extra != 'group-11-django-htmx-django42' and extra != 'group-11-django-htmx-django50' and extra != 'group-11-django-htmx-django51') or extra == 'group-11-django-htmx-django52' or (extra == 'group-11-django-htmx-django42' and extra == 'group-11-django-htmx-django50') or (extra == 'group-11-django-htmx-django42' and extra == 'group-11-django-htmx-django51') or (extra == 'group-11-django-htmx-django42' and extra == 'group-11-django-htmx-django60') or (extra == 'group-11-django-htmx-django50' and extra == 'group-11-django-htmx-django51') or (extra == 'group-11-django-htmx-django50' and extra == 'group-11-django-htmx-django60') or (extra == 'group-11-django-htmx-django51' and extra == 'group-11-django-htmx-django60')" },
+    { name = "django", version = "6.0.5", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and extra != 'group-11-django-htmx-django42' and extra != 'group-11-django-htmx-django50' and extra != 'group-11-django-htmx-django51' and extra != 'group-11-django-htmx-django52') or (extra == 'group-11-django-htmx-django42' and extra == 'group-11-django-htmx-django50') or (extra == 'group-11-django-htmx-django42' and extra == 'group-11-django-htmx-django51') or (extra == 'group-11-django-htmx-django42' and extra == 'group-11-django-htmx-django52') or (extra == 'group-11-django-htmx-django42' and extra == 'group-11-django-htmx-django60') or (extra == 'group-11-django-htmx-django50' and extra == 'group-11-django-htmx-django51') or (extra == 'group-11-django-htmx-django50' and extra == 'group-11-django-htmx-django52') or (extra == 'group-11-django-htmx-django50' and extra == 'group-11-django-htmx-django60') or (extra == 'group-11-django-htmx-django51' and extra == 'group-11-django-htmx-django52') or (extra == 'group-11-django-htmx-django51' and extra == 'group-11-django-htmx-django60') or (extra == 'group-11-django-htmx-django52' and extra == 'group-11-django-htmx-django60')" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b0/2e/957ee4a6ee0a7d46a18676ba8b01d762ef89d00b7769cc532853f9f989e1/django_template_partials-25.3.tar.gz", hash = "sha256:6d11f7bb049ce3032e6fe3331137b771e34239ce1af18c55ef6a9b667cf2ef36", size = 18052, upload-time = "2025-11-14T08:27:21.917Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9b/9d/48f8721e48b938ca2e2dde577986624543be6ff9bdccac20ccb747be4287/django_template_partials-25.3-py2.py3-none-any.whl", hash = "sha256:a19334934cf40e4e1218802a4ddfdf22b8f78cc5a0b8c75a18b97e6ea4f3c108", size = 9702, upload-time = "2025-11-14T08:27:20.243Z" },
 ]
 
 [[package]]
@@ -507,6 +531,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/50/79/66800aadf48771f6b62f7eb014e352e5d06856655206165d775e675a02c9/exceptiongroup-1.3.1.tar.gz", hash = "sha256:8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219", size = 30371, upload-time = "2025-11-21T23:01:54.787Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/8a/0e/97c33bf5009bdbac74fd2beace167cab3f978feb69cc36f1ef79360d6c4e/exceptiongroup-1.3.1-py3-none-any.whl", hash = "sha256:a7a39a3bd276781e98394987d3a5701d0c4edffb633bb7a5144577f82c773598", size = 16740, upload-time = "2025-11-21T23:01:53.443Z" },
+]
+
+[[package]]
+name = "faker"
+version = "40.19.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "tzdata", marker = "sys_platform == 'win32' or (extra == 'group-11-django-htmx-django42' and extra == 'group-11-django-htmx-django50') or (extra == 'group-11-django-htmx-django42' and extra == 'group-11-django-htmx-django51') or (extra == 'group-11-django-htmx-django42' and extra == 'group-11-django-htmx-django52') or (extra == 'group-11-django-htmx-django42' and extra == 'group-11-django-htmx-django60') or (extra == 'group-11-django-htmx-django50' and extra == 'group-11-django-htmx-django51') or (extra == 'group-11-django-htmx-django50' and extra == 'group-11-django-htmx-django52') or (extra == 'group-11-django-htmx-django50' and extra == 'group-11-django-htmx-django60') or (extra == 'group-11-django-htmx-django51' and extra == 'group-11-django-htmx-django52') or (extra == 'group-11-django-htmx-django51' and extra == 'group-11-django-htmx-django60') or (extra == 'group-11-django-htmx-django52' and extra == 'group-11-django-htmx-django60')" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/15/01/28c8ddae8caaf82c929655000963d83e3f01265a9af34e823c2ef2eee8ac/faker-40.19.1.tar.gz", hash = "sha256:76fa71fd3bf320db25e5504eb356f9a76b8a95cd6098524d006f446035b6b89d", size = 1969318, upload-time = "2026-05-22T15:57:37.433Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/49/b4/40a1ec12ec834604f3848143343baf1c67bc9a1096e401907eaa0d25876a/faker-40.19.1-py3-none-any.whl", hash = "sha256:265259b37c013838baaae34940207288170df385d6c5281413fce56a3504d580", size = 2007643, upload-time = "2026-05-22T15:57:35.867Z" },
 ]
 
 [[package]]

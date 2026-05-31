@@ -64,6 +64,10 @@ django50 = [ "django>=5a1,<5.1; python_version>='3.10'" ]
 django51 = [ "django>=5.1a1,<5.2; python_version>='3.10'" ]
 django52 = [ "django>=5.2a1,<6; python_version>='3.10'" ]
 django60 = [ "django>=6a1,<6.1; python_version>='3.12'" ]
+example = [
+  "django-template-partials",
+  "faker",
+]
 
 [tool.uv]
 sources.sphinx-build-compatibility = { git = "https://github.com/readthedocs/sphinx-build-compatibility", rev = "4f304bd4562cdc96316f4fec82b264ca379d23e0" }
