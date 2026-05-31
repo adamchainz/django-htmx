@@ -1,14 +1,11 @@
 Example Application
 ===================
 
-Use uv to set up with these commands:
+Run with:
 
 .. code-block:: sh
 
-   uv venv
-   source .venv/bin/activate
-   uv pip install -e .. -r requirements.txt
-   python manage.py runserver
+   uv run --group example manage.py runserver
 
 Open it at http://127.0.0.1:8000/ .
 
