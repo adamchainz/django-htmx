@@ -29,6 +29,8 @@ repos:
       (?x)^(
         .*\.min\.js
         |.*\.svg
+        |src/django_htmx/static/django_htmx/htmx\.js
+        |src/django_htmx/static/django_htmx/htmx\.min\.js
       )$
 - repo: https://github.com/tox-dev/pyproject-fmt
   rev: 91de51aef61c5f2383f03da25604e3d65a8309e0  # frozen: v2.21.1
