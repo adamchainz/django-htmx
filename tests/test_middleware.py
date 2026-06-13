@@ -17,7 +17,7 @@ class HtmxWSGIRequest(WSGIRequest):
 
 class RequestFactory(BaseRequestFactory):
     def get(
-        self, path: str, data: Any = None, secure: bool = False, **extra: Any
+        self, path: Any, data: Any = None, secure: bool = False, **extra: Any
     ) -> HtmxWSGIRequest:
         return cast(HtmxWSGIRequest, super().get(path, data, secure, **extra))
 

@@ -70,7 +70,7 @@ repos:
   hooks:
   - id: mypy
     additional_dependencies:
-    - django-stubs==5.1.2
+    - django-stubs==6.0.5
     - types-python-dateutil
 - repo: https://github.com/adamchainz/djade-pre-commit
   rev: 52a7ce253113456c2a1113186a4a19b15c8b68af  # frozen: 1.9.0

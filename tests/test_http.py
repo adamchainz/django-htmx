@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from uuid import UUID
 
-import django
 import pytest
 from django.core.serializers.json import DjangoJSONEncoder
 from django.http import HttpResponse, StreamingHttpResponse
@@ -39,9 +38,6 @@ class HttpResponseClientRedirectTests(SimpleTestCase):
         assert response["HX-Redirect"] == "https://example.com"
         assert "Location" not in response
 
-    @pytest.mark.skipif(
-        django.VERSION < (5, 2), reason="Django 5.2 introduced preserve_request"
-    )
     def test_fail_preserve_request(self):
         with pytest.raises(ValueError) as exinfo:
             HttpResponseClientRedirect("https://example.com", preserve_request=True)
