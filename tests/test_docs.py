@@ -30,7 +30,7 @@ class TemplateTagsTests(SimpleTestCase):
 
 
 def read_version(path: Path, regex: str) -> str:
-    content = path.read_text()
+    content = path.read_text(encoding="utf-8")
     match = re.search(regex, content)
     assert match
     return match[1]
