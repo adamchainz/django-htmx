@@ -1,6 +1,7 @@
 #!/usr/bin/env uv run --script --no-project
 """
-Download htmx to django_htmx/static/htmx.min.js.
+Download htmx to django_htmx/static/django_htmx/htmx-<major>.js and
+htmx-<major>.min.js.
 """
 
 from __future__ import annotations
@@ -16,14 +17,17 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("version", help="The version of htmx to download, e.g. 2.0.4")
     args = parser.parse_args()
+    major = args.version.split(".")[0]
+    if major not in ("2", "4"):
+        parser.error(f"Unsupported htmx major version: {major}")
     # Per: https://htmx.org/docs/#installing
     download_file(
         f"https://unpkg.com/htmx.org@{args.version}/dist/htmx.js",
-        static_dir / "htmx.js",
+        static_dir / f"htmx-{major}.js",
     )
     download_file(
         f"https://unpkg.com/htmx.org@{args.version}/dist/htmx.min.js",
-        static_dir / "htmx.min.js",
+        static_dir / f"htmx-{major}.min.js",
     )
     print("✅")
     return 0

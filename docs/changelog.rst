@@ -5,6 +5,17 @@ Changelog
 Unreleased
 ----------
 
+* Vendor htmx version 4.0.0-beta5 alongside htmx 2, and add a ``version`` argument to the ``htmx_script`` template tag to select between them.
+  The default remains htmx 2, since htmx 4 is in beta.
+  Pass ``version=4`` to use htmx 4:
+
+  .. code-block:: django
+
+      {% htmx_script version=4 %}
+
+  As part of this change, the vendored htmx static files were renamed to include the major version: ``django_htmx/htmx.js`` and ``django_htmx/htmx.min.js`` are now ``django_htmx/htmx-2.js`` and ``django_htmx/htmx-2.min.js``, with htmx 4 at ``django_htmx/htmx-4.js`` and ``django_htmx/htmx-4.min.js``.
+  If you referenced those static files directly, rather than through the ``htmx_script`` template tag, update the paths.
+
 * Add Django 6.1 support.
 
 * Drop Django 4.2 to 5.1 support.
