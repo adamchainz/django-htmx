@@ -18,17 +18,21 @@ repos:
     exclude: |
       (?x)^(
         example/example/static/ext/debug\.js
-        |src/django_htmx/static/django_htmx/htmx\.min\.js
+        |src/django_htmx/static/django_htmx/htmx-[24](\.min)?\.js
       )$
   - id: trailing-whitespace
+    exclude: |
+      (?x)^(
+        src/django_htmx/static/django_htmx/htmx-[24](\.min)?\.js
+      )$
 - repo: https://github.com/crate-ci/typos
   rev: 0758ccd3261dc7b0594e9b698113eb08d3ba25b5  # frozen: v1
   hooks:
   - id: typos
     exclude: |
       (?x)^(
-        .*\.min\.js
-        |.*\.svg
+        .*\.svg
+        |src/django_htmx/static/django_htmx/htmx-[24](\.min)?\.js
       )$
 - repo: https://github.com/tox-dev/pyproject-fmt
   rev: 3a8ef795727fa946dfcb21c5d07b1442c2362c09  # frozen: v2.23.0
