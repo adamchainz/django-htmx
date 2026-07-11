@@ -131,36 +131,38 @@ Middleware
       The user response to `hx-prompt <https://htmx.org/attributes/hx-prompt/>`__ if it was used, or ``None``.
       For htmx 4, this requires loading the ``hx-prompt`` extension, which restores the ``hx-prompt`` attribute and its header.
 
+   .. attribute:: request_type
+      :type: str | None
+
+      **htmx 4 only**
+
+      Indicates if this is a partial or full page request, taking the values ``"full"``, ``"partial"``, or ``None`` for non-htmx requests.
+      Based on the |HX-Request-Type header|__.
+
+      .. |HX-Request-Type header| replace:: ``HX-Request-Type`` header
+      __ https://four.htmx.org/reference/headers/HX-Request-Type
+
    .. attribute:: source
       :type: str | None
 
-      .. admonition:: htmx 4 only
-
-         This attribute is only set for requests made with htmx 4.
-         For htmx 2, use :attr:`trigger` and :attr:`trigger_name` instead.
+      **htmx 4 only**
 
       A representation of the element that triggered the request, in the form ``tag#id`` (for example ``button#submit``), or ``None``.
-      Based on the ``HX-Source`` header.
+      Based on the |HX-Source header|__.
+
+      .. |HX-Source header| replace:: ``HX-Source`` header
+      __ https://four.htmx.org/reference/headers/HX-Source
 
    .. attribute:: target
       :type: str | None
 
       The target element if it exists, or ``None``.
-      Based on the ``HX-Target`` header.
-
-      .. admonition:: Value differs by htmx version
-
-         For htmx 2, this is the target element’s ``id``, for example ``some-element``.
-
-         For htmx 4, this is a ``tag#id`` representation of the target element, for example ``div#some-element``.
+      Based on the ``HX-Target`` header, which changed format in htmx 4 per the `migration guide <https://four.htmx.org/docs#request-headers>__.
 
    .. attribute:: trigger
       :type: str | None
 
-      .. admonition:: htmx 2 only
-
-         This attribute is only set for requests made with htmx 2.
-         htmx 4 does not send the ``HX-Trigger`` request header; use :attr:`source` instead.
+      **htmx 2 only**
 
       The ``id`` of the triggered element if it exists, or ``None``.
       Based on the ``HX-Trigger`` header.
@@ -168,10 +170,7 @@ Middleware
    .. attribute:: trigger_name
       :type: str | None
 
-      .. admonition:: htmx 2 only
-
-         This attribute is only set for requests made with htmx 2.
-         htmx 4 has no equivalent header; use :attr:`source` instead.
+      **htmx 2 only**
 
       The ``name`` of the triggered element if it exists, or ``None``.
       Based on the ``HX-Trigger-Name`` header.

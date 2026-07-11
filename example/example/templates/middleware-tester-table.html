@@ -43,7 +43,11 @@
       <td><code>{{ request.htmx.prompt|stringformat:'r' }}</code></td>
     </tr>
     <tr>
-      <td><code>request.htmx.source</code> <br><small>(htmx 4 only)</small></td>
+      <td><code>request.htmx.request_type</code></td>
+      <td><code>{{ request.htmx.request_type|stringformat:'r' }}</code></td>
+    </tr>
+    <tr>
+      <td><code>request.htmx.source</code></td>
       <td><code>{{ request.htmx.source|stringformat:'r' }}</code></td>
     </tr>
     <tr>
