@@ -5,6 +5,26 @@ Changelog
 Unreleased
 ----------
 
+* Support `htmx version 4 <https://four.htmx.org/>`__, available by adding ``version=4`` to the :ref:`template tags <template_tags>`.
+  The default htmx version remains 2, since htmx 4 is in beta.
+  For example, with the Django templates ``htmx_script`` tag:
+
+  .. code-block:: django
+
+      {% htmx_script version=4 %}
+
+  The :doc:`example project <example_project>` now uses htmx 4, to demonstrate its usage.
+
+  `PR #606 <https://github.com/adamchainz/django-htmx/pull/606>`__.
+
+* Add :attr:`HtmxDetails.source <django_htmx.middleware.HtmxDetails.source>`, based on the |HX-Source request header|__ that htmx 4 sends instead of ``HX-Trigger``/``HX-Trigger-Name``.
+  :attr:`~django_htmx.middleware.HtmxDetails.trigger` and :attr:`~django_htmx.middleware.HtmxDetails.trigger_name` are now documented as htmx-2-only.
+
+  .. |HX-Source request header| replace:: ``HX-Source`` request header
+  __ https://four.htmx.org/reference/headers/HX-Source
+
+  `PR #606 <https://github.com/adamchainz/django-htmx/pull/606>`__.
+
 * Add Django 6.1 support.
 
 * Drop Django 4.2 to 5.1 support.

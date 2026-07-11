@@ -42,14 +42,16 @@
 
     <section>
       <!--
-        The htmx attributes set on the nav here are inherited by the child links.
-        hx-target tells where htmx to swap the fetched content in, and hx-swap
-        tells it how to swap it - by replacing the 'outerHTML' attribute of the
-        target, i.e. replacing the target's actual DOM node. hx-push-url tells
-        htmx to push the fetched URL into the browser history, so we can use
-        the backwards/forwards buttons to navigate these subpages.
+        The htmx attributes set on the nav here are inherited by the child
+        links, via the :inherited modifier (htmx 4 requires inheritance to be
+        explicit). hx-target tells where htmx to swap the fetched content in,
+        and hx-swap tells it how to swap it - by replacing the 'outerHTML'
+        attribute of the target, i.e. replacing the target's actual DOM node.
+        hx-push-url tells htmx to push the fetched URL into the browser
+        history, so we can use the backwards/forwards buttons to navigate
+        these subpages.
       -->
-      <nav hx-target=#table hx-swap=outerHTML hx-push-url=true>
+      <nav hx-target:inherited=#table hx-swap:inherited=outerHTML hx-push-url:inherited=true>
         <ul>
           {% if page.number != 1 %}
             <li>
