@@ -5,7 +5,7 @@ Changelog
 Unreleased
 ----------
 
-* Support `htmx version 4 <https://four.htmx.org/>`__ (beta), available by adding ``version=4`` to the :ref:`template tags <template_tags>`.
+* Support `htmx version 4 <https://four.htmx.org/>`__ (beta), available by adding ``version=4`` to the :doc:`template tags <template_tags>`.
   The default htmx version remains 2, since htmx 4 is in beta.
   When htmx 4 is released, the default will be updated to 4 in a future major release of django-htmx.
 
