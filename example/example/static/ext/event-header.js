@@ -25,12 +25,13 @@
     })
   }
 
-  htmx.defineExtension('event-header', {
-    onEvent: function(name, evt) {
-      if (name === 'htmx:configRequest') {
-        if (evt.detail.triggeringEvent) {
-          evt.detail.headers['Triggering-Event'] = stringifyEvent(evt.detail.triggeringEvent)
-        }
+  // Ported from https://github.com/bigskysoftware/htmx-extensions/blob/main/src/event-header/event-header.js
+  // for htmx 4's extension API, which has no upstream release yet.
+  htmx.registerExtension('event-header', {
+    htmx_config_request: function(elt, detail) {
+      var sourceEvent = detail.ctx.sourceEvent
+      if (sourceEvent) {
+        detail.ctx.request.headers['Triggering-Event'] = stringifyEvent(sourceEvent)
       }
     }
   })

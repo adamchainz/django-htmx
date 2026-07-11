@@ -6,12 +6,13 @@
       This form itself is never submitted, but acts as a container for the form
       control elements, which make their own individual requests. Since the
       form controls all have the same CSRF header, target, and swap method, we
-      define those attributes here and the controls inherit them.
+      define those attributes here and the controls inherit them, via the
+      :inherited modifier (htmx 4 requires inheritance to be explicit).
     -->
     <form action="#"
-          hx-headers='{"x-csrftoken": "{{ csrf_token }}"}'
-          hx-target="#attribute-test"
-          hx-swap="outerHTML">
+          hx-headers:inherited='{"x-csrftoken": "{{ csrf_token }}"}'
+          hx-target:inherited="#attribute-test"
+          hx-swap:inherited="outerHTML">
       <p>
         The below form controls implement different patterns with HTMX.
         Interact with them to trigger requests that will render a table showing the Django request attributes added and changed by <code>HtmxMiddleware</code>.

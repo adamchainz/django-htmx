@@ -16,6 +16,10 @@ Unreleased
   As part of this change, the vendored htmx static files were renamed to include the major version: ``django_htmx/htmx.js`` and ``django_htmx/htmx.min.js`` are now ``django_htmx/htmx-2.js`` and ``django_htmx/htmx-2.min.js``, with htmx 4 at ``django_htmx/htmx-4.js`` and ``django_htmx/htmx-4.min.js``.
   If you referenced those static files directly, rather than through the ``htmx_script`` template tag, update the paths.
 
+* Make the :ref:`django-htmx-extension-script` work with htmx 4 as well as htmx 2, detecting the loaded htmx version at runtime.
+
+* Switch the :doc:`example project <example_project>` to htmx 4, to demonstrate its usage.
+
 * Add Django 6.1 support.
 
 * Drop Django 4.2 to 5.1 support.

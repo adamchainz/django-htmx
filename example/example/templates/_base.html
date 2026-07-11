@@ -9,18 +9,21 @@
 
   <!-- An example of how we can configure htmx -->
   <!-- https://htmx.org/docs/#config -->
-  <meta name="htmx-config" content='{"historyCacheSize": 15}'>
+  <meta name="htmx-config" content='{"defaultTimeout": 5000}'>
 
-  {% htmx_script %}
+  {% htmx_script version=4 %}
+  <!--
+    Including an extension's script is enough to activate it in htmx 4, no
+    hx-ext attribute required:
+    * event-header: ports https://github.com/bigskysoftware/htmx-extensions/blob/main/src/event-header/README.md to htmx 4
+    * hx-prompt: restores htmx 2's hx-prompt attribute, used on the Middleware Tester page
+  -->
   <script src="{% static 'ext/event-header.js' %}" defer></script>
+  <script src="{% static 'ext/hx-prompt.js' %}" defer></script>
   <script src="{% static 'app.js' %}" defer></script>
 </head>
 
-<!--
-  Enable htmx extensions for all requests:
-  * event-header: https://github.com/bigskysoftware/htmx-extensions/blob/main/src/event-header/README.md
--->
-<body hx-ext=event-header>
+<body>
   <header>
     <nav>
       <h1>
