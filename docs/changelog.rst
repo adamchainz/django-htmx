@@ -5,8 +5,10 @@ Changelog
 Unreleased
 ----------
 
-* Support `htmx version 4 <https://four.htmx.org/>`__, available by adding ``version=4`` to the :ref:`template tags <template_tags>`.
+* Support `htmx version 4 <https://four.htmx.org/>`__ (beta), available by adding ``version=4`` to the :ref:`template tags <template_tags>`.
   The default htmx version remains 2, since htmx 4 is in beta.
+  When htmx 4 is released, the default will be updated to 4 in a future major release of django-htmx.
+
   For example, with the Django templates ``htmx_script`` tag:
 
   .. code-block:: django
@@ -14,6 +16,8 @@ Unreleased
       {% htmx_script version=4 %}
 
   The :doc:`example project <example_project>` now uses htmx 4, to demonstrate its usage.
+
+  See `the htmx 4 migration guide <https://four.htmx.org/docs#migration>`__ for guidance on adopting version 4.
 
   `PR #606 <https://github.com/adamchainz/django-htmx/pull/606>`__.
 
