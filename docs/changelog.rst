@@ -20,6 +20,10 @@ Unreleased
 
 * Switch the :doc:`example project <example_project>` to htmx 4, to demonstrate its usage.
 
+* Add :attr:`HtmxDetails.source <django_htmx.middleware.HtmxDetails.source>`, based on the ``HX-Source`` request header that htmx 4 sends instead of ``HX-Trigger``/``HX-Trigger-Name``.
+  :attr:`~django_htmx.middleware.HtmxDetails.trigger` and :attr:`~django_htmx.middleware.HtmxDetails.trigger_name` remain htmx-2-only, since htmx 4 doesn’t send those headers.
+  The :doc:`middleware docs <middleware>` now note which ``HtmxDetails`` attributes are limited to a specific htmx version.
+
 * Add Django 6.1 support.
 
 * Drop Django 4.2 to 5.1 support.
