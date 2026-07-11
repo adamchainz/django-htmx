@@ -24,6 +24,8 @@ The ``htmx_script`` template tag renders two script tags for:
    * htmx 2, the default — currently version 2.0.7.
    * htmx 4, currently in beta — version 4.0.0-beta5.
 
+   (There is no htmx 3—the project skipped from 2 to 4.)
+
 2. django-htmx’s extension script, when |settings.DEBUG|__ is ``True``.
    This script adds an error handler for debugging HTTP errors, :ref:`explained below <django-htmx-extension-script>`.
 
