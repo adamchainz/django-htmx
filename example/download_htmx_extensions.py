@@ -3,11 +3,6 @@
 Download the htmx extensions we're using.
 
 This is only intended for maintaining the example app.
-
-Note: event-header.js is *not* downloaded here. It's a hand-maintained port
-of https://github.com/bigskysoftware/htmx-extensions/tree/main/src/event-header
-to htmx 4's extension API, since there's no htmx-4-compatible release of that
-package yet.
 """
 
 from __future__ import annotations

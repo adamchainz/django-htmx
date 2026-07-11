@@ -88,7 +88,7 @@ class HtmxDetails:
 
     @cached_property
     def source(self) -> str | None:
-        # htmx 4 only: replaces trigger/trigger_name, which htmx 4 doesn't send.
+        # htmx 4 only
         return self._get_header_value("HX-Source")
 
     @cached_property
@@ -97,12 +97,12 @@ class HtmxDetails:
 
     @cached_property
     def trigger(self) -> str | None:
-        # htmx 2 only: htmx 4 sends HX-Source instead, see source().
+        # htmx 2 only
         return self._get_header_value("HX-Trigger")
 
     @cached_property
     def trigger_name(self) -> str | None:
-        # htmx 2 only: htmx 4 has no equivalent, see source().
+        # htmx 2 only
         return self._get_header_value("HX-Trigger-Name")
 
     @cached_property
