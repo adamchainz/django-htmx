@@ -157,7 +157,7 @@ Middleware
       :type: str | None
 
       The target element if it exists, or ``None``.
-      Based on the ``HX-Target`` header, which changed format in htmx 4 per the `migration guide <https://four.htmx.org/docs#request-headers>__.
+      Based on the ``HX-Target`` header, which changed format in htmx 4 per the `migration guide <https://four.htmx.org/docs#request-headers>`__.
 
    .. attribute:: trigger
       :type: str | None
