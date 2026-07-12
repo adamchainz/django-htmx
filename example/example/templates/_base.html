@@ -7,10 +7,6 @@
   <title>django-htmx example app</title>
   <link rel="stylesheet" href="{% static 'mvp.css' %}">
 
-  <!-- An example of how we can configure htmx -->
-  <!-- https://htmx.org/docs/#config -->
-  <meta name="htmx-config" content='{"defaultTimeout": 5000}'>
-
   {% htmx_script version=4 %}
   <script src="{% static 'ext/event-header.js' %}" defer></script>
   <script src="{% static 'ext/hx-prompt.js' %}" defer></script>
