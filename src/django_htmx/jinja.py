@@ -15,9 +15,11 @@ else:
 
 
 def htmx_script(
-    *, minified: bool = True, nonce: LazyNonce | str | None = None
+    *, version: int = 2, minified: bool = True, nonce: LazyNonce | str | None = None
 ) -> SafeString:
-    path = f"django_htmx/htmx{'.min' if minified else ''}.js"
+    if version not in (2, 4):
+        raise ValueError(f"Unsupported htmx version {version!r}, must be one of: 2, 4")
+    path = f"django_htmx/htmx-{version}{'.min' if minified else ''}.js"
     if nonce is not None:
         result = format_html(
             '<script src="{}" defer nonce="{}"></script>',

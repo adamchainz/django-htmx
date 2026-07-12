@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Download the htmx version and the extensions we're using.
+Download the htmx extensions we're using.
 
 This is only intended for maintaining the example app.
 """
@@ -10,14 +10,16 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+# Keep in sync with the vendored htmx 4 version in django_htmx/static/django_htmx/.
+HTMX4_VERSION = "4.0.0-beta5"
+
 ext_dir = Path(__file__).parent.resolve() / "example/static/ext"
 
 
 def main() -> int:
-    # Per: https://github.com/bigskysoftware/htmx-extensions/tree/main/src/event-header
     download_file(
-        "https://unpkg.com/htmx-ext-event-header/event-header.js",
-        ext_dir / "event-header.js",
+        f"https://unpkg.com/htmx.org@{HTMX4_VERSION}/dist/ext/hx-prompt.js",
+        ext_dir / "hx-prompt.js",
     )
 
     print("✅")

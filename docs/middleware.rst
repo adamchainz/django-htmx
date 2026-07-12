@@ -129,21 +129,48 @@ Middleware
       :type: str | None
 
       The user response to `hx-prompt <https://htmx.org/attributes/hx-prompt/>`__ if it was used, or ``None``.
+      For htmx 4, this requires loading the ``hx-prompt`` extension, which restores the ``hx-prompt`` attribute and its header.
+
+   .. attribute:: request_type
+      :type: str | None
+
+      **htmx 4 only**
+
+      Indicates if this is a partial or full page request, taking the values ``"full"``, ``"partial"``, or ``None`` for non-htmx requests.
+      Based on the |HX-Request-Type header|__.
+
+      .. |HX-Request-Type header| replace:: ``HX-Request-Type`` header
+      __ https://four.htmx.org/reference/headers/HX-Request-Type
+
+   .. attribute:: source
+      :type: str | None
+
+      **htmx 4 only**
+
+      A representation of the element that triggered the request, in the form ``tag#id`` (for example ``button#submit``), or ``None``.
+      Based on the |HX-Source header|__.
+
+      .. |HX-Source header| replace:: ``HX-Source`` header
+      __ https://four.htmx.org/reference/headers/HX-Source
 
    .. attribute:: target
       :type: str | None
 
-      The ``id`` of the target element if it exists, or ``None``.
-      Based on the ``HX-Target`` header.
+      The target element if it exists, or ``None``.
+      Based on the ``HX-Target`` header, which changed format in htmx 4 per the `migration guide <https://four.htmx.org/docs#request-headers>`__.
 
    .. attribute:: trigger
       :type: str | None
+
+      **htmx 2 only**
 
       The ``id`` of the triggered element if it exists, or ``None``.
       Based on the ``HX-Trigger`` header.
 
    .. attribute:: trigger_name
       :type: str | None
+
+      **htmx 2 only**
 
       The ``name`` of the triggered element if it exists, or ``None``.
       Based on the ``HX-Trigger-Name`` header.
