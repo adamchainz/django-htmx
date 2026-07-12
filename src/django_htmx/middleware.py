@@ -88,6 +88,7 @@ class HtmxDetails:
 
     @cached_property
     def request_type(self) -> str | None:
+        # htmx 4 only
         return self._get_header_value("HX-Request-Type")
 
     @cached_property
