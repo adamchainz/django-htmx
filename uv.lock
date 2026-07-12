@@ -313,9 +313,9 @@ name = "django"
 version = "5.2.14"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
+    "python_full_version >= '3.12'",
     "python_full_version == '3.11.*'",
     "python_full_version < '3.11'",
-    "python_full_version >= '3.12'",
 ]
 dependencies = [
     { name = "asgiref", marker = "python_full_version < '3.12' or extra == 'group-11-django-htmx-django52' or (extra == 'group-11-django-htmx-django60' and extra == 'group-11-django-htmx-django61')" },
@@ -363,7 +363,7 @@ wheels = [
 
 [[package]]
 name = "django-htmx"
-version = "1.27.0"
+version = "1.28.0"
 source = { editable = "." }
 dependencies = [
     { name = "asgiref" },

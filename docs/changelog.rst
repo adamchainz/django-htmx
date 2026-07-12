@@ -2,8 +2,8 @@
 Changelog
 =========
 
-Unreleased
-----------
+1.28.0 (2026-07-12)
+-------------------
 
 * Support `htmx version 4 <https://four.htmx.org/>`__ (beta), available by adding ``version=4`` to the :doc:`template tags <template_tags>`.
   The default htmx version remains 2, since htmx 4 is in beta.
