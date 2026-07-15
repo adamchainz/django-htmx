@@ -90,6 +90,46 @@ class HttpResponseLocationTests(SimpleTestCase):
             "values": {"banner": "true"},
         }
 
+    def test_success_push_true(self):
+        response = HttpResponseLocation("/home/", push=True)
+
+        spec = json.loads(response["HX-Location"])
+        assert spec == {"path": "/home/", "push": "true"}
+
+    def test_success_push_false(self):
+        response = HttpResponseLocation("/home/", push=False)
+
+        spec = json.loads(response["HX-Location"])
+        assert spec == {"path": "/home/", "push": "false"}
+
+    def test_success_push_url(self):
+        response = HttpResponseLocation("/home/", push="/somewhere-else/")
+
+        spec = json.loads(response["HX-Location"])
+        assert spec == {"path": "/home/", "push": "/somewhere-else/"}
+
+    def test_success_replace_true(self):
+        response = HttpResponseLocation("/home/", replace=True)
+
+        spec = json.loads(response["HX-Location"])
+        assert spec == {"path": "/home/", "push": "false", "replace": "true"}
+
+    def test_success_replace_url(self):
+        response = HttpResponseLocation("/home/", replace="/somewhere-else/")
+
+        spec = json.loads(response["HX-Location"])
+        assert spec == {
+            "path": "/home/",
+            "push": "false",
+            "replace": "/somewhere-else/",
+        }
+
+    def test_fail_push_and_replace(self):
+        with pytest.raises(ValueError) as exinfo:
+            HttpResponseLocation("/home/", push=False, replace=True)
+
+        assert exinfo.value.args == ("Pass at most one of 'push' and 'replace'.",)
+
 
 class HttpResponseClientRefreshTests(SimpleTestCase):
     def test_success(self):

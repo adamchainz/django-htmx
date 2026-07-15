@@ -2,6 +2,13 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+* Add ``push`` and ``replace`` arguments to :class:`.HttpResponseLocation`, for controlling how htmx updates the browser location history.
+  These use the ``push`` and ``replace`` options of the ``HX-Location`` header, added in htmx 4, which defaults to pushing the fetched URL.
+  htmx 2 ignores these options.
+
 1.28.0 (2026-07-12)
 -------------------
 

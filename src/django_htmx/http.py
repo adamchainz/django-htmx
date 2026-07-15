@@ -67,8 +67,12 @@ class HttpResponseLocation(HttpResponseRedirectBase):
         select: str | None = None,
         values: dict[str, str] | None = None,
         headers: dict[str, str] | None = None,
+        push: str | bool | None = None,
+        replace: str | Literal[True] | None = None,
         **kwargs: Any,
     ) -> None:
+        if push is not None and replace is not None:
+            raise ValueError("Pass at most one of 'push' and 'replace'.")
         super().__init__(redirect_to, *args, **kwargs)
         spec: dict[str, str | dict[str, str]] = {
             "path": self["Location"],
@@ -88,6 +92,18 @@ class HttpResponseLocation(HttpResponseRedirectBase):
             spec["headers"] = headers
         if values is not None:
             spec["values"] = values
+        if push is not None:
+            if push is True:
+                spec["push"] = "true"
+            elif push is False:
+                spec["push"] = "false"
+            else:
+                spec["push"] = push
+        if replace is not None:
+            # htmx defaults 'push' to "true", which takes precedence over
+            # 'replace', so it needs disabling explicitly.
+            spec["push"] = "false"
+            spec["replace"] = "true" if replace is True else replace
         self["HX-Location"] = json.dumps(spec)
 
 

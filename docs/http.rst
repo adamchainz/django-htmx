@@ -91,6 +91,26 @@ Response classes
    :param headers:
       headers to submit with the request.
 
+   :param push:
+      **htmx 4 only.**
+      Control how the browser location history is updated:
+
+      * ``True``, the default behaviour, pushes the fetched URL into the history.
+      * ``False`` prevents the history from being updated.
+      * A URL string pushes that URL into the history.
+
+      htmx 2 ignores this option and always pushes the fetched URL.
+
+   :param replace:
+      **htmx 4 only.**
+      Replace the current URL in the browser location history instead of pushing:
+
+      * ``True`` replaces with the fetched URL.
+      * A URL string replaces with that URL.
+
+      Mutually exclusive with ``push``.
+      htmx 2 ignores this option and always pushes the fetched URL.
+
    :param args:
       Other ``HTTPResponse`` parameters.
 
