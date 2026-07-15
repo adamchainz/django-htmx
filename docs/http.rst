@@ -112,8 +112,13 @@ Response classes
 
 .. autoclass:: HttpResponseStopPolling
 
+   **htmx 2 only**
+
    When using a `polling trigger <https://htmx.org/docs/#polling>`__, htmx will stop polling when it encounters a response with the special HTTP status code 286.
    ``HttpResponseStopPolling`` is a `custom response class <https://docs.djangoproject.com/en/stable/ref/request-response/#custom-response-classes>`__ with that status code.
+
+   htmx 4 removes the special handling of status code 286 (as of 4.0.0-beta5).
+   Instead, stop polling by responding with content that removes or replaces the polling element.
 
    :param args:
       Other ``HTTPResponse`` parameters.
@@ -137,8 +142,11 @@ Response classes
    :type: int
    :value: 286
 
+   **htmx 2 only**
+
    A constant for the HTTP status code 286.
    You can use this instead of ``HttpResponseStopPolling`` to stop htmx from polling.
+   Like that class, it has no effect on htmx 4, which removes the special handling of status code 286.
 
    For example, with Django’s `render shortcut <https://docs.djangoproject.com/en/stable/topics/http/shortcuts/#django.shortcuts.render>`__:
 
@@ -315,8 +323,11 @@ Response modifying functions
       Which ``HX-Trigger`` header to modify:
 
       * ``"receive"``, the default, maps to ``HX-Trigger``
-      * ``"settle"`` maps to ``HX-Trigger-After-Settle``
-      * ``"swap"`` maps to ``HX-Trigger-After-Swap``
+      * ``"settle"`` maps to ``HX-Trigger-After-Settle`` (htmx 2 only)
+      * ``"swap"`` maps to ``HX-Trigger-After-Swap`` (htmx 2 only)
+
+      htmx 4 removes the ``HX-Trigger-After-Settle`` and ``HX-Trigger-After-Swap`` headers, per its `migration guide <https://four.htmx.org/docs/get-started/migration>`__, so the ``"settle"`` and ``"swap"`` values have no effect there.
+      Use the default ``"receive"`` value with htmx 4.
 
    :param encoder:
 

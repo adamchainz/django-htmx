@@ -2,6 +2,14 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+* Document behaviour changes in htmx 4 (as of 4.0.0-beta5) that affect the :doc:`HTTP tools <http>`:
+
+  * htmx 4 removes the special handling of status code 286 to stop polling, so :class:`.HttpResponseStopPolling` and :data:`.HTMX_STOP_POLLING` only work with htmx 2.
+  * htmx 4 removes the ``HX-Trigger-After-Settle`` and ``HX-Trigger-After-Swap`` headers, so the ``"settle"`` and ``"swap"`` values of the ``after`` argument of :func:`.trigger_client_event` only work with htmx 2.
+
 1.28.0 (2026-07-12)
 -------------------
 
