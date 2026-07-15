@@ -267,6 +267,32 @@ class TriggerClientEventTests(SimpleTestCase):
             response["HX-Trigger-After-Swap"] == '{"showMessage": {"value": "Great!"}}'
         )
 
+    def test_success_target(self):
+        response = HttpResponse()
+
+        trigger_client_event(
+            response, "showMessage", {"value": "Great!"}, target="#toasts"
+        )
+
+        assert response["HX-Trigger"] == (
+            '{"showMessage": {"value": "Great!", "target": "#toasts"}}'
+        )
+
+    def test_success_target_no_params(self):
+        response = HttpResponse()
+
+        trigger_client_event(response, "showMessage", target="#toasts")
+
+        assert response["HX-Trigger"] == '{"showMessage": {"target": "#toasts"}}'
+
+    def test_target_does_not_mutate_params(self):
+        response = HttpResponse()
+        params = {"value": "Great!"}
+
+        trigger_client_event(response, "showMessage", params, target="#toasts")
+
+        assert params == {"value": "Great!"}
+
     def test_django_json_encoder(self):
         response = HttpResponse()
         uuid_value = UUID("{12345678-1234-5678-1234-567812345678}")

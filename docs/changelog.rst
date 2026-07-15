@@ -2,6 +2,12 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+* Add ``target`` argument to :func:`.trigger_client_event`, a CSS selector for the element to trigger the event on.
+  This uses the ``target`` key in the ``HX-Trigger`` header event parameters, supported by htmx versions 2 and 4.
+
 1.28.0 (2026-07-12)
 -------------------
 

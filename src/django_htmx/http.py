@@ -125,9 +125,12 @@ def trigger_client_event(
     params: dict[str, Any] | None = None,
     *,
     after: Literal["receive", "settle", "swap"] = "receive",
+    target: str | None = None,
     encoder: type[json.JSONEncoder] = DjangoJSONEncoder,
 ) -> _HttpResponse:
     params = params or {}
+    if target is not None:
+        params = {**params, "target": target}
 
     if after == "receive":
         header = "HX-Trigger"

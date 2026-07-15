@@ -318,6 +318,12 @@ Response modifying functions
       * ``"settle"`` maps to ``HX-Trigger-After-Settle``
       * ``"swap"`` maps to ``HX-Trigger-After-Swap``
 
+   :param target:
+      Optional CSS selector of the element to trigger the event on.
+      If not given, htmx triggers the event on the element that made the request.
+
+      This works by adding a ``target`` key to the event parameters, which htmx detects, and also passes through in the event ``detail``.
+
    :param encoder:
 
       The |JSONEncoder|__ class used to generate the JSON.
