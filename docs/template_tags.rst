@@ -16,7 +16,7 @@ __ https://developer.mozilla.org/en-US/docs/Web/HTML/Element/script#defer
 ``htmx_script``
 ---------------
 
-The ``htmx_script`` template tag renders two script tags for:
+The ``htmx_script`` template tag renders script tags for:
 
 1. A vendored version of htmx included in django-htmx.
    Two versions of htmx are vendored (`htmx release notes <https://github.com/bigskysoftware/htmx/releases>`__):
@@ -26,7 +26,9 @@ The ``htmx_script`` template tag renders two script tags for:
 
    (There is no htmx 3—the project skipped from 2 to 4.)
 
-2. django-htmx’s extension script, when |settings.DEBUG|__ is ``True``.
+2. Vendored htmx extensions, if requested with the ``extensions`` argument, :ref:`covered below <vendored-htmx-extensions>`.
+
+3. django-htmx’s extension script, when |settings.DEBUG|__ is ``True``.
    This script adds an error handler for debugging HTTP errors, :ref:`explained below <django-htmx-extension-script>`.
 
    .. |settings.DEBUG| replace:: ``settings.DEBUG``
@@ -67,6 +69,12 @@ Pass ``version=4`` to render htmx version 4, currently in beta:
 .. code-block:: django
 
     {% htmx_script version=4 %}
+
+Pass ``extensions`` with a comma-separated string of names to also render script tags for :ref:`vendored htmx extensions <vendored-htmx-extensions>`, matching the selected htmx version:
+
+.. code-block:: django
+
+    {% htmx_script version=4 extensions="sse,ws" %}
 
 On Django 6.0+, the ``<script>`` tags will include `the Content Security Policy (CSP) nonce <https://docs.djangoproject.com/en/6.0/howto/csp/#nonce-config>`__, if it’s present in the context.
 
@@ -126,11 +134,59 @@ Pass ``version=4`` to render htmx version 4, currently in beta:
 
     {{ htmx_script(version=4) }}
 
+Pass ``extensions`` with a comma-separated string or sequence of names to also render script tags for :ref:`vendored htmx extensions <vendored-htmx-extensions>`, matching the selected htmx version:
+
+.. code-block:: jinja
+
+    {{ htmx_script(version=4, extensions=["sse", "ws"]) }}
+
 To use a CSP nonce, pass it to the function as ``nonce``:
 
 .. code-block:: jinja
 
     {{ htmx_script(nonce=csp_nonce) }}
+
+.. _vendored-htmx-extensions:
+
+Vendored htmx extensions
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+django-htmx vendors some htmx extensions, selected for being stable and available for both htmx versions 2 and 4.
+The ``extensions`` argument renders a script tag for each named extension, using the file appropriate for the selected htmx version.
+
+.. list-table::
+   :header-rows: 1
+
+   * - Name
+     - Description
+     - htmx 2
+     - htmx 4
+
+   * - ``head-support``
+     - Merging of ``<head>`` tag content between pages.
+     - `2.0.5 <https://htmx.org/extensions/head-support/>`__
+     - `hx-head <https://four.htmx.org/extensions/hx-head>`__
+
+   * - ``preload``
+     - Preload responses for links and forms before they’re requested.
+     - `2.1.2 <https://htmx.org/extensions/preload/>`__
+     - `hx-preload <https://four.htmx.org/extensions/hx-preload>`__
+
+   * - ``sse``
+     - Server-sent events (SSE).
+     - `2.2.4 <https://htmx.org/extensions/sse/>`__
+     - `hx-sse <https://four.htmx.org/extensions/hx-sse>`__
+
+   * - ``ws``
+     - WebSockets.
+     - `2.0.4 <https://htmx.org/extensions/ws/>`__
+     - `hx-ws <https://four.htmx.org/extensions/hx-ws>`__
+
+The htmx 2 extension files come from their standalone packages, with the linked versions.
+The htmx 4 extension files are bundled with htmx itself, so they always match the vendored htmx 4 version.
+
+Refer to each extension’s documentation for usage, which can differ between htmx versions.
+Notably, htmx 2 extensions need activating with the `hx-ext attribute <https://htmx.org/attributes/hx-ext/>`__, whilst htmx 4 extensions are active as soon as their script is loaded.
 
 ``django_htmx_script``
 ----------------------

@@ -45,6 +45,33 @@ class TemplateTagsTests(SimpleTestCase):
         assert htmx_js_version == htmx_min_js_version
         assert htmx_js_version == scripts_rst_version
 
+    def test_htmx_2_extension_versions_match(self):
+        script_text = (base_dir / "download_htmx_extensions.py").read_text()
+        script_versions = dict(
+            re.findall(r'"([a-z-]+)": "(\d+\.\d+\.\d+)"', script_text)
+        )
+        docs_versions = {
+            name: version
+            for version, name in re.findall(
+                r"`(\d+\.\d+\.\d+) <https://htmx\.org/extensions/([a-z-]+)/>`__",
+                scripts_rst_path.read_text(),
+            )
+        }
+
+        assert script_versions == docs_versions
+
+    def test_htmx_4_extension_version_matches(self):
+        htmx_js_version = read_version(
+            static_dir / "htmx-4.js",
+            r"version = '(\d+\.\d+\.\d+(?:-\w+)?)'",
+        )
+        script_version = read_version(
+            base_dir / "download_htmx_extensions.py",
+            r'HTMX_4_VERSION = "(\d+\.\d+\.\d+(?:-\w+)?)"',
+        )
+
+        assert htmx_js_version == script_version
+
 
 def read_version(path: Path, regex: str) -> str:
     content = path.read_text()

@@ -2,6 +2,18 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+* Vendor some htmx extensions, selected for being stable and available for both htmx versions 2 and 4: ``head-support``, ``preload``, ``sse``, and ``ws``.
+  Render their script tags with the new ``extensions`` argument of the ``htmx_script`` :doc:`template tags <template_tags>`, which selects the extension files matching the htmx version in use:
+
+  .. code-block:: django
+
+      {% htmx_script version=4 extensions="sse,ws" %}
+
+  `Issue #562 <https://github.com/adamchainz/django-htmx/issues/562>`__.
+
 1.28.0 (2026-07-12)
 -------------------
 

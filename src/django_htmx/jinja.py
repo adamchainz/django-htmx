@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 import django
@@ -13,27 +14,56 @@ if TYPE_CHECKING or django.VERSION >= (6, 0):
 else:
     LazyNonce = None
 
+EXTENSIONS = frozenset(
+    {
+        "head-support",
+        "preload",
+        "sse",
+        "ws",
+    }
+)
+
 
 def htmx_script(
-    *, version: int = 2, minified: bool = True, nonce: LazyNonce | str | None = None
+    *,
+    version: int = 2,
+    minified: bool = True,
+    extensions: str | Sequence[str] = (),
+    nonce: LazyNonce | str | None = None,
 ) -> SafeString:
     if version not in (2, 4):
         raise ValueError(f"Unsupported htmx version {version!r}, must be one of: 2, 4")
-    path = f"django_htmx/htmx-{version}{'.min' if minified else ''}.js"
+    if isinstance(extensions, str):
+        extension_names = [e.strip() for e in extensions.split(",") if e.strip()]
+    else:
+        extension_names = list(extensions)
+    for name in extension_names:
+        if name not in EXTENSIONS:
+            raise ValueError(
+                f"Unknown htmx extension {name!r}, must be one of: "
+                + ", ".join(sorted(EXTENSIONS))
+            )
+    suffix = ".min" if minified else ""
+    result = _script_tag(f"django_htmx/htmx-{version}{suffix}.js", nonce)
+    for name in extension_names:
+        result += _script_tag(f"django_htmx/ext/{name}-{version}{suffix}.js", nonce)
+    if settings.DEBUG:
+        result += django_htmx_script(nonce=nonce)
+    return result
+
+
+def _script_tag(path: str, nonce: LazyNonce | str | None) -> SafeString:
     if nonce is not None:
-        result = format_html(
+        return format_html(
             '<script src="{}" defer nonce="{}"></script>',
             static(path),
             nonce,
         )
     else:
-        result = format_html(
+        return format_html(
             '<script src="{}" defer></script>',
             static(path),
         )
-    if settings.DEBUG:
-        result += django_htmx_script(nonce=nonce)
-    return result
 
 
 def django_htmx_script(*, nonce: LazyNonce | str | None = None) -> SafeString:

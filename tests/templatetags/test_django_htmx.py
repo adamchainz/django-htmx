@@ -82,6 +82,71 @@ class HtmxScriptTests(SimpleTestCase):
             "Unsupported htmx version 3, must be one of: 2, 4"
         )
 
+    def test_extensions_one(self):
+        result = Template(
+            '{% load django_htmx %}{% htmx_script extensions="sse" %}'
+        ).render(Context())
+
+        assert result == (
+            '<script src="django_htmx/htmx-2.min.js" defer></script>'
+            + '<script src="django_htmx/ext/sse-2.min.js" defer></script>'
+        )
+
+    def test_extensions_multiple(self):
+        result = Template(
+            '{% load django_htmx %}{% htmx_script extensions="sse,ws" %}'
+        ).render(Context())
+
+        assert result == (
+            '<script src="django_htmx/htmx-2.min.js" defer></script>'
+            + '<script src="django_htmx/ext/sse-2.min.js" defer></script>'
+            + '<script src="django_htmx/ext/ws-2.min.js" defer></script>'
+        )
+
+    def test_extensions_version_4(self):
+        result = Template(
+            '{% load django_htmx %}{% htmx_script version=4 extensions="head-support" %}'
+        ).render(Context())
+
+        assert result == (
+            '<script src="django_htmx/htmx-4.min.js" defer></script>'
+            + '<script src="django_htmx/ext/head-support-4.min.js" defer></script>'
+        )
+
+    def test_extensions_unminified(self):
+        result = Template(
+            '{% load django_htmx %}{% htmx_script minified=False extensions="preload" %}'
+        ).render(Context())
+
+        assert result == (
+            '<script src="django_htmx/htmx-2.js" defer></script>'
+            + '<script src="django_htmx/ext/preload-2.js" defer></script>'
+        )
+
+    def test_extensions_nonce(self):
+        nonce = secrets.token_urlsafe(16)
+        result = Template(
+            '{% load django_htmx %}{% htmx_script extensions="sse" %}'
+        ).render(Context({"csp_nonce": nonce}))
+
+        assert result == (
+            f'<script src="django_htmx/htmx-2.min.js" defer nonce="{nonce}"></script>'
+            + f'<script src="django_htmx/ext/sse-2.min.js" defer nonce="{nonce}"></script>'
+        )
+
+    def test_extensions_unknown(self):
+        template = Template(
+            '{% load django_htmx %}{% htmx_script extensions="json-enc" %}'
+        )
+
+        with pytest.raises(ValueError) as excinfo:
+            template.render(Context())
+
+        assert excinfo.value.args[0] == (
+            "Unknown htmx extension 'json-enc', must be one of: "
+            + "head-support, preload, sse, ws"
+        )
+
     def test_unminified(self):
         result = Template(
             "{% load django_htmx %}{% htmx_script minified=False %}"
