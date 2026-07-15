@@ -12,12 +12,17 @@ HTMX_STOP_POLLING = 286
 SwapMethod = Literal[
     "innerHTML",
     "outerHTML",
+    "textContent",
     "beforebegin",
     "afterbegin",
     "beforeend",
     "afterend",
     "delete",
     "none",
+    # htmx 4 only
+    "outerSync",
+    "innerMorph",
+    "outerMorph",
 ]
 
 

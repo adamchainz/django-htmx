@@ -145,6 +145,22 @@ class ReswapTests(SimpleTestCase):
         assert response2 is response
         assert response["HX-Reswap"] == "outerHTML"
 
+    def test_success_text_content(self):
+        response = HttpResponse()
+
+        response2 = reswap(response, "textContent")
+
+        assert response2 is response
+        assert response["HX-Reswap"] == "textContent"
+
+    def test_success_htmx_4_morph(self):
+        response = HttpResponse()
+
+        response2 = reswap(response, "outerMorph")
+
+        assert response2 is response
+        assert response["HX-Reswap"] == "outerMorph"
+
 
 class RetargetTests(SimpleTestCase):
     def test_success(self):

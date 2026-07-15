@@ -226,7 +226,13 @@ Response modifying functions
       The response to modify and return.
 
    :param method:
-      The swap method.
+      The swap method, one of the `swap styles <https://htmx.org/attributes/hx-swap/>`__ that htmx supports:
+
+      * ``innerHTML``, ``outerHTML``, ``textContent``, ``beforebegin``, ``afterbegin``, ``beforeend``, ``afterend``, ``delete``, and ``none`` work in htmx versions 2 and 4.
+      * ``outerSync``, ``innerMorph``, and ``outerMorph`` are |htmx 4 only|__.
+
+      .. |htmx 4 only| replace:: htmx 4 only
+      __ https://four.htmx.org/reference/attributes/hx-swap
 
    For example:
 

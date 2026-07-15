@@ -2,6 +2,11 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+* Extend the ``SwapMethod`` type, used by :func:`.reswap` and :class:`.HttpResponseLocation`, with more swap styles: ``textContent``, supported by htmx versions 2 and 4, and ``outerSync``, ``innerMorph``, and ``outerMorph``, added in htmx 4.
+
 1.28.0 (2026-07-12)
 -------------------
 
