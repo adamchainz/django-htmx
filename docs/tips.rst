@@ -225,3 +225,16 @@ For example, if you were using the `WebSocket extension <https://htmx.org/extens
        </html>
 
 For another example, see the :doc:`example project <example_project>`, which includes two extensions and a Python script to download their latest versions (``download_htmx_extensions.py``).
+
+Contributing to django-htmx documentation
+-----------------------------------------
+
+If you want to contribute to the django-htmx documentation, and want to test
+your changes, `and` you use ``uv``, you can build the docs locally by:
+
+.. code-block:: sh
+
+    cd docs
+    uvx --from sphinx --with sphinx-copybutton --with furo sphinx-build . build
+
+...then view the docs in your browser at ``docs/build/index.html``.
