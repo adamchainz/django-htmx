@@ -60,3 +60,7 @@ Installation
            ...
          </body>
        </html>
+
+   .. note::
+      For HTMX version 4, use ``hx-headers:inherited`` instead of ``hx-headers``
+      on the ``<body>`` tag.
