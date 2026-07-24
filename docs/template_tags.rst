@@ -18,9 +18,13 @@ __ https://developer.mozilla.org/en-US/docs/Web/HTML/Element/script#defer
 
 The ``htmx_script`` template tag renders two script tags for:
 
-1. The vendored version of htmx included in django-htmx.
-   The current vendored version of htmx is 2.0.7.
-   (`htmx release notes <https://github.com/bigskysoftware/htmx/releases>`__.)
+1. A vendored version of htmx included in django-htmx.
+   Two versions of htmx are vendored (`htmx release notes <https://github.com/bigskysoftware/htmx/releases>`__):
+
+   * htmx 2, the default — currently version 2.0.7.
+   * htmx 4, currently in beta — version 4.0.0-beta5.
+
+   (There is no htmx 3—the project skipped from 2 to 4.)
 
 2. django-htmx’s extension script, when |settings.DEBUG|__ is ``True``.
    This script adds an error handler for debugging HTTP errors, :ref:`explained below <django-htmx-extension-script>`.
@@ -56,6 +60,13 @@ Pass ``minified=False`` to render the non-minified version:
     {% htmx_script minified=False %}
 
 This may be useful when debugging htmx behaviour.
+
+The default is to use htmx version 2.
+Pass ``version=4`` to render htmx version 4, currently in beta:
+
+.. code-block:: django
+
+    {% htmx_script version=4 %}
 
 On Django 6.0+, the ``<script>`` tags will include `the Content Security Policy (CSP) nonce <https://docs.djangoproject.com/en/6.0/howto/csp/#nonce-config>`__, if it’s present in the context.
 
@@ -107,6 +118,13 @@ Pass ``minified=False`` to render the non-minified version:
     {{ htmx_script(minified=False) }}
 
 This may be useful when debugging htmx behaviour.
+
+The default is to use htmx version 2.
+Pass ``version=4`` to render htmx version 4, currently in beta:
+
+.. code-block:: jinja
+
+    {{ htmx_script(version=4) }}
 
 To use a CSP nonce, pass it to the function as ``nonce``:
 

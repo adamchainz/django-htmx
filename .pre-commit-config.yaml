@@ -2,7 +2,7 @@ ci:
   autoupdate_schedule: monthly
 
 default_language_version:
-  python: python3.13
+  python: python3.14
 
 repos:
 - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -18,24 +18,28 @@ repos:
     exclude: |
       (?x)^(
         example/example/static/ext/debug\.js
-        |src/django_htmx/static/django_htmx/htmx\.min\.js
+        |src/django_htmx/static/django_htmx/htmx-[24](\.min)?\.js
       )$
   - id: trailing-whitespace
+    exclude: |
+      (?x)^(
+        src/django_htmx/static/django_htmx/htmx-[24](\.min)?\.js
+      )$
 - repo: https://github.com/crate-ci/typos
-  rev: edb4e206047e89b93ebe08f1a2ccc3d581a70cc7  # frozen: v1
+  rev: 0758ccd3261dc7b0594e9b698113eb08d3ba25b5  # frozen: v1
   hooks:
   - id: typos
     exclude: |
       (?x)^(
-        .*\.min\.js
-        |.*\.svg
+        .*\.svg
+        |src/django_htmx/static/django_htmx/htmx-[24](\.min)?\.js
       )$
 - repo: https://github.com/tox-dev/pyproject-fmt
-  rev: 8184a5b72f4a8fcd003b041ecb04c41a9f34fd2b  # frozen: v2.6.0
+  rev: 3a8ef795727fa946dfcb21c5d07b1442c2362c09  # frozen: v2.23.0
   hooks:
   - id: pyproject-fmt
 - repo: https://github.com/tox-dev/tox-ini-fmt
-  rev: 4e2cb0e98735e1a57a027d9440b91663e31d10b0  # frozen: 1.6.0
+  rev: a55736a49694e73b4b885c78a827d9771515b9dd  # frozen: 1.7.1
   hooks:
   - id: tox-ini-fmt
 - repo: https://github.com/rstcheck/rstcheck
@@ -46,33 +50,33 @@ repos:
     - sphinx==8.1.3
     - tomli==2.2.1
 - repo: https://github.com/sphinx-contrib/sphinx-lint
-  rev: ff671d6a030a3141634793e6d1e8909ab6091830  # frozen: v1.0.0
+  rev: c883505f64b59c3c5c9375191e4ad9f98e727ccd  # frozen: v1.0.2
   hooks:
   - id: sphinx-lint
 - repo: https://github.com/adamchainz/django-upgrade
-  rev: 801c22cf0b32793544572cb0a81655e51879f561  # frozen: 1.27.0
+  rev: 4864562a5d05a7ff3bce99bc31f892eeb396fc00  # frozen: 1.30.0
   hooks:
   - id: django-upgrade
 - repo: https://github.com/adamchainz/blacken-docs
-  rev: 78a9dcbecf4f755f65d1f3dec556bc249d723600  # frozen: 1.19.1
+  rev: dda8db18cfc68df532abf33b185ecd12d5b7b326  # frozen: 1.20.0
   hooks:
   - id: blacken-docs
     additional_dependencies:
     - black==25.1.0
 - repo: https://github.com/astral-sh/ruff-pre-commit
-  rev: db90487f48a9dd992d243ef63c156eaffddeaf28  # frozen: v0.12.11
+  rev: 0671d8ab202c4ac093b78433ae5baf74f3fc7246  # frozen: v0.15.15
   hooks:
     - id: ruff-check
       args: [ --fix ]
     - id: ruff-format
 - repo: https://github.com/pre-commit/mirrors-mypy
-  rev: 412de98d50e846f31ea6f4b0ad036f2c24a7a024  # frozen: v1.17.1
+  rev: d2823d321df3af8f878f7ee3414dc94d037145b9  # frozen: v2.1.0
   hooks:
   - id: mypy
     additional_dependencies:
-    - django-stubs==5.1.2
+    - django-stubs==6.0.5
     - types-python-dateutil
 - repo: https://github.com/adamchainz/djade-pre-commit
-  rev: 097fdcef353da8e007b548283e95dd2d21a11166  # frozen: 1.5.0
+  rev: 52a7ce253113456c2a1113186a4a19b15c8b68af  # frozen: 1.9.0
   hooks:
   - id: djade

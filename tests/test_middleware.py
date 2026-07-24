@@ -17,7 +17,7 @@ class HtmxWSGIRequest(WSGIRequest):
 
 class RequestFactory(BaseRequestFactory):
     def get(
-        self, path: str, data: Any = None, secure: bool = False, **extra: Any
+        self, path: Any, data: Any = None, secure: bool = False, **extra: Any
     ) -> HtmxWSGIRequest:
         return cast(HtmxWSGIRequest, super().get(path, data, secure, **extra))
 
@@ -114,6 +114,26 @@ class HtmxMiddlewareTests(SimpleTestCase):
         request = self.request_factory.get("/", HTTP_HX_PROMPT="yes please")
         self.middleware(request)
         assert request.htmx.prompt == "yes please"
+
+    def test_request_type_default(self):
+        request = self.request_factory.get("/")
+        self.middleware(request)
+        assert request.htmx.request_type is None
+
+    def test_request_type_set(self):
+        request = self.request_factory.get("/", HTTP_HX_REQUEST_TYPE="partial")
+        self.middleware(request)
+        assert request.htmx.request_type == "partial"
+
+    def test_source_default(self):
+        request = self.request_factory.get("/")
+        self.middleware(request)
+        assert request.htmx.source is None
+
+    def test_source_set(self):
+        request = self.request_factory.get("/", HTTP_HX_SOURCE="button#some-element")
+        self.middleware(request)
+        assert request.htmx.source == "button#some-element"
 
     def test_target_default(self):
         request = self.request_factory.get("/")

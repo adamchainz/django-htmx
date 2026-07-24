@@ -2,6 +2,51 @@
 Changelog
 =========
 
+1.28.0 (2026-07-12)
+-------------------
+
+* Support `htmx version 4 <https://four.htmx.org/>`__ (beta), available by adding ``version=4`` to the :doc:`template tags <template_tags>`.
+  The default htmx version remains 2, since htmx 4 is in beta.
+  When htmx 4 is released, the default will be updated to 4 in a future major release of django-htmx.
+
+  For example, with the Django templates ``htmx_script`` tag:
+
+  .. code-block:: django
+
+      {% htmx_script version=4 %}
+
+  The :doc:`example project <example_project>` now uses htmx 4, to demonstrate its usage.
+
+  See `the htmx 4 migration guide <https://four.htmx.org/docs#migration>`__ for guidance on adopting version 4.
+
+  `PR #606 <https://github.com/adamchainz/django-htmx/pull/606>`__.
+
+* Extend the ``request.htmx`` object with two new attributes based on new htmx-4-only attributes:
+
+  * :attr:`HtmxDetails.request_type <django_htmx.middleware.HtmxDetails.request_type>`, based on the |HX-Request-Type header|__ that indicates if the request is for full or partial content.
+  * :attr:`HtmxDetails.source <django_htmx.middleware.HtmxDetails.source>`, based on the |HX-Source request header|__ that htmx 4 sends instead of ``HX-Trigger``/``HX-Trigger-Name``.
+
+  .. |HX-Source request header| replace:: ``HX-Source`` request header
+  __ https://four.htmx.org/reference/headers/HX-Source
+
+  .. |HX-Request-Type header| replace:: ``HX-Request-Type`` request header
+  __ https://four.htmx.org/reference/headers/HX-Request-Type
+
+  `PR #606 <https://github.com/adamchainz/django-htmx/pull/606>`__.
+
+* Add Django 6.1 support.
+
+* Drop Django 4.2 to 5.1 support.
+
+1.27.0 (2025-11-28)
+-------------------
+
+* Drop Python 3.9 support.
+
+* Fix CSP nonce support in the template tags when they’re the first use of ``csp_nonce``.
+
+  `PR #572 <https://github.com/adamchainz/django-htmx/pull/572>`__.
+
 1.26.0 (2025-09-22)
 -------------------
 
@@ -167,9 +212,9 @@ Changelog
 
   Thanks to Chris Tapper in `PR #264 <https://github.com/adamchainz/django-htmx/pull/264>`__.
 
-* Add :func:`django_htmx.http.reswap` for setting the ``HX-Reswap`` header added in `htmx 1.8.0 <https://htmx.org/posts/2022-07-12-htmx-1.8.0-is-released/>`__.
+* Add :func:`django_htmx.http.reswap` for setting the ``HX-Reswap`` header added in `htmx 1.8.0 <https://htmx.org/posts/2022-07-12-htmx-1-8-0-is-released/>`__.
 
-* Add :func:`django_htmx.http.retarget` for setting the ``HX-Retarget`` header added in `htmx 1.6.1 <https://htmx.org/posts/2021-11-22-htmx-1.6.1-is-released/>`__.
+* Add :func:`django_htmx.http.retarget` for setting the ``HX-Retarget`` header added in `htmx 1.6.1 <https://htmx.org/posts/2021-11-22-htmx-1-6-1-is-released/>`__.
 
 * Add :class:`.HttpResponseLocation` for sending a response with the ``HX-Location`` header.
 
