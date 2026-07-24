@@ -42,7 +42,7 @@ For requests made with htmx, you may want to reduce the page content you render,
 This is a small optimization compared to correctly setting up compression, caching, etc.
 
 Using template partials
-~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~
 
 Django 6.0 introduced built-in support for template partials.
 This feature allows you to render just one partial from a template, which is particularly useful for htmx requests.
@@ -108,12 +108,12 @@ This is done by adding ``#`` and the partial name to the template name:
 
 htmx requests will render only the partial, whilst full page requests will render the full page.
 This allows refreshing of the table without an extra view or separating the template contents from its context.
-For a working example, see the "Partial Rendering" page of the :doc:`example project <example_project>`.
+For a working example, see the “Partial Rendering” page of the :doc:`example project <example_project>`.
 
 It’s also possible to use a partial from within a separate view.
 This may be preferable if other customizations are required for htmx requests.
 
-For more information on Django's template partials, see `the Django documentation <https://docs.djangoproject.com/en/6.0/ref/templates/language/#template-partials>`__.
+For more information on Django’s template partials, see `the Django documentation <https://docs.djangoproject.com/en/6.0/ref/templates/language/#template-partials>`__.
 
 Swapping the base template
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
