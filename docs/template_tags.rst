@@ -22,7 +22,7 @@ The ``htmx_script`` template tag renders two script tags for:
    Two versions of htmx are vendored (`htmx release notes <https://github.com/bigskysoftware/htmx/releases>`__):
 
    * htmx 2, the default — currently version 2.0.10.
-   * htmx 4, currently in beta — version 4.0.0-beta5.
+   * htmx 4, currently in beta — version 4.0.0-beta6.
 
    (There is no htmx 3—the project skipped from 2 to 4.)
 
