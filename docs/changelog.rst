@@ -6,6 +6,10 @@ Changelog
 
   `PR #594 <https://github.com/adamchainz/django-htmx/pull/594>`__.
 
+* Upgrade the vendored htmx 4 to `version 4.0.0-beta6 <https://github.com/bigskysoftware/htmx/releases/tag/v4.0.0-beta6>`__.
+
+  `PR #610 <https://github.com/adamchainz/django-htmx/pull/610>`__.
+
 1.28.0 (2026-07-12)
 -------------------
 
