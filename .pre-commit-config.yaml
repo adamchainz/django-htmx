@@ -18,12 +18,14 @@ repos:
     exclude: |
       (?x)^(
         example/example/static/ext/debug\.js
-        |src/django_htmx/static/django_htmx/htmx-[24](\.min)?\.js
+        |src/django_htmx/static/django_htmx/(htmx|htmax)-[24](\.min)?\.js
+        |src/django_htmx/static/django_htmx/ext/[a-z0-9-]+-[24](\.min)?\.js
       )$
   - id: trailing-whitespace
     exclude: |
       (?x)^(
-        src/django_htmx/static/django_htmx/htmx-[24](\.min)?\.js
+        src/django_htmx/static/django_htmx/(htmx|htmax)-[24](\.min)?\.js
+        |src/django_htmx/static/django_htmx/ext/[a-z0-9-]+-[24](\.min)?\.js
       )$
 - repo: https://github.com/crate-ci/typos
   rev: 12ffd4a04b4893ab75db66a59aaad2d996c3e982  # frozen: v1
@@ -32,7 +34,8 @@ repos:
     exclude: |
       (?x)^(
         .*\.svg
-        |src/django_htmx/static/django_htmx/htmx-[24](\.min)?\.js
+        |src/django_htmx/static/django_htmx/(htmx|htmax)-[24](\.min)?\.js
+        |src/django_htmx/static/django_htmx/ext/[a-z0-9-]+-[24](\.min)?\.js
       )$
 - repo: https://github.com/tox-dev/pyproject-fmt
   rev: d600c142bb19f521ae6a6a345f94a2efd7937759  # frozen: v2.26.0
