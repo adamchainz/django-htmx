@@ -2,8 +2,8 @@
 Changelog
 =========
 
-Unreleased
-----------
+1.29.0 (2026-08-06)
+-------------------
 
 * Vendor some stable htmx extensions, named per their htmx 4 versions: ``htmx-2-compat``, ``hx-browser-indicator``, ``hx-download``, ``hx-head``, ``hx-optimistic``, ``hx-preload``, ``hx-prompt``, ``hx-ptag``, ``hx-sse``, ``hx-targets``, ``hx-upsert``, and ``hx-ws``.
   Render their script tags with the new ``extensions`` argument of the ``htmx_script`` :doc:`template tags <template_tags>`, which selects the extension files matching the htmx version in use:
