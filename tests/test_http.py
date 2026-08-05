@@ -175,7 +175,7 @@ class TriggerClientEventTests(SimpleTestCase):
                 response,
                 "custom-event",
                 {},
-                after="bad-value",  # type: ignore [arg-type]
+                after="bad-value",  # type: ignore [arg-type]  # ty: ignore[invalid-argument-type]
             )
 
         assert exinfo.value.args == (

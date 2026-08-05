@@ -28,19 +28,19 @@ class HtmxMiddleware:
         if self.async_mode:
             # Mark the class as async-capable, but do the actual switch
             # inside __call__ to avoid swapping out dunder methods
-            markcoroutinefunction(self)
+            markcoroutinefunction(self)  # ty: ignore[invalid-argument-type]
 
     def __call__(
         self, request: HttpRequest
     ) -> HttpResponseBase | Awaitable[HttpResponseBase]:
         if self.async_mode:
             return self.__acall__(request)
-        request.htmx = HtmxDetails(request)  # type: ignore [attr-defined]
+        request.htmx = HtmxDetails(request)  # type: ignore [attr-defined]  # ty: ignore[unresolved-attribute]
         return self.get_response(request)
 
     async def __acall__(self, request: HttpRequest) -> HttpResponseBase:
-        request.htmx = HtmxDetails(request)  # type: ignore [attr-defined]
-        return await self.get_response(request)  # type: ignore [no-any-return, misc]
+        request.htmx = HtmxDetails(request)  # type: ignore [attr-defined]  # ty: ignore[unresolved-attribute]
+        return await self.get_response(request)  # type: ignore [no-any-return, misc]  # ty: ignore[invalid-await]
 
 
 class HtmxDetails:

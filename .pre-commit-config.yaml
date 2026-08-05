@@ -1,5 +1,9 @@
 ci:
   autoupdate_schedule: monthly
+  # ty needs runtime network access to fetch ty and sync dependencies,
+  # which pre-commit.ci does not allow.
+  skip:
+  - ty
 
 default_language_version:
   python: python3.14
@@ -76,6 +80,14 @@ repos:
     additional_dependencies:
     - django-stubs==6.0.5
     - types-python-dateutil
+- repo: https://github.com/astral-sh/ty-pre-commit
+  rev: cedca67f9a9e6303431e212951454426df990fae  # frozen: v0.0.66
+  hooks:
+  - id: ty
+    args:
+    - --frozen
+    - --group=test
+    - --group=example
 - repo: https://github.com/adamchainz/djade-pre-commit
   rev: 52a7ce253113456c2a1113186a4a19b15c8b68af  # frozen: 1.9.0
   hooks:
