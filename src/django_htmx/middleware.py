@@ -87,6 +87,11 @@ class HtmxDetails:
         return self._get_header_value("HX-Prompt")
 
     @cached_property
+    def ptag(self) -> str | None:
+        # htmx 4 only, with the hx-ptag extension
+        return self._get_header_value("HX-PTag")
+
+    @cached_property
     def request_type(self) -> str | None:
         # htmx 4 only
         return self._get_header_value("HX-Request-Type")

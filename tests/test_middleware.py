@@ -115,6 +115,16 @@ class HtmxMiddlewareTests(SimpleTestCase):
         self.middleware(request)
         assert request.htmx.prompt == "yes please"
 
+    def test_ptag_default(self):
+        request = self.request_factory.get("/")
+        self.middleware(request)
+        assert request.htmx.ptag is None
+
+    def test_ptag_set(self):
+        request = self.request_factory.get("/", HTTP_HX_PTAG="abc123")
+        self.middleware(request)
+        assert request.htmx.ptag == "abc123"
+
     def test_request_type_default(self):
         request = self.request_factory.get("/")
         self.middleware(request)

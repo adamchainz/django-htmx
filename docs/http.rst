@@ -345,3 +345,47 @@ Response modifying functions
                {"colours": ["purple", "red", "pink"]},
                after="swap",
            )
+
+View decorators
+---------------
+
+.. autofunction:: ptag
+
+   Decorator to support the polling tags protocol of the |hx-ptag extension|__, available for htmx 4 only.
+   Polling tags let views skip re-rendering, and htmx skip swapping, when polled content hasn’t changed, like a lightweight version of |Django’s conditional view processing|__.
+   The API mirrors Django’s ``etag`` decorator.
+
+   .. |hx-ptag extension| replace:: ``hx-ptag`` extension
+   __ https://four.htmx.org/extensions/hx-ptag
+
+   .. |Django’s conditional view processing| replace:: Django’s conditional view processing
+   __ https://docs.djangoproject.com/en/stable/topics/conditional-view-processing/
+
+   :param ptag_func:
+      A callable to compute the polling tag for the requested content, passed the same parameters as the view itself.
+      It should return the tag as a string — an opaque value representing the current content, such as a hash or updated timestamp — or ``None`` if the protocol shouldn’t apply.
+
+   The decorator compares the computed tag with the ``HX-PTag`` request header, sent by the extension with the value from the previous response.
+   If they match, the decorator returns a 304 (Not Modified) response without calling the view, and htmx skips the swap.
+   Otherwise, it calls the view and adds the ``HX-PTag`` header to the response, if the header isn’t already set.
+   Like Django’s ``condition`` decorator, this behaviour only applies to safe request methods, GET and HEAD.
+
+   Both synchronous and asynchronous view functions are supported.
+
+   For example:
+
+   .. code-block:: python
+
+      from django.db.models import Max
+      from django.shortcuts import render
+      from django_htmx.http import ptag
+
+
+      def latest_news_ptag(request):
+          return str(News.objects.aggregate(latest=Max("updated_at"))["latest"])
+
+
+      @ptag(latest_news_ptag)
+      def news_items(request):
+          news = News.objects.order_by("-updated_at")[:10]
+          return render(request, "news-items.html", {"news": news})
