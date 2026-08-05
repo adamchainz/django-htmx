@@ -5,14 +5,15 @@ from uuid import UUID
 
 import pytest
 from django.core.serializers.json import DjangoJSONEncoder
-from django.http import HttpResponse, StreamingHttpResponse
-from django.test import SimpleTestCase
+from django.http import HttpRequest, HttpResponse, StreamingHttpResponse
+from django.test import RequestFactory, SimpleTestCase
 
 from django_htmx.http import (
     HttpResponseClientRedirect,
     HttpResponseClientRefresh,
     HttpResponseLocation,
     HttpResponseStopPolling,
+    ptag,
     push_url,
     replace_url,
     reselect,
@@ -98,6 +99,103 @@ class HttpResponseClientRefreshTests(SimpleTestCase):
         assert response.status_code == 200
         assert response["Content-Type"] == "text/html; charset=utf-8"
         assert response["HX-Refresh"] == "true"
+
+
+class PtagTests(SimpleTestCase):
+    request_factory = RequestFactory()
+
+    @staticmethod
+    @ptag(lambda request: "abc123")
+    def abc_view(request: HttpRequest) -> HttpResponse:
+        return HttpResponse("content")
+
+    @staticmethod
+    @ptag(lambda request: None)
+    def none_view(request: HttpRequest) -> HttpResponse:
+        return HttpResponse("content")
+
+    @staticmethod
+    @ptag(lambda request: "abc123")
+    def custom_header_view(request: HttpRequest) -> HttpResponse:
+        response = HttpResponse("content")
+        response["HX-PTag"] = "custom"
+        return response
+
+    @staticmethod
+    @ptag(lambda request: "abc123")
+    async def async_abc_view(request: HttpRequest) -> HttpResponse:
+        return HttpResponse("content")
+
+    def test_success_no_tag_sent(self):
+        request = self.request_factory.get("/")
+
+        response = self.abc_view(request)
+
+        assert response.status_code == 200
+        assert response.content == b"content"
+        assert response["HX-PTag"] == "abc123"
+
+    def test_success_tag_match(self):
+        request = self.request_factory.get("/", HTTP_HX_PTAG="abc123")
+
+        response = self.abc_view(request)
+
+        assert response.status_code == 304
+        assert response.content == b""
+        assert response["HX-PTag"] == "abc123"
+
+    def test_success_tag_mismatch(self):
+        request = self.request_factory.get("/", HTTP_HX_PTAG="old-value")
+
+        response = self.abc_view(request)
+
+        assert response.status_code == 200
+        assert response.content == b"content"
+        assert response["HX-PTag"] == "abc123"
+
+    def test_success_none_tag(self):
+        request = self.request_factory.get("/", HTTP_HX_PTAG="abc123")
+
+        response = self.none_view(request)
+
+        assert response.status_code == 200
+        assert response.content == b"content"
+        assert "HX-PTag" not in response
+
+    def test_success_unsafe_method(self):
+        request = self.request_factory.post("/", HTTP_HX_PTAG="abc123")
+
+        response = self.abc_view(request)
+
+        assert response.status_code == 200
+        assert response.content == b"content"
+        assert "HX-PTag" not in response
+
+    def test_success_view_set_header_preserved(self):
+        request = self.request_factory.get("/")
+
+        response = self.custom_header_view(request)
+
+        assert response.status_code == 200
+        assert response["HX-PTag"] == "custom"
+
+    async def test_success_async_no_tag_sent(self):
+        request = self.request_factory.get("/")
+
+        response = await self.async_abc_view(request)
+
+        assert response.status_code == 200
+        assert response.content == b"content"
+        assert response["HX-PTag"] == "abc123"
+
+    async def test_success_async_tag_match(self):
+        request = self.request_factory.get("/", HTTP_HX_PTAG="abc123")
+
+        response = await self.async_abc_view(request)
+
+        assert response.status_code == 304
+        assert response.content == b""
+        assert response["HX-PTag"] == "abc123"
 
 
 class PushUrlTests(SimpleTestCase):

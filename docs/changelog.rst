@@ -10,6 +10,22 @@ Changelog
 
   `PR #610 <https://github.com/adamchainz/django-htmx/pull/610>`__.
 
+* Add support for the polling tags protocol of the htmx 4 |hx-ptag extension|__:
+
+  * :attr:`HtmxDetails.ptag <django_htmx.middleware.HtmxDetails.ptag>` reads the ``HX-PTag`` request header directly.
+
+  * The :func:`django_htmx.http.ptag` view decorator implements the protocol, with an API mirroring Django’s |etag decorator|__.
+    It computes the current tag with the given function and, when the ``HX-PTag`` request header matches, returns a 304 (Not Modified) response without calling the view, making htmx skip the swap.
+    Otherwise, it calls the view and sets the ``HX-PTag`` response header.
+
+  .. |hx-ptag extension| replace:: ``hx-ptag`` extension
+  __ https://four.htmx.org/extensions/hx-ptag
+
+  .. |etag decorator| replace:: ``etag`` decorator
+  __ https://docs.djangoproject.com/en/stable/topics/conditional-view-processing/
+
+  `PR #613 <https://github.com/adamchainz/django-htmx/pull/613>`__.
+
 1.28.0 (2026-07-12)
 -------------------
 

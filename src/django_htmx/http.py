@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Literal, TypeVar
+from collections.abc import Callable
+from functools import wraps
+from typing import Any, Literal, TypeVar, cast
 
+from asgiref.sync import iscoroutinefunction
 from django.core.serializers.json import DjangoJSONEncoder
-from django.http import HttpResponse
+from django.http import HttpRequest, HttpResponse, HttpResponseNotModified
 from django.http.response import HttpResponseBase, HttpResponseRedirectBase
 
 HTMX_STOP_POLLING = 286
@@ -92,6 +95,64 @@ class HttpResponseLocation(HttpResponseRedirectBase):
 
 
 _HttpResponse = TypeVar("_HttpResponse", bound=HttpResponseBase)
+
+
+_View = TypeVar("_View", bound=Callable[..., Any])
+
+
+def ptag(ptag_func: Callable[..., str | None]) -> Callable[[_View], _View]:
+    def decorator(func: _View) -> _View:
+        def _pre_process_request(
+            request: HttpRequest, *args: Any, **kwargs: Any
+        ) -> tuple[HttpResponseBase | None, str | None]:
+            # Compute the polling tag (if any) for the requested content.
+            res_ptag = ptag_func(request, *args, **kwargs)
+            response: HttpResponseBase | None = None
+            if (
+                request.method in ("GET", "HEAD")
+                and res_ptag is not None
+                and request.headers.get("HX-PTag") == res_ptag
+            ):
+                response = HttpResponseNotModified()
+            return response, res_ptag
+
+        def _post_process_request(
+            request: HttpRequest, response: HttpResponseBase, res_ptag: str | None
+        ) -> None:
+            # Set the header on the response if it doesn't already exist and
+            # if the request method is safe.
+            if request.method in ("GET", "HEAD") and res_ptag is not None:
+                response.headers.setdefault("HX-PTag", res_ptag)
+
+        if iscoroutinefunction(func):
+
+            @wraps(func)
+            async def ainner(
+                request: HttpRequest, *args: Any, **kwargs: Any
+            ) -> HttpResponseBase:
+                response, res_ptag = _pre_process_request(request, *args, **kwargs)
+                if response is None:
+                    response = await func(request, *args, **kwargs)
+                _post_process_request(request, response, res_ptag)
+                return response
+
+            return cast(_View, ainner)
+
+        else:
+
+            @wraps(func)
+            def inner(
+                request: HttpRequest, *args: Any, **kwargs: Any
+            ) -> HttpResponseBase:
+                response, res_ptag = _pre_process_request(request, *args, **kwargs)
+                if response is None:
+                    response = func(request, *args, **kwargs)
+                _post_process_request(request, response, res_ptag)
+                return response
+
+            return cast(_View, inner)
+
+    return decorator
 
 
 def push_url(response: _HttpResponse, url: str | Literal[False]) -> _HttpResponse:

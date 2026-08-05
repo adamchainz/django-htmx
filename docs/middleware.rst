@@ -131,6 +131,17 @@ Middleware
       The user response to `hx-prompt <https://htmx.org/attributes/hx-prompt/>`__ if it was used, or ``None``.
       For htmx 4, this requires loading the ``hx-prompt`` extension, which restores the ``hx-prompt`` attribute and its header.
 
+   .. attribute:: ptag
+      :type: str | None
+
+      **htmx 4 only**
+
+      The polling tag sent by the |hx-ptag extension|__ in the ``HX-PTag`` request header, or ``None``.
+      You may want to use the :func:`django_htmx.http.ptag` view decorator to handle this header, rather than reading it directly.
+
+      .. |hx-ptag extension| replace:: ``hx-ptag`` extension
+      __ https://four.htmx.org/extensions/hx-ptag
+
    .. attribute:: request_type
       :type: str | None
 
