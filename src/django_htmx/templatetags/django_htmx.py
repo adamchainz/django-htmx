@@ -9,9 +9,17 @@ register = Library()
 
 
 @register.simple_tag(takes_context=True)
-def htmx_script(context: Context, minified: bool = True, version: int = 2) -> str:
+def htmx_script(
+    context: Context,
+    minified: bool = True,
+    version: int = 2,
+    extensions: str = "",
+) -> str:
     return base_htmx_script(
-        version=version, minified=minified, nonce=context.get("csp_nonce")
+        version=version,
+        minified=minified,
+        extensions=extensions,
+        nonce=context.get("csp_nonce"),
     )
 
 

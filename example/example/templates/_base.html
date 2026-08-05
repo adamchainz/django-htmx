@@ -7,9 +7,8 @@
   <title>django-htmx example app</title>
   <link rel="stylesheet" href="{% static 'mvp.css' %}">
 
-  {% htmx_script version=4 %}
+  {% htmx_script version=4 extensions="hx-prompt" %}
   <script src="{% static 'ext/event-header.js' %}" defer></script>
-  <script src="{% static 'ext/hx-prompt.js' %}" defer></script>
   <script src="{% static 'app.js' %}" defer></script>
 </head>
 

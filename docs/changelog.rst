@@ -2,6 +2,27 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+* Vendor some stable htmx extensions, named per their htmx 4 versions: ``htmx-2-compat``, ``hx-browser-indicator``, ``hx-download``, ``hx-head``, ``hx-optimistic``, ``hx-preload``, ``hx-prompt``, ``hx-ptag``, ``hx-sse``, ``hx-targets``, ``hx-upsert``, and ``hx-ws``.
+  Render their script tags with the new ``extensions`` argument of the ``htmx_script`` :doc:`template tags <template_tags>`, which selects the extension files matching the htmx version in use:
+
+  .. code-block:: django
+
+      {% htmx_script version=4 extensions="hx-sse,hx-ws" %}
+
+  ``hx-head``, ``hx-preload``, ``hx-sse``, and ``hx-ws`` are available for both htmx versions 2 and 4; the rest are htmx 4 only.
+
+  The special name ``htmax`` renders htmx 4’s htmax bundle of htmx plus its most popular extensions, in place of the plain htmx script:
+
+  .. code-block:: django
+
+      {% htmx_script version=4 extensions="htmax" %}
+
+  `PR #614 <https://github.com/adamchainz/django-htmx/pull/614>`__.
+  Thanks to Rex Zhang for initial work in `PR #575 <https://github.com/adamchainz/django-htmx/pull/575/commits>`__.
+
 * Upgrade the vendored htmx 2 to `version 2.0.10 <https://github.com/bigskysoftware/htmx/blob/master/CHANGELOG.md#2010---2026-04-21>`__.
 
   `PR #594 <https://github.com/adamchainz/django-htmx/pull/594>`__.
