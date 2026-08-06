@@ -41,19 +41,20 @@ Partial Rendering
 For requests made with htmx, you may want to reduce the page content you render, since only part of the page gets updated.
 This is a small optimization compared to correctly setting up compression, caching, etc.
 
-Using django-template-partials
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Using template partials
+~~~~~~~~~~~~~~~~~~~~~~~
 
-The `django-template-partials package <https://github.com/carltongibson/django-template-partials>`__ extends the Django Template Language with reusable sections called “partials”.
-It then allows you to render just one partial from a template.
+Django 6.0 added built-in support for `template partials <https://docs.djangoproject.com/en/6.0/ref/templates/language/#template-partials>`__, reusable sections defined within a template.
+It allows you to render just one partial from a template.
 
-Install ``django-template-partials`` and add its ``{% partialdef %}`` tag around a template section:
+On Django 5.2, the `django-template-partials package <https://github.com/carltongibson/django-template-partials>`__ provides the same feature.
+Install it, add ``"template_partials"`` to your ``INSTALLED_APPS`` setting, and use ``{% load partials %}`` in templates that define partials.
+
+Add the ``{% partialdef %}`` tag around a template section:
 
 .. code-block:: django
 
     {% extends "_base.html" %}
-
-    {% load partials %}
 
     {% block main %}
 
@@ -111,7 +112,7 @@ For a working example, see the “Partial Rendering” page of the :doc:`example
 It’s also possible to use a partial from within a separate view.
 This may be preferable if other customizations are required for htmx requests.
 
-For more information on django-template-partials, see `its documentation <https://github.com/carltongibson/django-template-partials>`__.
+For more information on Django’s template partials, see `the Django documentation <https://docs.djangoproject.com/en/6.0/ref/templates/language/#template-partials>`__.
 
 Swapping the base template
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
