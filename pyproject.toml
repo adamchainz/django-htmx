@@ -1,0 +1,158 @@
+[build-system]
+build-backend = "uv_build"
+requires = [
+  "uv-build>=0.12.1,<0.13",
+]
+
+[project]
+name = "django-mcpz"
+version = "1.0.0"
+description = "Easy peasy MCP: Model Context Protocol endpoints for Django."
+readme = "README.rst"
+keywords = [
+  "Django",
+  "MCP",
+  "Model Context Protocol",
+]
+license = "MIT"
+license-files = [ "LICENSE" ]
+authors = [
+  { name = "Adam Johnson", email = "me@adamj.eu" },
+]
+requires-python = ">=3.10"
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Framework :: Django :: 5.2",
+  "Framework :: Django :: 6.0",
+  "Framework :: Django :: 6.1",
+  "Intended Audience :: Developers",
+  "Natural Language :: English",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3.15",
+  "Programming Language :: Python :: Implementation :: CPython",
+  "Typing :: Typed",
+]
+dependencies = [
+  "asgiref>=3.6",
+  "django>=5.2",
+  "django-msgspec>=1",
+  "msgspec>=0.20",
+]
+urls.Changelog = "https://django-mcpz.readthedocs.io/en/latest/changelog.html"
+urls.Documentation = "https://django-mcpz.readthedocs.io/"
+urls.Funding = "https://adamj.eu/books/"
+urls.Repository = "https://github.com/adamchainz/django-mcpz"
+
+[dependency-groups]
+test = [
+  "coverage[toml]",
+  "mcp>=2,<3",
+  "pytest>=9",
+  "pytest-django",
+  "pytest-randomly",
+]
+docs = [
+  "furo>=2024.8.6",
+  "sphinx>=7.4.7",
+  "sphinx-copybutton>=0.5.2",
+]
+django52 = [ "django>=5.2a1,<6; python_version>='3.10'" ]
+django60 = [ "django>=6a1,<6.1; python_version>='3.12'" ]
+django61 = [ "django>=6.1a1,<6.2; python_version>='3.12'" ]
+
+[tool.uv]
+conflicts = [
+  [
+    { group = "django52" },
+    { group = "django60" },
+    { group = "django61" },
+  ],
+]
+
+[tool.ruff]
+lint.select = [
+  # flake8-bugbear
+  "B",
+  # flake8-comprehensions
+  "C4",
+  # pycodestyle
+  "E",
+  # Pyflakes errors
+  "F",
+  # isort
+  "I",
+  # flake8-simplify
+  "SIM",
+  # flake8-tidy-imports
+  "TID",
+  # pyupgrade
+  "UP",
+  # Pyflakes warnings
+  "W",
+]
+lint.ignore = [
+  # flake8-bugbear opinionated rules
+  "B9",
+  # line-too-long
+  "E501",
+  # suppressible-exception
+  "SIM105",
+  # if-else-block-instead-of-if-exp
+  "SIM108",
+]
+lint.extend-safe-fixes = [
+  # non-pep585-annotation
+  "UP006",
+]
+lint.isort.required-imports = [ "from __future__ import annotations" ]
+
+[tool.pyproject-fmt]
+max_supported_python = "3.15"
+
+[tool.mypy]
+mypy_path = "src/"
+namespace_packages = false
+warn_unreachable = true
+enable_error_code = [
+  "ignore-without-code",
+  "redundant-expr",
+  "truthy-bool",
+]
+strict = true
+overrides = [
+  { module = "tests.*", allow_untyped_defs = true, disallow_untyped_calls = false },
+]
+
+[tool.pytest]
+django_find_project = false
+DJANGO_SETTINGS_MODULE = "tests.settings"
+strict = true
+
+[tool.coverage]
+run.source = [
+  "django_mcpz",
+  "tests",
+]
+run.branch = true
+run.data_file = ".coverage/cov"
+run.parallel = true
+paths.source = [
+  "src",
+  ".tox/**/site-packages",
+]
+report.skip_covered = true
+report.skip_empty = true
+report.show_missing = true
+
+[tool.rstcheck]
+ignore_directives = [
+  "autoclass",
+  "autofunction",
+]
+report_level = "ERROR"
