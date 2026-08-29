@@ -5,6 +5,11 @@ Changelog
 Unreleased
 ----------
 
+* Upgrade the vendored htmx 4 to `version 4.0.0 <https://github.com/bigskysoftware/htmx/releases/tag/v4.0.0>`__, the first stable release of htmx 4.
+
+  This release renames the ``hx-optimistic`` extension to ``hx-pending``, so the vendored extension is renamed to match.
+  If you used ``extensions="hx-optimistic"`` in the ``htmx_script`` :doc:`template tags <template_tags>`, update it to ``extensions="hx-pending"``, and update the ``hx-optimistic`` attributes and class name in your templates per `the extension’s documentation <https://four.htmx.org/extensions/hx-pending>`__.
+
 * Support Python 3.15.
 
 1.29.0 (2026-08-06)

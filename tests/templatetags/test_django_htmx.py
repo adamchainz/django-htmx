@@ -203,7 +203,7 @@ class HtmxScriptTests(SimpleTestCase):
 
         assert excinfo.value.args == (
             "Unknown htmx extension 'json-enc', must be one of: "
-            + "htmax, htmx-2-compat, hx-browser-indicator, hx-download, hx-head, hx-optimistic, hx-preload, hx-prompt, hx-ptag, hx-sse, hx-targets, hx-upsert, hx-ws",
+            + "htmax, htmx-2-compat, hx-browser-indicator, hx-download, hx-head, hx-pending, hx-preload, hx-prompt, hx-ptag, hx-sse, hx-targets, hx-upsert, hx-ws",
         )
 
     def test_unminified(self):

@@ -39,7 +39,7 @@ class TemplateTagsTests(SimpleTestCase):
         )
         scripts_rst_version = read_version(
             scripts_rst_path,
-            r"htmx 4, currently in beta — version (\d+\.\d+\.\d+(?:-\w+)?)\.",
+            r"htmx 4 — currently version (\d+\.\d+\.\d+(?:-\w+)?)\.",
         )
 
         assert htmx_js_version == htmx_min_js_version

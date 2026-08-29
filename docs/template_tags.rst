@@ -22,7 +22,7 @@ The ``htmx_script`` template tag renders script tags for:
    Two versions of htmx are vendored (`htmx release notes <https://github.com/bigskysoftware/htmx/releases>`__):
 
    * htmx 2, the default — currently version 2.0.10.
-   * htmx 4, currently in beta — version 4.0.0-beta6.
+   * htmx 4 — currently version 4.0.0.
 
    (There is no htmx 3—the project skipped from 2 to 4.)
 
@@ -64,7 +64,7 @@ Pass ``minified=False`` to render the non-minified version:
 This may be useful when debugging htmx behaviour.
 
 The default is to use htmx version 2.
-Pass ``version=4`` to render htmx version 4, currently in beta:
+Pass ``version=4`` to render htmx version 4:
 
 .. code-block:: django
 
@@ -128,7 +128,7 @@ Pass ``minified=False`` to render the non-minified version:
 This may be useful when debugging htmx behaviour.
 
 The default is to use htmx version 2.
-Pass ``version=4`` to render htmx version 4, currently in beta:
+Pass ``version=4`` to render htmx version 4:
 
 .. code-block:: jinja
 
@@ -184,10 +184,10 @@ The ``extensions`` argument renders a script tag for each named extension, using
      - `head-support 2.0.5 <https://htmx.org/extensions/head-support/>`__
      - `docs <https://four.htmx.org/extensions/hx-head>`__
 
-   * - ``hx-optimistic``
-     - Optimistic UI updates before the response arrives.
+   * - ``hx-pending``
+     - Show custom content during requests, from loading states to optimistic updates.
      - —
-     - `docs <https://four.htmx.org/extensions/hx-optimistic>`__
+     - `docs <https://four.htmx.org/extensions/hx-pending>`__
 
    * - ``hx-preload``
      - Preload responses for links and forms before they’re requested.

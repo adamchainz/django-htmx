@@ -20,7 +20,7 @@ EXTENSIONS = {
     "hx-browser-indicator": frozenset({4}),
     "hx-download": frozenset({4}),
     "hx-head": frozenset({2, 4}),
-    "hx-optimistic": frozenset({4}),
+    "hx-pending": frozenset({4}),
     "hx-preload": frozenset({2, 4}),
     "hx-prompt": frozenset({4}),
     "hx-ptag": frozenset({4}),

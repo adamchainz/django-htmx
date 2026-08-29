@@ -26,7 +26,7 @@ EXTENSIONS: dict[str, tuple[str, str] | None] = {
     "hx-browser-indicator": None,
     "hx-download": None,
     "hx-head": ("head-support", "2.0.5"),
-    "hx-optimistic": None,
+    "hx-pending": None,
     "hx-preload": ("preload", "2.1.2"),
     "hx-prompt": None,
     "hx-ptag": None,
