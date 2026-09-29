@@ -7,6 +7,8 @@ Unreleased
 
 * Support Python 3.15.
 
+* Fix handling of a malformed ``HX-Current-Url`` header to not crash when given an incorrect IPv6 literal host.
+
 1.29.0 (2026-08-06)
 -------------------
 
