@@ -68,14 +68,18 @@ class HtmxDetails:
     def current_url_abs_path(self) -> str | None:
         url = self.current_url
         if url is not None:
-            split = urlsplit(url)
-            if (
-                split.scheme == self.request.scheme
-                and split.netloc == self.request.get_host()
-            ):
-                url = urlunsplit(split._replace(scheme="", netloc=""))
-            else:
+            try:
+                split = urlsplit(url)
+            except ValueError:
                 url = None
+            else:
+                if (
+                    split.scheme == self.request.scheme
+                    and split.netloc == self.request.get_host()
+                ):
+                    url = urlunsplit(split._replace(scheme="", netloc=""))
+                else:
+                    url = None
         return url
 
     @cached_property

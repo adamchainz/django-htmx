@@ -95,6 +95,13 @@ class HtmxMiddlewareTests(SimpleTestCase):
         self.middleware(request)
         assert request.htmx.current_url_abs_path is None
 
+    def test_current_url_abs_path_set_malformed(self):
+        request = self.request_factory.get(
+            "/", HTTP_HX_CURRENT_URL="http://[::1/duck/?quack=true"
+        )
+        self.middleware(request)
+        assert request.htmx.current_url_abs_path is None
+
     def test_history_restore_request_false(self):
         request = self.request_factory.get("/", HTTP_HX_HISTORY_RESTORE_REQUEST="false")
         self.middleware(request)
