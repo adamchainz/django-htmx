@@ -5,6 +5,8 @@ Changelog
 Unreleased
 ----------
 
+* Drop Python 3.10 support.
+
 * Support Python 3.15.
 
 * Fix handling of a malformed ``HX-Current-Url`` header to not crash when given an incorrect IPv6 literal host.
