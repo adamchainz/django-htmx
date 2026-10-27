@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import json
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, cast
 from urllib.parse import unquote, urlsplit, urlunsplit
 
 from asgiref.sync import iscoroutinefunction, markcoroutinefunction
 from django.http import HttpRequest
 from django.http.response import HttpResponseBase
+from django.utils.cache import patch_vary_headers
 from django.utils.functional import cached_property
 
 
@@ -36,11 +37,15 @@ class HtmxMiddleware:
         if self.async_mode:
             return self.__acall__(request)
         request.htmx = HtmxDetails(request)  # type: ignore [attr-defined]
-        return self.get_response(request)
+        response = cast(HttpResponseBase, self.get_response(request))
+        patch_vary_headers(response, ["HX-Request"])
+        return response
 
     async def __acall__(self, request: HttpRequest) -> HttpResponseBase:
         request.htmx = HtmxDetails(request)  # type: ignore [attr-defined]
-        return await self.get_response(request)  # type: ignore [no-any-return, misc]
+        response = await cast(Awaitable[HttpResponseBase], self.get_response(request))
+        patch_vary_headers(response, ["HX-Request"])
+        return response
 
 
 class HtmxDetails:
