@@ -11,6 +11,10 @@ Unreleased
 
 * Fix handling of a malformed ``HX-Current-Url`` header to not crash when given an incorrect IPv6 literal host.
 
+* Upgrade the vendored htmx 2 to `version 2.0.11 <https://github.com/bigskysoftware/htmx/blob/master/CHANGELOG.md#2011---2026-09-22>`__.
+
+  `PR #629 <https://github.com/adamchainz/django-htmx/pull/629>`__.
+
 1.29.0 (2026-08-06)
 -------------------
 
