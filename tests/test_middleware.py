@@ -136,7 +136,7 @@ class HtmxMiddlewareTests(SimpleTestCase):
         # htmx 2 encodes only unsendable values, and flags it with a marker header.
         request = self.request_factory.get(
             "/",
-            HTTP_HX_PROMPT="caf%C3%A9%2025%25",
+            HTTP_HX_PROMPT="calf%C3%A9%2025%25",
             HTTP_HX_PROMPT_URI_AUTOENCODED="true",
         )
         self.middleware(request)
