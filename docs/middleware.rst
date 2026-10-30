@@ -130,6 +130,7 @@ Middleware
 
       The user response to `hx-prompt <https://htmx.org/attributes/hx-prompt/>`__ if it was used, or ``None``.
       For htmx 4, this requires loading the ``hx-prompt`` extension, which restores the ``hx-prompt`` attribute and its header.
+      That extension URI-encodes the answer, which is decoded for you.
 
    .. attribute:: ptag
       :type: str | None
