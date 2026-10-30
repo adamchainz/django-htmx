@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from typing import Any, cast
+from unittest import mock
+from urllib.parse import unquote
 
 from django.core.handlers.wsgi import WSGIRequest
 from django.http import HttpResponse
@@ -121,6 +123,60 @@ class HtmxMiddlewareTests(SimpleTestCase):
         request = self.request_factory.get("/", HTTP_HX_PROMPT="yes please")
         self.middleware(request)
         assert request.htmx.prompt == "yes please"
+
+    def test_prompt_htmx2_not_unquoted(self):
+        # htmx 2 sends the raw answer, so a literal "%25" must be preserved.
+        request = self.request_factory.get("/", HTTP_HX_PROMPT="100%25 sure")
+        with mock.patch("django_htmx.middleware.unquote") as unquote_mock:
+            self.middleware(request)
+            assert request.htmx.prompt == "100%25 sure"
+        unquote_mock.assert_not_called()
+
+    def test_prompt_htmx2_auto_encoded(self):
+        # htmx 2 encodes only unsendable values, and flags it with a marker header.
+        request = self.request_factory.get(
+            "/",
+            HTTP_HX_PROMPT="caf%C3%A9%2025%25",
+            HTTP_HX_PROMPT_URI_AUTOENCODED="true",
+        )
+        self.middleware(request)
+        assert request.htmx.prompt == "café 25%"
+
+    def test_prompt_htmx4_unquoted(self):
+        # htmx 4's hx-prompt extension always sends encodeURI(answer).
+        request = self.request_factory.get(
+            "/", HTTP_HX_SOURCE="button", HTTP_HX_PROMPT="Over%2018"
+        )
+        with mock.patch("django_htmx.middleware.unquote", wraps=unquote) as unquote_spy:
+            self.middleware(request)
+            assert request.htmx.prompt == "Over 18"
+        unquote_spy.assert_called_once_with("Over%2018")
+
+    def test_prompt_htmx4_percent_roundtrip(self):
+        request = self.request_factory.get(
+            "/", HTTP_HX_SOURCE="button", HTTP_HX_PROMPT="100%25%20sure"
+        )
+        self.middleware(request)
+        assert request.htmx.prompt == "100% sure"
+
+    def test_prompt_htmx4_raw_header_is_not_the_answer(self):
+        # Guards the reason for unquoting: the raw htmx 4 header differs from
+        # what the user typed, so returning it unchanged would be a regression.
+        request = self.request_factory.get(
+            "/", HTTP_HX_SOURCE="button", HTTP_HX_PROMPT="Over%2018"
+        )
+        self.middleware(request)
+        assert request.htmx.prompt != request.headers["HX-Prompt"]
+
+    def test_prompt_htmx4_auto_encoded_not_double_unquoted(self):
+        request = self.request_factory.get(
+            "/",
+            HTTP_HX_SOURCE="button",
+            HTTP_HX_PROMPT="50%2525",
+            HTTP_HX_PROMPT_URI_AUTOENCODED="true",
+        )
+        self.middleware(request)
+        assert request.htmx.prompt == "50%25"
 
     def test_ptag_default(self):
         request = self.request_factory.get("/")
