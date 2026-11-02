@@ -11,6 +11,8 @@ Unreleased
 
 * Fix handling of a malformed ``HX-Current-Url`` header to not crash when given an incorrect IPv6 literal host.
 
+* Fix :attr:`~django_htmx.middleware.HtmxDetails.prompt` to decode the URI-encoded value sent by htmx 4’s ``hx-prompt`` extension, so answers like “Over 18” are no longer returned as ``Over%2018``.
+
 1.29.0 (2026-08-06)
 -------------------
 

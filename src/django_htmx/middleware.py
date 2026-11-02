@@ -88,7 +88,17 @@ class HtmxDetails:
 
     @cached_property
     def prompt(self) -> str | None:
-        return self._get_header_value("HX-Prompt")
+        value = self._get_header_value("HX-Prompt")
+        if (
+            value
+            # htmx 4 always sends "HX-Source", htmx 2 never does.
+            and "HX-Source" in self.request.headers
+            # Already decoded by _get_header_value() if the marker is present.
+            and self.request.headers.get("HX-Prompt-URI-AutoEncoded") != "true"
+        ):
+            # htmx 4's hx-prompt extension URI-encodes the answer, without the marker.
+            value = unquote(value)
+        return value
 
     @cached_property
     def ptag(self) -> str | None:
