@@ -28,7 +28,7 @@ repos:
         |src/django_htmx/static/django_htmx/ext/[a-z0-9-]+-[24](\.min)?\.js
       )$
 - repo: https://github.com/crate-ci/typos
-  rev: c132f8b9e3ac7f8f0625490b1cb5b906d1d6a63a  # frozen: v1
+  rev: 9023c1f779400877cafdd98052113fc777e2cfdc  # frozen: v1.51.1
   hooks:
   - id: typos
     exclude: |
@@ -38,11 +38,11 @@ repos:
         |src/django_htmx/static/django_htmx/ext/[a-z0-9-]+-[24](\.min)?\.js
       )$
 - repo: https://github.com/tox-dev/pyproject-fmt
-  rev: 3b42b9776870badc9eaffdef9a4a0834b764d87c  # frozen: v2.29.3
+  rev: 50e0f3aee9dc5747a5f173f79a7417403c18dda6  # frozen: v2.30.3
   hooks:
   - id: pyproject-fmt
 - repo: https://github.com/tox-dev/tox-ini-fmt
-  rev: 241ced4140307006cfd8b2b9ccfd43b1139cfe4a  # frozen: 1.9.0
+  rev: 183ade1283cfdec14cfb1cb0044871f13d5d7fe9  # frozen: 1.10.1
   hooks:
   - id: tox-ini-fmt
 - repo: https://github.com/rstcheck/rstcheck
@@ -57,7 +57,7 @@ repos:
   hooks:
   - id: sphinx-lint
 - repo: https://github.com/adamchainz/django-upgrade
-  rev: e668ea858b908d23a9702b24214f4fc5d07ed50f  # frozen: 1.32.0
+  rev: 5a815b88d9286ba45b8c1a4b56e695ff5645c65e  # frozen: 1.33.0
   hooks:
   - id: django-upgrade
 - repo: https://github.com/adamchainz/blacken-docs
@@ -67,19 +67,19 @@ repos:
     additional_dependencies:
     - black==25.1.0
 - repo: https://github.com/astral-sh/ruff-pre-commit
-  rev: 321478e58f4938179c6b86e4ddfa923d1547a49b  # frozen: v0.16.6
+  rev: 25bcf95026b96e2dd3c0aec3090c3d6ef6ca2e6c  # frozen: v0.17.3
   hooks:
     - id: ruff-check
       args: [ --fix ]
     - id: ruff-format
 - repo: https://github.com/pre-commit/mirrors-mypy
-  rev: 7ff8d35ae36a7d2b968f2f90b4c723e292e594ee  # frozen: v2.3.1
+  rev: ad26ebfa797fcb9b8f83275937c1c1d6e126719c  # frozen: v2.4.1
   hooks:
   - id: mypy
     additional_dependencies:
     - django-stubs==6.1.0
     - types-python-dateutil
 - repo: https://github.com/adamchainz/djade-pre-commit
-  rev: 52a7ce253113456c2a1113186a4a19b15c8b68af  # frozen: 1.9.0
+  rev: 728ec80e88767be989d18b53ed47753c85f3f0b8  # frozen: 1.10.0
   hooks:
   - id: djade
