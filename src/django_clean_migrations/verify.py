@@ -14,6 +14,7 @@ from django.db.migrations.loader import MigrationLoader
 from django.db.migrations.operations.base import Operation
 from django.db.migrations.state import ModelState, ProjectState
 from django.db.migrations.utils import resolve_relation
+from django.db.migrations.writer import MigrationWriter
 
 from django_clean_migrations.history import Key, generate_plan
 from django_clean_migrations.locate import TOGETHER_OPTIONS, normalize_together
@@ -130,20 +131,42 @@ def _normalized_options(options: Mapping[str, Any]) -> dict[str, Any]:
     return result
 
 
+def same_value(a: Any, b: Any) -> bool:
+    """
+    Equality that also holds for separately loaded copies of deconstructible
+    objects lacking __eq__ (validators, storages...), by comparing how the
+    migration writer would serialize them.
+    """
+    try:
+        if a == b:
+            return True
+    except Exception:
+        pass
+    try:
+        return bool(MigrationWriter.serialize(a) == MigrationWriter.serialize(b))
+    except Exception:
+        return False
+
+
 def model_states_equal(a: ModelState, b: ModelState) -> bool:
+    if (
+        a.app_label != b.app_label
+        or a.name != b.name
+        or sorted(a.fields) != sorted(b.fields)
+    ):
+        return False
+    for name, f1 in a.fields.items():
+        f2 = b.fields[name]
+        if type(f1) is not type(f2) or not same_value(
+            f1.deconstruct()[1:], f2.deconstruct()[1:]
+        ):
+            return False
+    oa, ob = _normalized_options(a.options), _normalized_options(b.options)
     return (
-        a.app_label == b.app_label
-        and a.name == b.name
-        and len(a.fields) == len(b.fields)
-        and all(
-            k1 == k2 and f1.deconstruct()[1:] == f2.deconstruct()[1:]
-            for (k1, f1), (k2, f2) in zip(
-                sorted(a.fields.items()), sorted(b.fields.items()), strict=True
-            )
-        )
-        and _normalized_options(a.options) == _normalized_options(b.options)
-        and a.bases == b.bases
-        and a.managers == b.managers
+        oa.keys() == ob.keys()
+        and all(same_value(oa[k], ob[k]) for k in oa)
+        and same_value(a.bases, b.bases)
+        and same_value(a.managers, b.managers)
     )
 
 

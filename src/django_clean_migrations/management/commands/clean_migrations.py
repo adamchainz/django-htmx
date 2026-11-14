@@ -117,13 +117,32 @@ class Command(BaseCommand):
         if not result.changed:
             self.stdout.write("No operations to remove.")
             return
-        verb = "removed" if write else "would be removed"
-        files = len(result.files)
-        summary = (
-            f"{result.removed_operations} operation(s) {verb}"
-            f" and {result.edited_operations} edited"
-            f" across {files} migration file{'s' if files != 1 else ''}."
-        )
-        if result.empty_migrations:
-            summary += f" {len(result.empty_migrations)} migration(s) left empty."
-        self.stdout.write(self.style.SUCCESS(summary))
+        self.stdout.write(self.style.SUCCESS(summary(result, write)))
+
+
+def _count(n: int, noun: str) -> str:
+    return f"{n} {noun}{'' if n == 1 else 's'}"
+
+
+def summary(result: Result, write: bool) -> str:
+    """E.g. "Would remove 3 operations and edit 1 in 2 migration files."."""
+    actions = []
+    if result.removed_operations:
+        verb = "Removed" if write else "Would remove"
+        actions.append(f"{verb} {_count(result.removed_operations, 'operation')}")
+    if result.edited_operations:
+        verb = "edited" if write else "edit"
+        if not actions:
+            verb = verb.capitalize() if write else "Would edit"
+        actions.append(f"{verb} {_count(result.edited_operations, 'operation')}")
+    text = " and ".join(actions) + f" in {_count(len(result.files), 'migration file')}."
+    empty = len(result.empty_migrations)
+    if empty:
+        text += f" {_count(empty, 'migration')} "
+        if write:
+            text += (
+                "now has no operations." if empty == 1 else "now have no operations."
+            )
+        else:
+            text += "would be left with no operations."
+    return text

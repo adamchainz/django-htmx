@@ -30,7 +30,7 @@ The migration is only editable if that is a plain list or tuple literal, with no
 If a migration builds its operations dynamically, or has any other unusual shape, it can’t be edited, and anything that would need an edit there is kept.
 With ``--show-blocked``, you’ll see the reason, such as “operations list in app.0004_x could not be parsed”.
 
-Files that start with a UTF-8 byte order mark (BOM) are also treated as unparseable, so they are never edited.
+Files that start with a UTF-8 byte order mark (BOM) are never edited either; the reason given says so.
 
 Lives
 -----
@@ -134,8 +134,8 @@ Migrations that aren’t ordered relative to the thing, for example in an unrela
 
 The text that gets scanned is:
 
-* The source of the migration file, minus the operations the command understands.
-  So module-level helper functions, and the arguments of the opaque operations themselves, are included.
+* The source of the migration file, minus the operations the command understands, and minus the ``dependencies``, ``replaces``, ``run_before``, ``initial`` and ``atomic`` attributes.
+  So module-level helper functions, and the arguments of the opaque operations themselves, are included, but migration names such as ``0002_item_owner`` are not.
 * The source of ``RunPython`` ``code`` and ``reverse_code`` callables that are defined outside the migration file, with ``functools.partial`` unwrapped.
 * The ``sql`` and ``reverse_sql`` of ``RunSQL``.
 * For custom operations, the source of their class.
@@ -145,10 +145,11 @@ The names that are looked for are:
 
 * For a model: every name it had, any explicit ``db_table``, and the ``related_name`` and ``related_query_name`` of its relations.
 * For a field: every name it had, ``db_column``, ``related_name``, ``related_query_name``, and a many-to-many field’s ``db_table``.
+  A relation field also matches the default reverse names: every name its own model had (the default related query name, and ``<model>_set``) and that model’s ``default_related_name``.
 * For an index or constraint: every name it had.
 
 Matching ignores case.
-A name matches where it is not touching other letters or digits, so underscores count as boundaries.
+A name matches where it is not touching other letters or digits (in any script, so non-ASCII names work), so underscores count as boundaries.
 That means ``coupon`` matches ``Coupon``, ``coupon_set``, ``shop_coupon`` and ``coupon__code``, but not ``coupons``.
 
 This is a heuristic, and has limits:
@@ -173,8 +174,14 @@ Elidable operations
 ~~~~~~~~~~~~~~~~~~~
 
 A ``RunPython`` or ``RunSQL`` operation (the exact classes) with ``elidable=True``, that changes no state, never blocks.
-If a removal would leave it mentioning a name that no longer exists, the command removes it too, as long as it is in an editable migration with a locatable ``operations`` list.
-If it can’t be edited, it blocks like any other opaque operation.
+If a removal would leave it mentioning a name that no longer exists, the command removes it too, as long as:
+
+* its migration is certainly within the removed thing’s lifetime: a descendant of (or later in) the creating migration and an ancestor of (or earlier in) the ending one,
+* it is in an editable migration with a locatable ``operations`` list, and
+* its app isn’t excluded.
+
+Otherwise it blocks like any other opaque operation.
+Each such removal is reported with the name that matched and the thing it was removed with.
 
 This only removes the elidable operation when it mentions a removed model, field, index or constraint.
 Unrelated elidable operations stay, unless you pass ``--elidable``.
@@ -198,7 +205,9 @@ An ``AlterField`` is removed when the next ``AlterField`` or ``RemoveField`` on 
   Either the first two, or the last two, must be the same kind: same field class, same internal type, and for relations the same target model.
   The aim is to avoid turning two possible casts into a single impossible one, for example, ``IntegerField`` to ``JSONField`` to ``TextField``, which some databases reject even on empty tables.
   When replaced by a ``RemoveField``, this check isn’t needed.
-* If the field is a relation whose target model changes, the model it pointed to before the ``AlterField`` must still exist when the replacing operation runs.
+* The definitions before and after the ``AlterField`` hold the same things.
+  Without the ``AlterField``, the earlier definition stays in force until the replacing operation, so anything it occupies or points to that the newer one gave up could be reused or removed meanwhile, which the project state can’t show.
+  So both must agree on the column (``db_column``, and whether it is a foreign key column), ``to_fields``, ``from_fields``, ``through``, ``db_table``, ``db_tablespace``, primary key status, and everything the definition refers to: the target model and field, and fields named in expressions.
 
 **AlterModelOptions.**
 Removed if a later ``AlterModelOptions`` on the same model replaces it, if the earlier one doesn’t change ``managed``, and if the scan is clean.
@@ -207,8 +216,10 @@ Only the standard options Django manages through this operation are considered.
 **AlterModelManagers.**
 Removed if a later ``AlterModelManagers`` replaces it, and the scan is clean.
 
-**AlterModelTable and AlterModelTableComment.**
-Removed if a later operation of the same type replaces it, nothing else on the model falls between them (including children, and anything referring to it), and the scan is clean.
+**AlterModelTableComment.**
+Removed if a later ``AlterModelTableComment`` replaces it, nothing else on the model falls between them (including children, and anything referring to it), and the scan is clean.
+
+``AlterModelTable`` is never treated as superseded: skipping one would keep the old table name taken while another model may claim it.
 
 Chains collapse as you would expect, with each decision made against the operations that survive.
 The two migrations must also be ordered relative to each other in the graph.

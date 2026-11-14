@@ -114,6 +114,15 @@ class ModelLife(Life):
         }
         self.children: list[Life] = []
         self.tables: set[str] = set()
+        self.default_related_names: set[str] = set()
+
+    def note_options(self, options: Any) -> None:
+        table = options.get("db_table")
+        if isinstance(table, str):
+            self.tables.add(table)
+        related = options.get("default_related_name")
+        if isinstance(related, str):
+            self.default_related_names.add(related)
 
     @property
     def app_label(self) -> str:
@@ -159,7 +168,17 @@ class FieldLife(Life):
         return self.defs[-1][1] if self.defs else None
 
     def scan_names(self) -> set[str]:
-        return super().scan_names() | self.extra_names | self.related_names
+        names = super().scan_names() | self.extra_names | self.related_names
+        if any(getattr(d, "remote_field", None) is not None for _, d, _ in self.defs):
+            # Default reverse names: the owning model's name (query name,
+            # <model>_set accessor) and its default_related_name.
+            model = self.model
+            names |= {n.lower() for n in model.names}
+            for value in model.default_related_names:
+                name = _related_name(value, model)
+                if name:
+                    names.add(name)
+        return names
 
 
 class IndexLife(Life):
@@ -253,7 +272,7 @@ def mentioned_names(obj: Any) -> set[str]:
     while stack:
         o = stack.pop()
         if isinstance(o, str):
-            for part in re.split(r"__|[^A-Za-z0-9_]+", o):
+            for part in re.split(r"__|\W+", o):
                 if part:
                     out.add(part)
                     if part.endswith("_id"):
@@ -612,9 +631,7 @@ class Timeline:
             old.poison(f"model name reused without DeleteModel in {rec.describe()}")
             model.poison(f"model name reused without DeleteModel in {rec.describe()}")
         self.models[key] = model
-        table = op.options.get("db_table")
-        if isinstance(table, str):
-            model.tables.add(table)
+        model.note_options(op.options)
         for name, _ in op.fields:
             life = FieldLife(model, name)
             sub_el = self._element(rec, ("field", name), None, ctx)
@@ -760,6 +777,7 @@ class Timeline:
         ms = self.state.models.get(model.key)
         if ms is not None and element is not ctx:
             element.info["managed_before"] = ms.options.get("managed", True)
+        model.note_options(op.options)
         self._soft_refs(element, model, op.options)
 
     def _on_AlterModelManagers(
@@ -1091,9 +1109,7 @@ class Timeline:
             for option in TOGETHER_OPTIONS:
                 if not _same(b.options.get(option), a.options.get(option)):
                     self._resync_together(model, option, a.options.get(option), ctx)
-            table = a.options.get("db_table")
-            if isinstance(table, str):
-                model.tables.add(table)
+            model.note_options(a.options)
         return changed
 
     @staticmethod
@@ -1121,9 +1137,7 @@ class Timeline:
         model = ModelLife(key[0], snap.name)
         self._new_life(model, ctx)
         self.models[key] = model
-        table = snap.options.get("db_table")
-        if isinstance(table, str):
-            model.tables.add(table)
+        model.note_options(snap.options)
         for name in snap.fields:
             life = FieldLife(model, name)
             self._new_life(life, ctx)

@@ -42,10 +42,11 @@ This is a dry run, and doesn’t touch any files:
     shop.Coupon: model created in 0002_coupon_legacy_ref, deleted in 0004_cleanup (2 operations)
     shop.Product.legacy_ref: field added in 0002_coupon_legacy_ref, removed in 0004_cleanup (2 operations)
     shop.Product.sku: AlterField in 0003_widen_sku superseded by AlterField in 0004_cleanup (1 operation)
-    9 operation(s) would be removed and 0 edited across 5 migration files. 2 migration(s) left empty.
+    Would remove 9 operations in 5 migration files. 2 migrations would be left with no operations.
 
 Each line names the thing that would be removed, then where it appeared and disappeared in the history.
 The summary counts operations removed outright, operations edited (for example a single field taken out of a ``CreateModel``), and migration files that end up with no operations at all.
+Counts that are zero are left out.
 
 When you are happy with the plan, apply it with ``--write``:
 
@@ -53,7 +54,7 @@ When you are happy with the plan, apply it with ``--write``:
 
     $ python manage.py clean_migrations --write
     ...
-    9 operation(s) removed and 0 edited across 5 migration files. 2 migration(s) left empty.
+    Removed 9 operations in 5 migration files. 2 migrations now have no operations.
 
 Running the command again then reports that there’s nothing left to do:
 
@@ -93,15 +94,19 @@ If it can’t be removed, then ``shop.Coupon`` stays.
 
 Use ``--exclude`` to protect something.
 It takes the same kind of target, and can be repeated.
-Excluded things are never removed, and anything that depends on them is kept too:
+Excluded things are never removed, and anything that depends on them is kept too.
+Excluding a field, for example ``shop.Coupon.code``, also keeps its model, since removing the model would remove the field:
 
 .. code-block:: console
 
     $ python manage.py clean_migrations --exclude shop.Coupon --exclude blog
 
+A target or exclusion naming a model or field that never existed in the migration history is an error, so typos don’t silently select nothing.
+Old names count: a model or field matches any name it had.
+
 .. note::
 
-    ``--exclude`` and ``--kind`` don’t apply to ``--elidable``, described below.
+    ``--kind`` doesn’t apply to ``--elidable``, described below, but an excluded app’s migrations are never touched by it.
 
 Kinds of removal
 ----------------
@@ -134,7 +139,7 @@ The default is all kinds.
      - An entry in ``unique_together`` or ``index_together`` that is added and later removed.
        This also removes ``AlterUniqueTogether`` and ``AlterIndexTogether`` operations that, after such removals, no longer change anything.
    * - ``superseded``
-     - An ``AlterField``, ``AlterModelOptions``, ``AlterModelManagers``, ``AlterModelTable`` or ``AlterModelTableComment`` operation that a later operation of the same type completely replaces.
+     - An ``AlterField``, ``AlterModelOptions``, ``AlterModelManagers`` or ``AlterModelTableComment`` operation that a later operation of the same type completely replaces.
        For fields, an ``AlterField`` can also be replaced by the ``RemoveField`` that follows it.
        Only a safe subset of such cases are removed, as described in :doc:`how_it_works`.
 
@@ -178,14 +183,16 @@ Migration operations marked ``elidable=True`` are declared safe to drop when squ
 The command respects that in two ways.
 
 First, an elidable ``RunPython`` or ``RunSQL`` operation never blocks a removal.
-If its code mentions something that is being removed, the elidable operation is removed too, since leaving it in place could crash on the missing model or field.
+If its code mentions something that is being removed, and it certainly runs while that thing exists (its migration comes after the creation and before the removal in every possible migration order), the elidable operation is removed too, since leaving it in place could crash on the missing model or field.
+An elidable operation that mentions the name but could run in a different order, for example in another app with no dependency either way, blocks the removal like any other ``RunPython`` or ``RunSQL``: a matching word is not proof that it is about the same thing.
+Elidable operations in excluded apps are never removed, so they block too.
 In this example, the data fix in ``0003_widen_sku`` mentions ``Coupon``, so it is removed along with the model:
 
 .. code-block:: console
 
     $ python manage.py clean_migrations
     ...
-    shop: elidable RunPython in 0003_widen_sku (1 operation)
+    shop: elidable RunPython in 0003_widen_sku (mentions 'coupon', removed with shop.Coupon) (1 operation)
     shop.Coupon: model created in 0002_coupon_legacy_ref, deleted in 0004_cleanup (2 operations)
     ...
 
@@ -197,7 +204,7 @@ Second, with ``--elidable``, *every* elidable ``RunPython`` and ``RunSQL`` opera
 
 This is the same as dropping them while squashing.
 Only operations that don’t change the project state are removed.
-``--elidable`` considers the apps you pass as targets (or all apps), but ignores ``--kind`` and ``--exclude``.
+``--elidable`` considers the apps you pass as targets (or all apps), minus apps passed to ``--exclude``, and ignores ``--kind``.
 
 Using it in CI
 --------------
@@ -246,7 +253,7 @@ The output also depends on the verbosity (``-v``):
       blog.Comment.spam_score: field added in 0003_comment, removed in 0004_drop_spam (2 operations)
           blog/migrations/0003_comment.py:13  CreateModel (field 'spam_score')
           blog/migrations/0004_drop_spam.py:8  RemoveField
-      1 operation(s) would be removed and 1 edited across 2 migration files. 1 migration(s) left empty.
+      Would remove 1 operation and edit 1 operation in 2 migration files. 1 migration would be left with no operations.
 
 Warnings, such as migrations skipped because a squashed migration replaces them, go to stderr.
 

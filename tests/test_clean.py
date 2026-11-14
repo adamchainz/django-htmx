@@ -1058,13 +1058,36 @@ class TestSuperseded:
         result = project.check_equivalence()
         assert [r.kind for r in result.removals] == ["superseded"]
 
-    def test_alter_model_table(self, project: Project) -> None:
+    def test_alter_model_table_never_superseded(self, project: Project) -> None:
+        # Dropping 0002 would keep "shop_item" taken while Thing claims it.
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
-            "shop", "0002_a", 'migrations.AlterModelTable("item", "items_a"),'
+            "shop", "0002_a", 'migrations.AlterModelTable("item", "old_item"),'
         )
         project.migration(
-            "shop", "0003_b", 'migrations.AlterModelTable("item", "items_b"),'
+            "shop",
+            "0003_thing",
+            """
+            migrations.CreateModel(
+                name="Thing",
+                fields=[("id", models.AutoField(primary_key=True))],
+                options={"db_table": "shop_item"},
+            ),
+            """,
+        )
+        project.migration(
+            "shop", "0004_b", 'migrations.AlterModelTable("item", "archive_item"),'
+        )
+        result = project.check_equivalence()
+        assert result.removals == []
+
+    def test_alter_model_table_comment(self, project: Project) -> None:
+        project.migration("shop", "0001_initial", ITEM)
+        project.migration(
+            "shop", "0002_a", 'migrations.AlterModelTableComment("item", "a"),'
+        )
+        project.migration(
+            "shop", "0003_b", 'migrations.AlterModelTableComment("item", "b"),'
         )
         result = project.check_equivalence()
         assert [r.kind for r in result.removals] == ["superseded"]
@@ -1075,9 +1098,9 @@ class TestSuperseded:
             "shop",
             "0002_a",
             """
-            migrations.AlterModelTable("item", "items_a"),
+            migrations.AlterModelTableComment("item", "a"),
             migrations.AddField("item", "qty", models.IntegerField(default=0)),
-            migrations.AlterModelTable("item", "items_b"),
+            migrations.AlterModelTableComment("item", "b"),
             """,
         )
         assert project.clean().removals == []
@@ -1085,10 +1108,10 @@ class TestSuperseded:
     def test_kind_filter(self, project: Project) -> None:
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
-            "shop", "0002_a", 'migrations.AlterModelTable("item", "items_a"),'
+            "shop", "0002_a", 'migrations.AlterModelTableComment("item", "a"),'
         )
         project.migration(
-            "shop", "0003_b", 'migrations.AlterModelTable("item", "items_b"),'
+            "shop", "0003_b", 'migrations.AlterModelTableComment("item", "b"),'
         )
         assert project.clean(kinds=["model", "field"]).removals == []
         assert len(project.clean(kinds=["superseded"]).removals) == 1

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import functools
 import inspect
 import re
@@ -20,7 +21,7 @@ Pos = tuple[int, int]
 
 @functools.cache
 def _pattern(name: str) -> re.Pattern[str]:
-    return re.compile(rf"(?<![a-z0-9]){re.escape(name)}(?![a-z0-9])")
+    return re.compile(rf"(?<![^\W_]){re.escape(name)}(?![^\W_])")
 
 
 class Text:
@@ -96,20 +97,47 @@ def _migration_text(info: MigrationInfo) -> tuple[str, bool]:
             except OSError:
                 pass
         return "", True
-    if info.op_nodes is None:
-        return source.text, False
-    spans = sorted(
-        source.node_span(node)
-        for node, op in zip(info.op_nodes, info.migration.operations, strict=True)
-        if classify(op) != OPAQUE
-    )
+    spans: list[tuple[int, int]] = []
+    if info.op_nodes is not None:
+        spans.extend(
+            source.node_span(node)
+            for node, op in zip(info.op_nodes, info.migration.operations, strict=True)
+            if classify(op) != OPAQUE
+        )
+    spans.extend(source.node_span(stmt) for stmt in _metadata_statements(source.tree))
     parts: list[str] = []
     last = 0
-    for start, end in spans:
+    for start, end in sorted(spans):
+        if start < last:
+            continue
         parts.append(source.text[last:start])
         last = end
     parts.append(source.text[last:])
     return "".join(parts), False
+
+
+# Migration attributes that only name migrations: auto-generated names such as
+# "0002_item_owner" would otherwise match model and field names.
+_METADATA = frozenset({"dependencies", "replaces", "run_before", "initial", "atomic"})
+
+
+def _metadata_statements(tree: ast.Module | None) -> list[ast.stmt]:
+    if tree is None:
+        return []
+    found: list[ast.stmt] = []
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef) and node.name == "Migration":
+            for stmt in node.body:
+                targets: list[ast.expr] = []
+                if isinstance(stmt, ast.Assign):
+                    targets = stmt.targets
+                elif isinstance(stmt, (ast.AnnAssign, ast.AugAssign)):
+                    targets = [stmt.target]
+                if targets and all(
+                    isinstance(t, ast.Name) and t.id in _METADATA for t in targets
+                ):
+                    found.append(stmt)
+    return found
 
 
 def _callable_source(func: Any, migration_path: Path | None) -> tuple[str, bool]:
@@ -166,7 +194,7 @@ def _extra_text(op: Operation, migration_path: Path | None) -> tuple[str, bool]:
     return "\n".join(parts), match_all
 
 
-_WORD = re.compile(r"[a-z0-9]+")
+_WORD = re.compile(r"[^\W_]+")
 
 
 class OpaqueIndex:

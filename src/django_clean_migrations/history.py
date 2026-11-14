@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import importlib.util
+import re
 import sys
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
@@ -22,6 +23,9 @@ Key = tuple[str, str]
 
 class HistoryError(Exception):
     pass
+
+
+_LINE_BREAK = re.compile(r"\r\n|\r|\n")
 
 
 class SourceFile:
@@ -52,9 +56,12 @@ class SourceFile:
 
     @cached_property
     def _line_starts(self) -> list[int]:
+        # Only the line breaks ast/tokenize count; str.splitlines() also
+        # splits on form feeds, U+2028 and friends.
         starts = [0, 0]
-        for line in self.text.splitlines(keepends=True):
-            starts.append(starts[-1] + len(line))
+        starts.extend(m.end() for m in _LINE_BREAK.finditer(self.text))
+        if starts[-1] != len(self.text):
+            starts.append(len(self.text))
         return starts
 
     def char_offset(self, line: int, utf8_col: int) -> int:
@@ -62,7 +69,7 @@ class SourceFile:
         line_text = self.text[start : self._line_starts[line + 1]]
         return start + len(line_text.encode()[:utf8_col].decode())
 
-    def node_span(self, node: ast.expr) -> tuple[int, int]:
+    def node_span(self, node: ast.expr | ast.stmt) -> tuple[int, int]:
         assert node.end_lineno is not None and node.end_col_offset is not None
         return (
             self.char_offset(node.lineno, node.col_offset),
@@ -280,6 +287,9 @@ def locate_operations(info: MigrationInfo) -> None:
         info.unlocatable_reason = "source not readable"
         return
     tree = source.tree
+    if source.text.startswith("\ufeff"):
+        info.unlocatable_reason = "file starts with a UTF-8 byte order mark"
+        return
     if tree is None:
         info.unlocatable_reason = "file could not be parsed"
         return

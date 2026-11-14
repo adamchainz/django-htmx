@@ -81,6 +81,9 @@ class Scope:
     def excluded(self, life: Life) -> bool:
         return any(t.matches(life) for t in self.exclude)
 
+    def app_excluded(self, app_label: str) -> bool:
+        return any(t.model is None and t.app_label == app_label for t in self.exclude)
+
     @property
     def apps(self) -> frozenset[str]:
         if self.targets:
@@ -97,7 +100,10 @@ class Plan:
     """Elements removed individually, with the reason/kind."""
     superseded: list[tuple[Element, Element]] = field(default_factory=list)
     redundant: list[Element] = field(default_factory=list)
-    elidable: list[Element] = field(default_factory=list)
+    elidable: list[tuple[Element, str | None, Life | None]] = field(
+        default_factory=list
+    )
+    """Removed elidable ops, with the name that matched and the entity."""
 
 
 class Solver:
@@ -122,7 +128,7 @@ class Solver:
                     self.opaque_elements[e.rec.seq] = e
         self.plan = Plan()
         self._static: dict[Life, str | None] = {}
-        self._elidable_hits: dict[Life, list[OpaqueOp]] = {}
+        self._elidable_hits: dict[Life, list[tuple[OpaqueOp, str]]] = {}
 
     # Element state
 
@@ -161,20 +167,31 @@ class Solver:
         names: set[str],
         start: Pos,
         end: Pos | None,
-        hits: list[OpaqueOp] | None,
+        hits: list[tuple[OpaqueOp, str]] | None,
     ) -> str | None:
         """
         Reason an opaque op in the window blocks, else None. When ``hits`` is
-        given (an entity removal), elidable ops that mention a name are
-        collected there to be removed alongside, or block if they can't be.
-        Otherwise (nothing they could need is removed) they block like any
-        opaque op.
+        given (an entity removal), elidable ops that mention a name and are
+        certain to run within the entity's lifetime are collected there to be
+        removed alongside, or block if they can't be. Any other elidable op
+        (unordered relative to the entity, or nothing it could need is being
+        removed) blocks like any opaque op: a word match is not proof that
+        it is about this entity.
         """
         for o, name in self.opaque.mentioning(names, start, end):
-            if o.elidable and hits is not None:
+            if (
+                o.elidable
+                and hits is not None
+                and end is not None
+                and self._strictly_inside(o.pos, start, end)
+            ):
                 reason = o.rec.not_editable_reason()
+                if reason is None and self.scope.app_excluded(
+                    o.rec.migration.app_label
+                ):
+                    reason = f"app {o.rec.migration.app_label!r} is excluded"
                 if reason is None:
-                    hits.append(o)
+                    hits.append((o, name))
                     continue
                 if self.policy == "ignore":
                     continue
@@ -190,6 +207,19 @@ class Solver:
                 return f"opaque {blocking.rec.describe()} may run meanwhile"
         return None
 
+    def _strictly_inside(self, pos: Pos, start: Pos, end: Pos) -> bool:
+        """Whether ``pos`` runs after ``start`` and before ``end`` in every plan."""
+        mig, idx = pos
+        if mig == start[0]:
+            after = idx > start[1]
+        else:
+            after = bool(self.history.ancestors[mig] >> start[0] & 1)
+        if mig == end[0]:
+            before = idx < end[1]
+        else:
+            before = bool(self.history.descendants[mig] >> end[0] & 1)
+        return after and before
+
     def _static_blocker(self, life: Life) -> str | None:
         """Blockers that don't depend on which other lives are removed."""
         if life in self._static:
@@ -199,6 +229,9 @@ class Solver:
         for sub in lives:
             if sub.poisoned:
                 reason = sub.poison_reasons[0]
+                break
+            if sub is not life and self.scope.excluded(sub):
+                reason = f"it contains the excluded {sub.kind} {_short_label(sub)}"
                 break
             if isinstance(sub, FieldLife) and sub.ever_pk and sub is life:
                 reason = "it is or was a primary key"
@@ -215,7 +248,7 @@ class Solver:
             if reason:
                 break
         if reason is None:
-            hits: list[OpaqueOp] = []
+            hits: list[tuple[OpaqueOp, str]] = []
             reason = self._opaque_block(
                 life.scan_names(), life.start_pos, life.end_pos, hits
             )
@@ -307,12 +340,12 @@ class Solver:
             if required == plan.removed:
                 break
             plan.removed = required
-        for life in plan.removed:
-            for o in self._elidable_hits.get(life, ()):
+        for life in sorted(plan.removed, key=lambda x: x.id):
+            for o, name in self._elidable_hits.get(life, ()):
                 element = self.opaque_elements[o.rec.seq]
                 if element not in plan.dropped:
                     plan.dropped[element] = "elidable"
-                    plan.elidable.append(element)
+                    plan.elidable.append((element, name, life))
 
     def _required(self) -> set[Life]:
         """Removed lives reachable from a removed root."""
@@ -343,12 +376,13 @@ class Solver:
         for o in self.timeline.opaque:
             if not o.elidable or o.rec.not_editable_reason() is not None:
                 continue
-            if o.rec.migration.app_label not in apps:
+            app_label = o.rec.migration.app_label
+            if app_label not in apps or self.scope.app_excluded(app_label):
                 continue
             element = self.opaque_elements[o.rec.seq]
             if element not in self.plan.dropped:
                 self.plan.dropped[element] = "elidable"
-                self.plan.elidable.append(element)
+                self.plan.elidable.append((element, None, None))
 
     # Redundant together operations
 
@@ -469,6 +503,7 @@ class Solver:
         d0, t0 = before
         d1, t1 = current
         d2, t2 = defs.get(id(e2), (None, None))
+        refs = {id(fld): set(e.refs) for e, fld, _ in life.defs}
         field_defs = [d for d in (d0, d1, d2) if d is not None]
         if any(getattr(d, "many_to_many", False) for d in field_defs):
             return False
@@ -478,25 +513,17 @@ class Solver:
             _same_kind(d0, t0, d1, t1) or _same_kind(d1, t1, d2, t2)
         ):
             return False
-        # During E1..E2 the field would point at d0's model instead of d1's.
-        if (
-            getattr(d0, "remote_field", None) is not None
-            and t0 is not t1
-            and (t0 is None or (t0.end is not None and not self._ends_after(t0, e2)))
-        ):
+        # Without E1, d0 stays in force until E2: anything d0 occupies or
+        # references that d1 doesn't would be held during E1..E2, where the
+        # history may already reuse or remove it (a column name, a to_field,
+        # a remote model...). State verification can't see a column clash.
+        if _occupied(d0) != _occupied(d1) or refs.get(id(d0)) != refs.get(id(d1)):
             return False
         for e in life.referenced_by:
             if not self.removed(e) and self._between(e, e1.pos, e2.pos):
                 return False
         names = life.scan_names() | life.model.scan_names()
         return self._window_clear(names, e1, e2)
-
-    def _ends_after(self, life: Life, e: Element) -> bool:
-        end = life.end_pos
-        assert end is not None
-        if end[0] == e.pos[0]:
-            return end[1] > e.pos[1]
-        return bool(self.history.descendants[e.pos[0]] >> end[0] & 1)
 
     def _superseded_model(self, model: ModelLife) -> None:
         own = sorted(
@@ -506,10 +533,11 @@ class Solver:
         by_type: dict[type[Any], list[Element]] = {}
         for e in own:
             by_type.setdefault(type(e.rec.op), []).append(e)
+        # AlterModelTable is deliberately absent: dropping one frees its
+        # table name early, which another model may claim meanwhile.
         for cls in (
             m.AlterModelOptions,
             m.AlterModelManagers,
-            m.AlterModelTable,
             m.AlterModelTableComment,
         ):
             chain = by_type.get(cls, [])
@@ -530,7 +558,7 @@ class Solver:
                 return False
             if bool(op.options.get("managed", True)) != bool(e1.info["managed_before"]):
                 return False
-        elif type(op) in (m.AlterModelTable, m.AlterModelTableComment):
+        elif type(op) is m.AlterModelTableComment:
             for life in model.subtree():
                 for e in [*life.elements, *life.referenced_by]:
                     if e is e1 or e is e2 or self.removed(e):
@@ -538,6 +566,30 @@ class Solver:
                     if self._between(e, e1.pos, e2.pos):
                         return False
         return self._window_clear(model.scan_names(), e1, e2)
+
+
+def _short_label(life: Life) -> str:
+    if isinstance(life, FieldLife):
+        return life.label
+    if isinstance(life, TogetherLife):
+        names = ", ".join(f.names[-1] for f in life.fields)
+        return f"{life.model.label} {life.option} ({names})"
+    return f"{life.model.label} {life.names[0]!r}"
+
+
+def _occupied(fld: Any) -> tuple[Any, ...]:
+    """What a field definition holds in shared namespaces, other than refs."""
+    remote = getattr(fld, "remote_field", None)
+    return (
+        getattr(fld, "db_column", None),
+        remote is not None,
+        repr(getattr(fld, "to_fields", None)),
+        repr(getattr(fld, "from_fields", None)),
+        repr(getattr(remote, "through", None)),
+        getattr(fld, "db_table", None),
+        getattr(fld, "db_tablespace", None),
+        bool(getattr(fld, "primary_key", False)),
+    )
 
 
 def _same_kind(a: Any, ta: Life | None, b: Any, tb: Life | None) -> bool:

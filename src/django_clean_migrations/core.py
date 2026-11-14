@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import shutil
+import tempfile
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -126,26 +128,53 @@ class Result:
         resulting project state; on any failure restore every file and raise
         CleanError.
         """
-        written: list[FileChange] = []
+        # Registered before writing: a failure (or interrupt) mid-write must
+        # still restore that file.
+        touched: list[FileChange] = []
         try:
             for change in self.files:
+                touched.append(change)
                 _write_text(change.path, change.new)
-                written.append(change)
             _forget(self.files)
             verify_on_disk(self._history, self._final_state, self._expected_ops)
-        except Exception as exc:
-            for change in written:
-                _write_text(change.path, change.original)
+        except BaseException as exc:
+            unrestored: list[str] = []
+            for change in touched:
+                try:
+                    _write_text(change.path, change.original)
+                except OSError as restore_exc:
+                    unrestored.append(f"{change.path} ({restore_exc})")
             _forget(self.files)
+            if unrestored:
+                raise CleanError(
+                    f"Writing the migration files failed ({exc!r}) and these"
+                    f" could not be restored: {', '.join(unrestored)}."
+                ) from exc
+            if not isinstance(exc, Exception):
+                raise
             raise CleanError(
-                "Verification of the rewritten migration files failed, so they"
-                f" were restored: {exc}. Please report this as a bug."
+                "Writing or verifying the rewritten migration files failed, so"
+                f" they were restored: {exc}. Please report this as a bug."
             ) from exc
 
 
 def _write_text(path: Path, text: str) -> None:
-    with open(path, "w", encoding="utf-8", newline="") as f:
-        f.write(text)
+    """Replace ``path`` atomically, keeping its permissions."""
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
+            f.write(text)
+        try:
+            shutil.copymode(path, tmp)
+        except OSError:
+            pass
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def _forget(changes: Sequence[FileChange]) -> None:
@@ -260,6 +289,14 @@ def clean(
         timeline.replay()
     except Exception as exc:
         raise CleanError(str(exc)) from exc
+    for text, target in [*zip(targets, target_list), *zip(exclude, exclude_list)]:
+        if target.model is not None and not any(
+            _matches_entity(target, life) for life in timeline.lives
+        ):
+            what = "field" if target.field is not None else "model"
+            raise CleanError(
+                f"No {what} matching {text!r} exists anywhere in the migration history."
+            )
 
     solver = Solver(history, timeline, scope, opaque, elidable)
     solver.solve_dead()
@@ -333,6 +370,12 @@ def clean(
         _final_state=timeline.state,
         _expected_ops=expected,
     )
+
+
+def _matches_entity(target: Target, life: Life) -> bool:
+    if target.field is None:
+        return isinstance(life, ModelLife) and target.matches(life)
+    return isinstance(life, FieldLife) and target.matches(life)
 
 
 def _collect_edits(solver: Solver) -> dict[int, dict[int, OpEdit]]:
@@ -432,15 +475,19 @@ def _removals(solver: Solver) -> list[Removal]:
                 elements=(_location(e),),
             )
         )
-    for e in plan.elidable:
+    for e, name, removed_life in plan.elidable:
         app = e.rec.migration.app_label
+        if removed_life is None:
+            why = "--elidable"
+        else:
+            why = f"mentions {name!r}, removed with {_life_label(removed_life)}"
         result.append(
             Removal(
                 kind="elidable",
                 app_label=app,
                 model=None,
                 label=app,
-                description=f"elidable {e.rec.name} in {e.rec.migration.name}",
+                description=f"elidable {e.rec.name} in {e.rec.migration.name} ({why})",
                 elements=(_location(e),),
             )
         )

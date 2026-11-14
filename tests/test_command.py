@@ -45,7 +45,7 @@ def test_dry_run(history: Project) -> None:
     assert out == (
         "shop.Coupon: model created in 0002_coupon, deleted in 0003_drop (2 operations)\n"
         "shop.Item.legacy: field added in 0002_coupon, removed in 0003_drop (2 operations)\n"
-        "4 operation(s) would be removed and 0 edited across 2 migration files.\n"
+        "Would remove 4 operations in 2 migration files.\n"
     )
     assert err == ""
     assert history.files() == before
@@ -82,9 +82,7 @@ def test_check(history: Project) -> None:
 
 def test_write(history: Project) -> None:
     out, _ = history.command("--write")
-    assert out.endswith(
-        "4 operation(s) removed and 0 edited across 2 migration files.\n"
-    )
+    assert out.endswith("Removed 4 operations in 2 migration files.\n")
     source = history.read("shop", "0003_drop")
     assert "Coupon" not in source
     assert 'migrations.RemoveField("item", "rank"),' in source
@@ -102,8 +100,8 @@ def test_empty_migrations_summary(project: Project) -> None:
     project.migration("shop", "0003_remove", 'migrations.RemoveField("item", "x"),')
     out, _ = project.command()
     assert out.splitlines()[-1] == (
-        "2 operation(s) would be removed and 0 edited across 2 migration files."
-        " 2 migration(s) left empty."
+        "Would remove 2 operations in 2 migration files."
+        " 2 migrations would be left with no operations."
     )
 
 
