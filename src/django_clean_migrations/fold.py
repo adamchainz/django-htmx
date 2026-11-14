@@ -21,7 +21,7 @@ from django.db.migrations.operations.base import Operation
 from django.db.models import NOT_PROVIDED
 
 from django_clean_migrations.locate import normalize_together
-from django_clean_migrations.ops import classify
+from django_clean_migrations.ops import POSTGRES_MODULE, classify
 from django_clean_migrations.timeline import (
     ConstraintLife,
     Element,
@@ -113,12 +113,8 @@ class Folder:
 
     def _before(self, life: Life, p: Element) -> bool:
         """Whether ``life`` certainly exists when ``p`` runs."""
-        creation = life.creation
-        if creation is None:
-            return False
-        if creation.rec is p.rec:
-            return True
-        c, at = creation.pos, p.pos
+        # Lives P creates itself are handled by the callers.
+        c, at = life.start_pos, p.pos
         if c[0] == at[0]:
             started = c[1] < at[1]
         else:
@@ -218,13 +214,22 @@ class Folder:
         ):
             return True
         index = self.solver.opaque
-        return not any(
+        if any(
             type(o.rec.op) is not m.RunPython
             and index.contains(o, p.pos, e.pos, p.pos)
             and self.solver._between(
                 self.solver.opaque_elements[o.rec.seq], p.pos, e.pos
             )
             for o in index.ops
+        ):
+            return False
+        # PostgreSQL's CreateExtension (HStoreExtension...) and
+        # CreateCollation don't change the state, so they aren't opaque.
+        timeline = self.solver.timeline
+        return not any(
+            type(rec.op).__module__ == POSTGRES_MODULE
+            and self.solver._between(timeline.elements[rec.seq][0], p.pos, e.pos)
+            for rec in self.history.ops
         )
 
     def _no_refs_between(self, life: Life, p: Element, e: Element) -> bool:
@@ -252,7 +257,7 @@ class Folder:
     # Entry point
 
     def run(self) -> list[Fold]:
-        kinds = self.solver.fold_kinds
+        # Folding is one kind for the user: all of its rules apply.
         lives = self.solver.timeline.lives
         removed = self.solver.plan.removed
         for life in lives:
@@ -273,33 +278,23 @@ class Folder:
                 continue
             if self._ordered_wrt(life):
                 continue
-            if "add_field" in kinds:
-                self._fold_add_fields(life, create)
-            if "index" in kinds:
-                self._fold_named(life, create, IndexLife, "indexes", "index")
-            if "constraint" in kinds:
-                self._fold_named(
-                    life, create, ConstraintLife, "constraints", "constraint"
-                )
-            if "together" in kinds:
-                self._fold_together(life, create)
+            self._fold_add_fields(life, create)
+            self._fold_named(life, create, IndexLife, "indexes", "index")
+            self._fold_named(life, create, ConstraintLife, "constraints", "constraint")
+            self._fold_together(life, create)
             for kind, cls in (
                 ("options", m.AlterModelOptions),
                 ("managers", m.AlterModelManagers),
                 ("comment", m.AlterModelTableComment),
             ):
-                if kind in kinds:
-                    self._fold_model_op(life, create, kind, cls)
-            if "table" in kinds:
-                self._fold_table(life, create)
-        if "field" in kinds:
-            for life in lives:
-                if isinstance(life, FieldLife):
-                    self._fold_alter_field(life)
-        if "rename" in kinds:
-            for life in lives:
-                if isinstance(life, FieldLife):
-                    self._fold_rename_field(life)
+                self._fold_model_op(life, create, kind, cls)
+            self._fold_table(life, create)
+        for life in lives:
+            if isinstance(life, FieldLife):
+                self._fold_alter_field(life)
+        for life in lives:
+            if isinstance(life, FieldLife):
+                self._fold_rename_field(life)
         return self.folds
 
     def _ordered_wrt(self, model: ModelLife) -> bool:
@@ -325,11 +320,10 @@ class Folder:
             or not self._in_scope(life)
         ):
             return
+        # Not poisoned, so created by an AddField or CreateModel, not by an
+        # opaque operation.
         p = life.creation
-        if p is None or p.opaque:
-            return
-        if type(p.rec.op) not in (m.AddField, m.CreateModel):
-            return
+        assert p is not None
         own = sorted(
             (e for e in life.elements if not solver.removed(e) and e is not p),
             key=lambda e: e.rec.seq,
@@ -342,8 +336,6 @@ class Folder:
         if not self.history.ordered(p.pos[0], e.pos[0]):
             return
         defs = {id(el): (fld, target) for el, fld, target in life.defs}
-        if id(p) not in defs or id(e) not in defs:
-            return
         dp, tp = defs[id(p)]
         de, _ = defs[id(e)]
         if getattr(dp, "many_to_many", False) or getattr(de, "many_to_many", False):
@@ -372,11 +364,9 @@ class Folder:
             return
         if not self._quiet(life.scan_names() | model.scan_names(), p, e, model):
             return
-        new = self._alter_into(p, e)
-        if new is not None:
-            self._commit("field", p, e, life, new)
+        self._commit("field", p, e, life, self._alter_into(p, e))
 
-    def _alter_into(self, p: Element, e: Element) -> Operation | None:
+    def _alter_into(self, p: Element, e: Element) -> Operation:
         alter = e.rec.op
         assert isinstance(alter, m.AlterField)
         current = self._current(p)
@@ -398,20 +388,13 @@ class Folder:
                 field=field,
                 preserve_default=preserve,
             )
-        if type(current) is m.CreateModel:
-            assert p.sub is not None
-            name = p.sub[1]
-            fields = [
-                (
-                    n,
-                    _state_field(alter.field, alter.preserve_default)
-                    if n == name
-                    else f,
-                )
-                for n, f in current.fields
-            ]
-            return _create(current, fields=fields)
-        return None
+        assert type(current) is m.CreateModel and p.sub is not None
+        name = p.sub[1]
+        fields = [
+            (n, _state_field(alter.field, alter.preserve_default) if n == name else f)
+            for n, f in current.fields
+        ]
+        return _create(current, fields=fields)
 
     # 2. AddField -> CreateModel
 
@@ -637,9 +620,8 @@ class Folder:
             or not self._in_scope(life)
         ):
             return
-        p = life.creation
-        if p is None or p.opaque or type(p.rec.op) not in (m.AddField, m.CreateModel):
-            return
+        p = life.creation  # an AddField or CreateModel, as above
+        assert p is not None
         own = sorted(
             (e for e in life.elements if not solver.removed(e) and e is not p),
             key=lambda e: e.rec.seq,
@@ -653,9 +635,8 @@ class Folder:
             return
         if not self.history.ordered(p.pos[0], e.pos[0]):
             return
-        defs = {id(el): fld for el, fld, _ in life.defs}
-        field = defs.get(id(p))
-        if field is None or not _rename_keeps_names(field):
+        field = life.defs[0][1]  # as created at P
+        if not _rename_keeps_names(field):
             return
         # Nothing may name the field between P and E (other fields' to_field,
         # indexes, constraints, options), nor any field point at it.
@@ -680,9 +661,7 @@ class Folder:
             return
         if not self._quiet(life.scan_names() | model.scan_names(), p, e, model):
             return
-        op = self._renamed_into(p, current, rename)
-        if op is not None:
-            self._commit("rename", p, e, life, op)
+        self._commit("rename", p, e, life, self._renamed_into(p, current, rename))
 
     def _stays_last(
         self, life: FieldLife, model: ModelLife, p: Element, e: Element
@@ -718,7 +697,7 @@ class Folder:
 
     def _renamed_into(
         self, p: Element, current: Operation, rename: m.RenameField
-    ) -> Operation | None:
+    ) -> Operation:
         if type(current) is m.AddField:
             return m.AddField(
                 model_name=current.model_name,
@@ -726,16 +705,13 @@ class Folder:
                 field=current.field,
                 preserve_default=current.preserve_default,
             )
-        if type(current) is m.CreateModel:
-            assert p.sub is not None
-            return _create(
-                current,
-                fields=[
-                    (rename.new_name if n == p.sub[1] else n, f)
-                    for n, f in current.fields
-                ],
-            )
-        return None
+        assert type(current) is m.CreateModel and p.sub is not None
+        return _create(
+            current,
+            fields=[
+                (rename.new_name if n == p.sub[1] else n, f) for n, f in current.fields
+            ],
+        )
 
     # AlterModelTable -> CreateModel options, for unmanaged models only
 
@@ -750,8 +726,7 @@ class Folder:
         """
         solver = self.solver
         current = self._current(create)
-        if not isinstance(current, m.CreateModel):
-            return
+        assert isinstance(current, m.CreateModel)
         if current.options.get("managed", True):
             return
         own = sorted(
@@ -777,9 +752,11 @@ class Folder:
                 return
         op = e.rec.op
         assert isinstance(op, m.AlterModelTable)
-        options = {**current.options, "db_table": op.table}
         if op.table is None:
-            options.pop("db_table", None)
+            # Back to the default name, but the state keeps db_table=None,
+            # which the CreateModel would have to spell out.
+            return
+        options = {**current.options, "db_table": op.table}
         names = solver._query_names(model)
         if not self._quiet(names, create, e, model):
             return

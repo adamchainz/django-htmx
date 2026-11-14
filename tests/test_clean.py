@@ -1652,7 +1652,7 @@ class TestOptions:
 
     def test_broken_history(self, project: Project) -> None:
         project.migration("shop", "0001_initial", 'migrations.DeleteModel("Nope"),')
-        with pytest.raises(CleanError, match="Could not apply DeleteModel"):
+        with pytest.raises(CleanError, match="refers to the model shop.Nope"):
             project.clean()
 
 

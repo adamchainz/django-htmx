@@ -184,11 +184,8 @@ class Solver:
             name = unit.names[0] if unit.names else ""
             if isinstance(unit, TogetherLife):
                 name = f"{unit.option}:{','.join(f.names[0] for f in unit.fields)}"
-            if unit.end is not None:
-                end = f"{unit.end.migration.label}#{unit.end.original_index}"
-            else:
-                assert unit.creation is not None
-                end = f"from {_origin(unit.creation)}"
+            assert unit.end is not None  # removal candidates end
+            end = f"{unit.end.migration.label}#{unit.end.original_index}"
             return f"{unit.kind}:{end}:{unit.model.names[0]}:{name}"
         return f"element:{_origin(unit)}"
 
@@ -354,10 +351,10 @@ class Solver:
         return reason
 
     def _primary_owner(self, e: Element) -> Life | None:
-        for other in self.timeline.elements[e.rec.seq]:
-            if other.sub is None and not other.opaque:
-                return other.owner
-        return None
+        # Operations with parts register their whole-operation element first.
+        whole = self.timeline.elements[e.rec.seq][0]
+        assert whole.sub is None
+        return whole.owner
 
     def _query_names(self, model: ModelLife) -> set[str]:
         """
@@ -371,13 +368,11 @@ class Solver:
         cached = self._query_names_cache.get(model)
         if cached is None:
             cached = set()
-            seen: set[ModelLife] = set()
+            # Bases exist before the models listing them: no cycles, and
+            # Django allows no diamonds of concrete models.
             todo = [model]
             while todo:
                 current = todo.pop()
-                if current in seen:
-                    continue
-                seen.add(current)
                 cached |= current.scan_names()
                 for f in current.incoming:
                     cached |= {n.lower() for n in f.names} | f.related_names
@@ -449,10 +444,10 @@ class Solver:
         queue = list(plan.roots)
         while queue:
             life = queue.pop()
+            # (Lazily: an element of a life just added counts as removed.)
             for req in self._requirers(life):
-                if req not in plan.removed:
-                    plan.removed.add(req)
-                    queue.append(req)
+                plan.removed.add(req)
+                queue.append(req)
         while True:
             changed = True
             while changed:
@@ -484,8 +479,8 @@ class Solver:
             for sub in life.subtree():
                 for e in sub.referenced_by:
                     owner = e.owner
-                    if owner is None:
-                        continue
+                    # An opaque operation referencing it would block it.
+                    assert owner is not None
                     for cand in (owner, owner.parent):
                         if (
                             cand is not None
@@ -520,10 +515,11 @@ class Solver:
             note = self.noop.get(o.rec.seq)
             if note is None:
                 continue
+            # The name scan ignores no-op data migrations: nothing has
+            # dropped this one as an elidable mention yet.
             element = self.opaque_elements[o.rec.seq]
-            if element not in self.plan.dropped:
-                self.plan.dropped[element] = "noop"
-                self.plan.noop.append((element, note))
+            self.plan.dropped[element] = "noop"
+            self.plan.noop.append((element, note))
 
     # Redundant together operations
 
@@ -606,8 +602,6 @@ class Solver:
             return
         own = sorted(life.elements, key=lambda e: e.rec.seq)
         defs = {id(e): (fld, target) for e, fld, target in life.defs}
-        if not life.defs:
-            return
         prev_def, prev_target = life.defs[0][1], life.defs[0][2]
         for i, e1 in enumerate(own):
             if type(e1.rec.op) is not m.AlterField or id(e1) not in defs:
@@ -654,9 +648,8 @@ class Solver:
         d2, t2 = defs.get(id(e2), (None, None))
         refs = {id(fld): set(e.refs) for e, fld, _ in life.defs}
         field_defs = [d for d in (d0, d1, d2) if d is not None]
+        # (Never a primary key: see _superseded_fields.)
         if any(getattr(d, "many_to_many", False) for d in field_defs):
-            return False
-        if len({bool(getattr(d, "primary_key", False)) for d in field_defs}) > 1:
             return False
         # Without E1, E2 makes the transition from d0: a UNIQUE or CHECK that
         # E1 added (or dropped and E2 re-added) would end up with another
@@ -716,8 +709,6 @@ class Solver:
         if type(op) is m.AlterModelOptions:
             if not set(op.options) <= set(m.AlterModelOptions.ALTER_OPTION_KEYS):
                 return False
-            if "managed_before" not in e1.info:
-                return False
             if bool(op.options.get("managed", True)) != bool(e1.info["managed_before"]):
                 return False
         elif type(op) is m.AlterModelTableComment:
@@ -760,12 +751,7 @@ def _occupied(fld: Any) -> tuple[Any, ...]:
 
 
 def _same_kind(a: Any, ta: Life | None, b: Any, tb: Life | None) -> bool:
-    if type(a) is not type(b):
-        return False
-    try:
-        if a.get_internal_type() != b.get_internal_type():
-            return False
-    except Exception:
+    if type(a) is not type(b) or a.get_internal_type() != b.get_internal_type():
         return False
     if getattr(a, "remote_field", None) is not None:
         return ta is not None and ta is tb

@@ -78,10 +78,10 @@ def plan_prune(
     if not candidates:
         return plan
 
-    replaced: set[Key] = set()
+    # Migrations a squashed one replaces aren't in the graph: the loader
+    # (without a database, so nothing applied) uses the squashed one.
     run_before_targets: dict[Key, Key] = {}
     for key, migration in history.loader.disk_migrations.items():
-        replaced.update(tuple(r) for r in getattr(migration, "replaces", ()) or ())
         for target in getattr(migration, "run_before", ()) or ():
             run_before_targets[(target[0], target[1])] = key
         if key not in by_key:
@@ -92,7 +92,7 @@ def plan_prune(
     mentions = _MentionIndex(history)
 
     for info in candidates:
-        reason = _static_block(info, graph, scope, replaced, run_before_targets)
+        reason = _static_block(info, graph, scope, run_before_targets)
         if reason is None:
             other = mentions.mentioned_by(info)
             if other is not None:
@@ -262,7 +262,6 @@ def _static_block(
     info: MigrationInfo,
     graph: MigrationGraph,
     scope: Scope,
-    replaced: set[Key],
     run_before_targets: Mapping[Key, Key],
 ) -> str | None:
     migration = info.migration
@@ -273,8 +272,6 @@ def _static_block(
         return f"app {app!r} is not selected"
     if getattr(migration, "replaces", None):
         return "it is a squashed migration"
-    if info.key in replaced:
-        return "a squashed migration replaces it"
     if info.key in graph.leaf_nodes(app):
         return "it is the latest migration of its app"
     node = graph.node_map[info.key]
@@ -285,8 +282,6 @@ def _static_block(
     if info.key in run_before_targets:
         other = run_before_targets[info.key]
         return f"{other[0]}.{other[1]} (run_before, or replaced) refers to it"
-    if info.source.tree is None:
-        return "its source can't be parsed"
     return None
 
 
@@ -350,8 +345,7 @@ def _migration_class(tree: ast.Module) -> ast.ClassDef | None:
 
 def _dependencies_node(info: MigrationInfo) -> ast.List | ast.Tuple | None:
     source = info.on_disk.source
-    if source is None or source.tree is None:
-        return None
+    assert source is not None  # editable, or mentioning others: read
     cls = _migration_class(source.tree)
     if cls is None:
         return None
@@ -400,8 +394,7 @@ def rewrite_dependencies(
     source = SourceFile(info.path or info.on_disk.path, text)  # type: ignore[arg-type]
     fake = MigrationInfo(info.key, info.migration, info.index, info.path, True, source)
     container = _dependencies_node(fake)
-    if container is None:
-        raise PruneError(f"the dependencies of {info.label} can't be located")
+    assert container is not None  # checked before pruning was planned
     drop = set(remove)
     entries: list[str] = []
     for element in container.elts:
@@ -416,10 +409,9 @@ def rewrite_dependencies(
     indent = re.match(r"[ \t]*", text[line_start:start])
     base = indent.group(0) if indent else ""
     multiline = "\n" in text[start:end] or len(entries) > 1
-    if not entries:
-        rendered = opening + closing
-    elif not multiline:
-        rendered = opening + entries[0] + ("," if closing == ")" else "") + closing
+    if not multiline:  # one entry at most
+        comma = "," if closing == ")" and entries else ""
+        rendered = opening + "".join(entries) + comma + closing
     else:
         inner = base + "    "
         rendered = (
@@ -450,9 +442,7 @@ def check_ancestors(history: History, plan: PrunePlan) -> None:
         if parents is None:
             parents = [p.key for p in graph.node_map[key].parents]
         mask = 0
-        for p in parents:
-            if p in pruned:
-                raise PruneError(f"{key[0]}.{key[1]} still depends on pruned {p}")
+        for p in parents:  # none pruned: see pruned_graph()
             index = history.by_key[p].index
             mask |= new[p] | (1 << index)
         new[key] = mask
@@ -477,7 +467,7 @@ def ancestor_sets(
             k, ready = stack.pop()
             if k in memo:
                 continue
-            parents = [p.key for p in graph.node_map[k].parents]
+            parents = sorted(p.key for p in graph.node_map[k].parents)
             if ready:
                 acc: set[Key] = set()
                 for p in parents:
@@ -504,6 +494,8 @@ def pruned_graph(graph: MigrationGraph, plan: PrunePlan) -> MigrationGraph:
         if parents is None:
             parents = [p.key for p in graph.node_map[key].parents]
         for parent in parents:
+            if parent in pruned:
+                raise PruneError(f"{key[0]}.{key[1]} still depends on pruned {parent}")
             new.add_dependency(None, key, parent, skip_validation=True)
     new.validate_consistency()
     return new

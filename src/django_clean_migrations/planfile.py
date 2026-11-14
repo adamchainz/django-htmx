@@ -35,7 +35,7 @@ FORMAT_VERSION = 2
 def tool_version() -> str:
     try:
         return version("django-clean-migrations")
-    except PackageNotFoundError:  # pragma: no cover
+    except PackageNotFoundError:
         return "unknown"
 
 

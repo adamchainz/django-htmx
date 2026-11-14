@@ -48,6 +48,7 @@ urls.Repository = "https://github.com/adamchainz/django-clean-migrations"
 [dependency-groups]
 test = [
   "coverage[toml]",
+  "psycopg[binary]>=3.2",
   "pytest>=9",
   "pytest-django",
   "pytest-randomly",
@@ -132,13 +133,18 @@ run.source = [
   "django_clean_migrations",
   "tests",
 ]
+# Functions the no-op scan reads but never runs.
+run.omit = [ "tests/noop_samples.py" ]
 run.branch = true
 run.data_file = ".coverage/cov"
 run.parallel = true
+# Trial and profile runs happen in forked children, which end with os._exit().
+run.patch = [ "_exit", "fork" ]
 paths.source = [
   "src",
   ".tox/**/site-packages",
 ]
+report.fail_under = 100
 report.skip_covered = true
 report.skip_empty = true
 report.show_missing = true

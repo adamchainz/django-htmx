@@ -101,7 +101,7 @@ class Location:
             return f"{self.migration[0]}.{self.migration[1]}"
         try:
             return os.path.relpath(self.path)
-        except ValueError:
+        except ValueError:  # pragma: no cover - Windows, path on another drive
             return str(self.path)
 
 
@@ -332,17 +332,20 @@ def _location(e: Element) -> Location:
 
 
 def _sub_line(e: Element) -> int | None:
+    """
+    The line of a part of an operation, if its source can be located: not
+    if an earlier round edited the operation (the whole operation is then
+    regenerated), nor if a CreateModel absorbing a fold is unlocatable.
+    """
     sub = e.sub
     assert sub is not None
     rec = e.rec
     if sub[0] == "entry":
         tloc = locate_together_op(rec)
         if isinstance(tloc, str) or tloc.node is None:
-            return None
-        node = tloc.node
-        if tloc.flat or not hasattr(node, "elts"):
-            return node.lineno
-        return node.elts[tloc.entries[sub[1]]].lineno  # type: ignore[no-any-return]
+            return None  # an operation an earlier round edited
+        # (A flat value has one entry: removing it removes the operation.)
+        return tloc.node.elts[tloc.entries[sub[1]]].lineno  # type: ignore[attr-defined,no-any-return]
     loc = locate_create_model(rec)
     if isinstance(loc, str):
         return None
@@ -352,12 +355,11 @@ def _sub_line(e: Element) -> int | None:
         key = "indexes" if sub[0] == "index" else "constraints"
         index: int = sub[1]
         return loc.lists[key].elts[index].lineno
-    tloc2 = loc.together.get(sub[1])
-    if tloc2 is None or tloc2.node is None:
-        return None
-    if tloc2.flat or not hasattr(tloc2.node, "elts"):
+    tloc2 = loc.together[sub[1]]
+    assert tloc2.node is not None
+    if tloc2.flat:
         return tloc2.node.lineno
-    return tloc2.node.elts[tloc2.entries[sub[2]]].lineno  # type: ignore[no-any-return]
+    return tloc2.node.elts[tloc2.entries[sub[2]]].lineno  # type: ignore[attr-defined,no-any-return]
 
 
 def _mig_name(rec: OpRecord, app_label: str) -> str:
@@ -1139,8 +1141,8 @@ def _blocked(solver: Solver) -> list[Blocked]:
     plan = solver.plan
     result: list[Blocked] = []
     for life, reasons in plan.blocked.items():
-        if life not in plan.roots or life in plan.removed:
-            continue
+        if life not in plan.roots:
+            continue  # reported through the root that required it
         result.append(
             Blocked(
                 kind=life.kind,

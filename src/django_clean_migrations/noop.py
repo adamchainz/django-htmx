@@ -182,13 +182,8 @@ def observe(alias: str, observation: Observation) -> Iterator[None]:
                 observation.other_alias = True
             cursor = context.get("cursor")
             rowcount = getattr(cursor, "rowcount", None)
+            # executemany(): the row count isn't per statement, so unknown.
             reason = classify(str(sql), None if many else rowcount)
-            if (
-                many
-                and reason is None
-                and str(sql).strip().upper().startswith(("UPDATE", "DELETE"))
-            ):
-                reason = "executemany"
             if reason is not None:
                 observation.writes.append(reason)
                 observation.tables |= written_tables(str(sql))

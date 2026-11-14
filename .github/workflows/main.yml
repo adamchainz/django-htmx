@@ -26,6 +26,20 @@ jobs:
         - '3.14'
         - '3.15'
 
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: rw
+          POSTGRES_PASSWORD: rw
+        ports:
+        - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
     - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       with:
@@ -43,6 +57,11 @@ jobs:
 
     - name: Run tox targets for ${{ matrix.python-version }}
       run: uvx --with tox-uv tox run -f py$(echo ${{ matrix.python-version }} | tr -d .)
+      env:
+        CLEANMIG_TEST_POSTGRES_HOST: 127.0.0.1
+        CLEANMIG_TEST_POSTGRES_PORT: '5432'
+        CLEANMIG_TEST_POSTGRES_USER: rw
+        CLEANMIG_TEST_POSTGRES_PASSWORD: rw
 
     - name: Upload coverage data
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

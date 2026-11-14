@@ -30,9 +30,11 @@ def _is_op(token: Token, chars: frozenset[str]) -> bool:
     return token.name == "OP" and token.src in chars
 
 
-def matching_closer(tokens: list[Token], opener: int) -> int | None:
+def matching_closer(tokens: list[Token], opener: int) -> int:
+    """The bracket closing ``opener``: parsed source always has one."""
     depth = 0
-    for i in range(opener, len(tokens)):
+    i = opener
+    while True:
         tok = tokens[i]
         if _is_op(tok, OPENERS):
             depth += 1
@@ -40,7 +42,7 @@ def matching_closer(tokens: list[Token], opener: int) -> int | None:
             depth -= 1
             if depth == 0:
                 return i
-    return None
+        i += 1
 
 
 def split_segments(tokens: list[Token], opener: int, closer: int) -> list[Segment]:
@@ -88,8 +90,6 @@ def container_for_node(
     if opener is None or not tokens[opener].matches(name="OP", src=open_char):
         return None
     closer = matching_closer(tokens, opener)
-    if closer is None:
-        return None
     end = tokens[closer]
     if (end.line, (end.utf8_byte_offset or 0) + 1) != (
         node.end_lineno,
@@ -106,14 +106,4 @@ def container_for_node(
         count = len(node.elts)
     if len(segments) != count:
         return None
-    for seg, elt in zip(segments, _elements(node), strict=True):
-        if tokens[seg.start].line is None or elt.lineno < (tokens[seg.start].line or 0):
-            return None
     return Container(kind, opener, closer, tuple(segments))
-
-
-def _elements(node: ast.expr) -> list[ast.expr]:
-    if isinstance(node, ast.Dict):
-        return [k for k in node.keys if k is not None]
-    assert isinstance(node, (ast.List, ast.Tuple, ast.Set))
-    return list(node.elts)

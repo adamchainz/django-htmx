@@ -146,7 +146,7 @@ def scratch_database(alias: str = "default") -> Iterator[BaseDatabaseWrapper]:
                 group.scratch = _scratch_name(
                     str(real_name or ""), min(int(max_length), 63)
                 )
-                if group.scratch == real_name:  # pragma: no cover
+                if group.scratch == real_name:
                     raise ScratchDatabaseError(
                         f"Refusing to use {group.scratch!r}: it is a real"
                         " database's name."

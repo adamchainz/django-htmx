@@ -7,11 +7,19 @@ from typing import Any
 
 import pytest
 from django.core.management import CommandError
+from django.db.migrations.graph import MigrationGraph
 from django.db.migrations.loader import MigrationLoader
 
 from django_clean_migrations import core
 from django_clean_migrations.core import CleanError, Result
-from django_clean_migrations.prune import ancestor_sets
+from django_clean_migrations.history import load_history
+from django_clean_migrations.prune import (
+    PruneError,
+    PrunePlan,
+    ancestor_sets,
+    check_ancestors,
+    check_ends,
+)
 from django_clean_migrations.verify import VerificationError
 from tests.project import Project
 from tests.test_clean import ITEM
@@ -576,3 +584,205 @@ def test_same_app_shape_under_order_check(project: Project) -> None:
     assert leaves_and_roots(project) == before
     gone = {("shop", "0002_add"), ("shop", "0003_remove")}
     assert plan_order(project) == [k for k in before_order if k not in gone]
+
+
+def source(dependencies: str, operations: str = "", head: str = "") -> str:
+    return (
+        "from django.db import migrations, models\n\n"
+        + head
+        + "\n\nclass Migration(migrations.Migration):\n"
+        '    """Written by hand."""\n\n'
+        f"    {dependencies}\n"
+        f"    operations = [{operations}]\n"
+    )
+
+
+def unreadable(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
+    from django_clean_migrations import history
+
+    real = history._read_source
+
+    def read(path: Path) -> Any:
+        return None if path.name == f"{name}.py" else real(path)
+
+    monkeypatch.setattr(history, "_read_source", read)
+
+
+def test_dependant_not_editable(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dead_field(project)
+    unreadable(monkeypatch, "0004_qty")
+    result = project.clean(**PRUNE)
+    assert prune_blocks(result)["shop.0003_remove"] == (
+        "shop.0004_qty depends on it and can't be edited"
+    )
+
+
+def test_empty_migration_not_editable(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration("shop", "0002_nothing")
+    project.migration("shop", "0003_qty", QTY)
+    unreadable(monkeypatch, "0002_nothing")
+    result = project.clean(**PRUNE)
+    assert prune_blocks(result)["shop.0002_nothing"] == (
+        "it is not editable (installed package)"
+    )
+
+
+def test_own_run_before_blocks(project: Project) -> None:
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration("other", "0001_initial", 'migrations.RunSQL("SELECT 1"),')
+    project.migration(
+        "shop",
+        "0002_nothing",
+        source=source(
+            'dependencies = [("shop", "0001_initial")]\n'
+            '    run_before = [("other", "0001_initial")]'
+        ),
+    )
+    project.migration("shop", "0003_qty", QTY)
+    result = project.clean(**PRUNE)
+    assert prune_blocks(result)["shop.0002_nothing"] == "it has run_before"
+
+
+def test_pruned_diamond(project: Project) -> None:
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration("shop", "0002_a", LEGACY, deps=[("shop", "0001_initial")])
+    project.migration(
+        "shop",
+        "0002_b",
+        'migrations.AddField("item", "other", models.IntegerField(default=0)),',
+        deps=[("shop", "0001_initial")],
+    )
+    project.migration(
+        "shop", "0003_merge", deps=[("shop", "0002_a"), ("shop", "0002_b")]
+    )
+    project.migration(
+        "shop",
+        "0004_qty",
+        REMOVE + '\nmigrations.RemoveField("item", "other"),\n' + QTY,
+    )
+    result = project.check_equivalence(**PRUNE)
+    assert pruned(result) == ["shop.0002_b", "shop.0002_a", "shop.0003_merge"]
+    assert '("shop", "0001_initial")' in project.read("shop", "0004_qty")
+
+
+def test_unreadable_file_not_scanned(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dead_field(project)
+    unreadable(monkeypatch, "0001_initial")
+    result = project.clean(**PRUNE)
+    assert pruned(result) == ["shop.0002_add", "shop.0003_remove"]
+
+
+def test_mentioned_by_module_without_class(project: Project) -> None:
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration("shop", "0002_add", LEGACY)
+    project.migration("shop", "0003_remove", REMOVE)
+    project.migration(
+        "shop",
+        "0004_qty",
+        source="from django.db import migrations, models\n\n"
+        "Migration = type(\n"
+        '    "Migration",\n'
+        "    (migrations.Migration,),\n"
+        f'    {{"dependencies": [("shop", "0003_remove")], "operations": [{QTY}]}},\n'
+        ")\n",
+    )
+    result = project.clean(**PRUNE)
+    assert "mentioned" in prune_blocks(result)["shop.0003_remove"]
+
+
+@pytest.mark.parametrize(
+    ("dependencies", "rewritten"),
+    [
+        (
+            'dependencies: list = [("shop", "0003_remove")]',
+            'dependencies: list = [("shop", "0001_initial")]',
+        ),
+        (
+            'dependencies = (("shop", "0003_remove"),)',
+            'dependencies = (("shop", "0001_initial"),)',
+        ),
+        ("dependencies = DEPS", None),
+    ],
+)
+def test_dependency_forms(
+    project: Project, dependencies: str, rewritten: str | None
+) -> None:
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration("shop", "0002_add", LEGACY)
+    project.migration("shop", "0003_remove", REMOVE)
+    project.migration(
+        "shop",
+        "0004_qty",
+        source=source(
+            dependencies, QTY, head='DEPS = [("shop", "0003_" + "remove")]\n'
+        ),
+    )
+    result = project.clean(**PRUNE)
+    if rewritten is None:
+        assert "can't be rewritten" in prune_blocks(result)["shop.0003_remove"]
+    else:
+        result.write()
+        assert rewritten in project.read("shop", "0004_qty")
+
+
+def test_invariant_failures(project: Project) -> None:
+    dead_field(project)
+    project.migration("other", "0001_initial", deps=[("shop", "0001_initial")])
+    project.activate()
+    with project.db_blocker.unblock():
+        history = load_history()
+    graph = history.loader.graph
+    remove = ("shop", "0003_remove")
+    plan = PrunePlan(pruned=[remove], parents={("shop", "0004_qty"): [remove]})
+    with pytest.raises(PruneError, match="still depends on pruned"):
+        check_ancestors(history, plan)
+    other = ("other", "0001_initial")
+    plan = PrunePlan(
+        pruned=[remove], parents={("shop", "0004_qty"): [("shop", "0002_add"), other]}
+    )
+    with pytest.raises(PruneError, match="would change the migrations shop.0004_qty"):
+        check_ancestors(history, plan)
+    empty = MigrationGraph()
+    with pytest.raises(PruneError, match="latest migrations of other"):
+        check_ends(graph, empty, [])
+    only_leaf = MigrationGraph()
+    only_leaf.add_node(("shop", "0004_qty"), None)
+    only_leaf.add_node(other, None)
+    with pytest.raises(PruneError, match="first migrations of shop"):
+        check_ends(graph, only_leaf, [])
+    keys = [("shop", "0004_qty"), ("shop", "0001_initial")]
+    assert ancestor_sets(graph, keys)[("shop", "0001_initial")] == frozenset()
+
+
+def test_ancestor_sets_redundant_dependency() -> None:
+    graph = MigrationGraph()
+    a, b, c = ("x", "0001"), ("x", "0002"), ("x", "0003")
+    for key in (a, b, c):
+        graph.add_node(key, None)
+    graph.add_dependency(None, b, a)
+    graph.add_dependency(None, c, a)
+    graph.add_dependency(None, c, b)
+    assert ancestor_sets(graph, [c])[c] == {a, b}
+
+
+def test_dependant_already_after_parent(project: Project) -> None:
+    dead_field(project)
+    path = project.path("shop", "0004_qty")
+    path.write_text(
+        path.read_text().replace(
+            "('shop', '0003_remove'),",
+            "('shop', '0003_remove'),\n        ('shop', '0001_initial'),",
+        )
+    )
+    result = project.check_equivalence(**PRUNE)
+    assert pruned(result) == ["shop.0002_add", "shop.0003_remove"]
+    text = project.read("shop", "0004_qty")
+    assert "0001_initial" in text and "0003_remove" not in text
+    assert text.count("0001_initial") == 1

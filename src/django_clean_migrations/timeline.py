@@ -355,11 +355,9 @@ def _is_expression(value: Any) -> bool:
     return hasattr(value, "resolve_expression") and not isinstance(value, type)
 
 
-def _resolve(model: Any, app_label: str, model_name: str) -> Key | None:
-    try:
-        app, name = resolve_relation(model, app_label, model_name)
-    except (TypeError, ValueError, AttributeError):
-        return None
+def _resolve(model: Any, app_label: str, model_name: str) -> Key:
+    # Migrations name related models by string, or by a model class (_meta).
+    app, name = resolve_relation(model, app_label, model_name)
     return (app, name.lower())
 
 
@@ -425,6 +423,10 @@ def _same(a: Any, b: Any) -> bool:
         return bool(a == b)
     except Exception:
         return False
+
+
+class InconsistentHistory(Exception):
+    """An operation refers to something that doesn't exist at that point."""
 
 
 class Timeline:
@@ -542,11 +544,14 @@ class Timeline:
 
     def _model(
         self, app_label: str, name: str, rec: OpRecord, ctx: Element | None
-    ) -> ModelLife | None:
+    ) -> ModelLife:
         life = self.models.get((app_label, name.lower()))
-        if life is None and ctx is None:
-            # Inconsistent history: keep the operation, attached to nothing.
-            self._register(Element(rec, None, None))
+        if life is None:
+            # Django's own state replay would fail on it right after.
+            raise InconsistentHistory(
+                f"{rec.describe()} refers to the model {app_label}.{name},"
+                " which doesn't exist at that point"
+            )
         return life
 
     def _pk(self, model: ModelLife) -> FieldLife | None:
@@ -589,40 +594,34 @@ class Timeline:
             if isinstance(db_table, str):
                 life.extra_names.add(db_table.lower())
             to_key = _resolve(remote.model, app_label, model_name)
-            if to_key is not None:
-                targets.add(to_key)
-                target = self.models.get(to_key)
-                remote_life = target
-                if target is not None:
-                    target.incoming.add(life)
+            targets.add(to_key)
+            target = self.models.get(to_key)
+            remote_life = target
+            if target is not None:
+                target.incoming.add(life)
                 self._ref(element, target)
-                if target is not None:
-                    to_fields = getattr(fld, "to_fields", None)
-                    if not to_fields or None in to_fields:
-                        self._ref(element, self._pk(target))
-                    for name in to_fields or ():
-                        if name is not None:
-                            self._ref(element, target.fields.get(name))
+                to_fields = getattr(fld, "to_fields", None)
+                if not to_fields or None in to_fields:
+                    self._ref(element, self._pk(target))
+                for name in to_fields or ():
+                    if name is not None:
+                        self._ref(element, target.fields.get(name))
             through = getattr(remote, "through", None)
             if through is not None:
                 through_key = _resolve(through, app_label, model_name)
-                if through_key is not None:
-                    targets.add(through_key)
-                    through_life = self.models.get(through_key)
+                targets.add(through_key)
+                through_life = self.models.get(through_key)
+                if through_life is not None:
                     self._ref(element, through_life)
-                    if through_life is not None:
-                        for name in getattr(remote, "through_fields", None) or ():
-                            self._ref(element, through_life.fields.get(name))
+                    for name in getattr(remote, "through_fields", None) or ():
+                        self._ref(element, through_life.fields.get(name))
         local: set[str] = set()
         for attr in ("from_fields", "field_names"):
             local.update(
                 n for n in getattr(fld, attr, None) or () if isinstance(n, str)
             )
-        try:
-            kwargs = fld.deconstruct()[3]
-        except Exception:
-            kwargs = {}
-        for value in kwargs.values():
+        # Rendering the state clones fields through deconstruct(): it works.
+        for value in fld.deconstruct()[3].values():
             if _is_expression(value):
                 local |= mentioned_names(value)
         for name in local:
@@ -749,12 +748,10 @@ class Timeline:
         self._set_ordering(element, model, op.options, rec)
         for base in op.bases or ():
             if isinstance(base, str) or hasattr(base, "_meta"):
-                base_key = _resolve(base, app_label, op.name_lower)
-                if base_key is not None:
-                    base_life = self.models.get(base_key)
+                base_life = self.models.get(_resolve(base, app_label, op.name_lower))
+                if base_life is not None:
                     self._ref(element, base_life)
-                    if base_life is not None:
-                        base_life.child_models.add(model)
+                    base_life.child_models.add(model)
         # Fields that already point at this name (dangling until now) now
         # reference this life for as long as they exist.
         for f in list(self.by_target.get(key, ())):
@@ -781,8 +778,6 @@ class Timeline:
         self, rec: OpRecord, op: m.DeleteModel, app_label: str, ctx: Element | None
     ) -> None:
         model = self._model(app_label, op.name, rec, ctx)
-        if model is None:
-            return
         self._element(rec, None, model, ctx, "ended")
         model.end = rec
         del self.models[model.key]
@@ -793,8 +788,6 @@ class Timeline:
         self, rec: OpRecord, op: m.RenameModel, app_label: str, ctx: Element | None
     ) -> None:
         model = self._model(app_label, op.old_name, rec, ctx)
-        if model is None:
-            return
         self._element(rec, None, model, ctx)
         old_key = model.key
         del self.models[old_key]
@@ -812,17 +805,15 @@ class Timeline:
 
     def _model_op(
         self, rec: OpRecord, op: Any, app_label: str, ctx: Element | None
-    ) -> tuple[ModelLife | None, Element | None]:
+    ) -> tuple[ModelLife, Element]:
         model = self._model(app_label, op.name, rec, ctx)
-        if model is None:
-            return None, None
         return model, self._element(rec, None, model, ctx)
 
     def _on_AlterModelTable(
         self, rec: OpRecord, op: m.AlterModelTable, app_label: str, ctx: Element | None
     ) -> None:
         model, _ = self._model_op(rec, op, app_label, ctx)
-        if model is not None and isinstance(op.table, str):
+        if isinstance(op.table, str):
             model.tables.add(op.table)
 
     def _on_AlterModelTableComment(
@@ -842,11 +833,9 @@ class Timeline:
         ctx: Element | None,
     ) -> None:
         model, element = self._model_op(rec, op, app_label, ctx)
-        if model is None or element is None:
-            return
-        ms = self.state.models.get(model.key)
-        if ms is not None and element is not ctx:
-            element.info["managed_before"] = ms.options.get("managed", True)
+        if element is not ctx:
+            options = self.state.models[model.key].options
+            element.info["managed_before"] = options.get("managed", True)
         model.note_options(op.options)
         self._set_ordering(element, model, op.options, rec)
 
@@ -867,7 +856,7 @@ class Timeline:
         ctx: Element | None,
     ) -> None:
         model, element = self._model_op(rec, op, app_label, ctx)
-        if model is not None and element is not None and op.order_with_respect_to:
+        if op.order_with_respect_to:
             self._ref_local(element, model, op.order_with_respect_to)
 
     def _on_AlterUniqueTogether(
@@ -880,8 +869,6 @@ class Timeline:
         # Inside an opaque op only the together entries are touched (and
         # poisoned below), not the model's other options.
         model = self._model(app_label, op.name, rec, ctx)
-        if model is None:
-            return
         element = self._element(rec, None, model if ctx is None else None, ctx)
         option = op.option_name
         assert option is not None
@@ -897,9 +884,8 @@ class Timeline:
         current = model.together[option]
         new: dict[tuple[FieldLife, ...], TogetherLife] = {}
         lives: list[TogetherLife] = []
+        # AlterUniqueTogether/AlterIndexTogether hold a set: no duplicates.
         for entry, flives in resolved:
-            if flives in new:
-                continue
             tlife = current.get(flives)
             sub_el = self._element(rec, ("entry", entry), None, ctx)
             if tlife is None:
@@ -926,22 +912,21 @@ class Timeline:
 
     _on_AlterIndexTogether = _on_AlterUniqueTogether
 
-    def _field(
-        self, model: ModelLife, name: str, rec: OpRecord, ctx: Element | None
-    ) -> FieldLife | None:
+    def _field(self, model: ModelLife, name: str, rec: OpRecord) -> FieldLife:
         life = model.fields.get(name)
         if life is None:
-            model.poison(f"unknown field {name!r} in {rec.describe()}")
-            if ctx is None:
-                self._register(Element(rec, None, model))
+            # Django's state replay fails on RemoveField and RenameField of
+            # a missing field, and migrating an AlterField of one fails.
+            raise InconsistentHistory(
+                f"{rec.describe()} refers to the field {model.label}.{name},"
+                " which doesn't exist at that point"
+            )
         return life
 
     def _on_AddField(
         self, rec: OpRecord, op: m.AddField, app_label: str, ctx: Element | None
     ) -> None:
         model = self._model(app_label, op.model_name, rec, ctx)
-        if model is None:
-            return
         life = FieldLife(model, op.name)
         old = model.fields.get(op.name)
         if old is not None:
@@ -958,11 +943,7 @@ class Timeline:
         self, rec: OpRecord, op: m.RemoveField, app_label: str, ctx: Element | None
     ) -> None:
         model = self._model(app_label, op.model_name, rec, ctx)
-        if model is None:
-            return
-        life = self._field(model, op.name, rec, ctx)
-        if life is None:
-            return
+        life = self._field(model, op.name, rec)
         self._element(rec, None, life, ctx, "ended")
         del model.fields[op.name]
         self._end_field(life, rec)
@@ -971,11 +952,7 @@ class Timeline:
         self, rec: OpRecord, op: m.AlterField, app_label: str, ctx: Element | None
     ) -> None:
         model = self._model(app_label, op.model_name, rec, ctx)
-        if model is None:
-            return
-        life = self._field(model, op.name, rec, ctx)
-        if life is None:
-            return
+        life = self._field(model, op.name, rec)
         element = self._element(rec, None, life, ctx)
         self._field_def(element, model, life, op.field)
 
@@ -983,11 +960,7 @@ class Timeline:
         self, rec: OpRecord, op: m.RenameField, app_label: str, ctx: Element | None
     ) -> None:
         model = self._model(app_label, op.model_name, rec, ctx)
-        if model is None:
-            return
-        life = self._field(model, op.old_name, rec, ctx)
-        if life is None:
-            return
+        life = self._field(model, op.old_name, rec)
         element = self._element(rec, None, life, ctx)
         if element is not ctx:
             element.info["rename"] = True
@@ -1004,8 +977,6 @@ class Timeline:
         self, rec: OpRecord, op: m.AddIndex, app_label: str, ctx: Element | None
     ) -> None:
         model = self._model(app_label, op.model_name, rec, ctx)
-        if model is None:
-            return
         life = IndexLife(model, op.index.name)
         element = self._element(rec, None, None, ctx)
         self._attach(element, life, ctx)
@@ -1022,8 +993,6 @@ class Timeline:
         self, rec: OpRecord, op: m.RemoveIndex, app_label: str, ctx: Element | None
     ) -> None:
         model = self._model(app_label, op.model_name, rec, ctx)
-        if model is None:
-            return
         life = model.indexes.pop(op.name, None)
         if life is None:
             model.poison(f"unknown index {op.name!r} in {rec.describe()}")
@@ -1036,8 +1005,6 @@ class Timeline:
         self, rec: OpRecord, op: m.RenameIndex, app_label: str, ctx: Element | None
     ) -> None:
         model = self._model(app_label, op.model_name, rec, ctx)
-        if model is None:
-            return
         life: Life | None
         if op.old_fields:
             flives = self._field_lives(model, tuple(op.old_fields))
@@ -1076,8 +1043,6 @@ class Timeline:
         self, rec: OpRecord, op: m.AddConstraint, app_label: str, ctx: Element | None
     ) -> None:
         model = self._model(app_label, op.model_name, rec, ctx)
-        if model is None:
-            return
         name = op.constraint.name
         life = ConstraintLife(model, name)
         element = self._element(rec, None, None, ctx)
@@ -1099,8 +1064,6 @@ class Timeline:
         ctx: Element | None,
     ) -> None:
         model = self._model(app_label, op.model_name, rec, ctx)
-        if model is None:
-            return
         life = model.constraints.pop(op.name, None)
         if life is None:
             model.poison(f"unknown constraint {op.name!r} in {rec.describe()}")
@@ -1117,8 +1080,6 @@ class Timeline:
         ctx: Element | None,
     ) -> None:
         model = self._model(app_label, op.model_name, rec, ctx)
-        if model is None:
-            return
         life = model.constraints.get(op.name)
         if life is None:
             model.poison(f"unknown constraint {op.name!r} in {rec.describe()}")
@@ -1136,8 +1097,6 @@ class Timeline:
         self, rec: OpRecord, op: Any, app_label: str, ctx: Element | None
     ) -> None:
         model = self._model(app_label, op.model_name, rec, ctx)
-        if model is None:
-            return
         life = model.constraints.get(op.name)
         self._element(rec, None, life if life is not None else model, ctx)
 
@@ -1150,12 +1109,12 @@ class Timeline:
         reason = f"changed by {ctx.rec.describe()}"
         for key in before.keys() - after.keys():
             changed = True
-            model = self.models.pop(key, None)
-            if model is not None:
-                model.end = ctx.rec
-                model.poison(reason)
-                for f in model.fields.values():
-                    self._set_targets(f, set())
+            # The lives always mirror the models of the state.
+            model = self.models.pop(key)
+            model.end = ctx.rec
+            model.poison(reason)
+            for f in model.fields.values():
+                self._set_targets(f, set())
         for key in after.keys() - before.keys():
             changed = True
             self._opaque_model(key, after[key], ctx)
@@ -1164,10 +1123,7 @@ class Timeline:
             if self._snap_equal(b, a):
                 continue
             changed = True
-            model = self.models.get(key)
-            if model is None:
-                self._opaque_model(key, a, ctx)
-                continue
+            model = self.models[key]
             if (
                 a.name != b.name
                 or not _same(b.bases, a.bases)
@@ -1221,10 +1177,6 @@ class Timeline:
         )
 
     def _opaque_model(self, key: Key, snap: _ModelSnap, ctx: Element) -> None:
-        old = self.models.get(key)
-        if old is not None:
-            old.poison(f"replaced by {ctx.rec.describe()}")
-            old.end = ctx.rec
         model = ModelLife(key[0], snap.name)
         self._new_life(model, ctx)
         self.models[key] = model
@@ -1257,10 +1209,9 @@ class Timeline:
     ) -> None:
         reason = f"changed by {ctx.rec.describe()}"
         for name in b.fields.keys() - a.fields.keys():
-            life = model.fields.pop(name, None)
-            if life is not None:
-                life.poison(reason)
-                self._end_field(life, ctx.rec)
+            life = model.fields.pop(name)
+            life.poison(reason)
+            self._end_field(life, ctx.rec)
         for name in a.fields.keys() - b.fields.keys():
             life = FieldLife(model, name)
             self._new_life(life, ctx)
@@ -1273,11 +1224,7 @@ class Timeline:
                 and a.fields[name][1] == b.fields[name][1]
             ):
                 continue
-            existing = model.fields.get(name)
-            if existing is None:
-                existing = FieldLife(model, name)
-                self._new_life(existing, ctx)
-                model.fields[name] = existing
+            existing = model.fields[name]
             existing.poison(reason)
             self._field_def(ctx, model, existing, a.fields[name][0])
 
@@ -1297,10 +1244,9 @@ class Timeline:
         before = {o.name: o for o in b.options.get(option, ())}
         after = {o.name: o for o in a.options.get(option, ())}
         for name in before.keys() - after.keys():
-            life = lives.pop(name, None)
-            if life is not None:
-                life.poison(reason)
-                life.end = ctx.rec
+            gone = lives.pop(name)
+            gone.poison(reason)
+            gone.end = ctx.rec
         for name, obj in after.items():
             if name in before and before[name] is obj:
                 continue

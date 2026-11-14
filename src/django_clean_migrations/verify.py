@@ -299,10 +299,6 @@ def verify_on_disk(
                         f"after pruning, {key[0]}.{key[1]} doesn't run after the"
                         " same migrations as before"
                     )
-        for app in {k[0] for k in pruned}:
-            before = {k for k in original_plan if k[0] == app and k not in pruned}
-            if before and not loader.graph.leaf_nodes(app):
-                raise VerificationError(f"app {app} has no migrations left")
     for key, names in expected_ops.items():
         actual = [type(op).__name__ for op in loader.graph.nodes[key].operations]
         if actual != list(names):

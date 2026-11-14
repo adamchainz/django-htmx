@@ -3,13 +3,18 @@ from __future__ import annotations
 import dataclasses
 import tomllib
 from pathlib import Path
+from typing import Any
 
 import pytest
 from django.core.management import CommandError
 
 from django_clean_migrations.core import load_plan
+from django_clean_migrations.management.commands.clean_migrations import (
+    sqlite_order_warning,
+)
 from tests.project import Project
 from tests.test_clean import ITEM
+from tests.test_snapshots import pg  # noqa: F401
 
 
 @pytest.fixture
@@ -293,3 +298,102 @@ def test_library_round_trip(history: Project, tmp_path: Path) -> None:
     history.purge()
     loaded.write()
     assert "Coupon" not in history.read("shop", "0003_drop")
+
+
+def test_apply_failure(history: Project, monkeypatch: pytest.MonkeyPatch) -> None:
+    from django_clean_migrations.core import CleanError, Result
+
+    def fail(self: Result) -> None:
+        raise CleanError("cannot write")
+
+    monkeypatch.setattr(Result, "write", fail)
+    with pytest.raises(CommandError, match="cannot write"):
+        history.command("apply")
+
+
+def test_apply_nothing(project: Project) -> None:
+    project.migration("shop", "0001_initial", ITEM)
+    out, _ = project.command("apply")
+    assert out == "No operations to remove.\n"
+
+
+def test_quiet_plan_file(history: Project, tmp_path: Path) -> None:
+    out, err = history.command("plan", "-o", str(tmp_path / "plan.toml"), verbosity=0)
+    assert out == err == ""
+    assert (tmp_path / "plan.toml").exists()
+
+
+def test_prune_only_summary(project: Project) -> None:
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration("shop", "0002_nothing")
+    project.migration(
+        "shop",
+        "0003_qty",
+        'migrations.AddField("item", "qty", models.IntegerField(default=0)),',
+    )
+    out, _ = project.command("plan", "--prune")
+    assert "1 migration would be deleted." in out.splitlines()
+
+
+def test_warning_in_color(project: Project) -> None:
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration(
+        "shop",
+        "0001_squashed",
+        source="""
+        from django.db import migrations
+
+        class Migration(migrations.Migration):
+            replaces = [("shop", "0001_initial")]
+        """,
+    )
+    _, err = project.command("plan", "--force-color")
+    assert "\x1b[" in err
+
+
+def test_trial_report(history: Project) -> None:
+    # On a "terminal": a live status line, and notes printed above it.
+    out, _ = history.command_db("plan", "--trial", "--force-color", verbosity=2)
+    assert "harvested: shop.0002_coupon RunPython" in out
+    assert "SQLite trials can't compare constraint names" in out
+
+
+def test_trial_masked_tables(project: Project) -> None:
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration(
+        "shop",
+        "0002_random",
+        'migrations.RunSQL("INSERT INTO shop_item (name) VALUES (hex(randomblob(4)))"),',
+    )
+    out, _ = project.command_db("plan", "--trial")
+    assert "not compared: shop_item." in out
+
+
+def test_trial_report_postgres(project: Project, pg: str) -> None:  # noqa: F811
+    from tests.test_trial import MENTIONED
+    from tests.test_trial import history as trial_history
+
+    trial_history(project, MENTIONED)
+    out, _ = project.command_db("plan", "--trial", "--database", pg)
+    assert "on postgresql" in out
+    assert "SQLite trials" not in out
+
+
+def test_trial_fallback_report(
+    history: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from django_clean_migrations import trial
+
+    def candidate(self: Any, solution: Any, built: Any, reference: Any) -> Any:
+        self.passes += 1
+        return None if self.passes > 1 else ([], [])
+
+    monkeypatch.setattr(trial.Trial, "_candidate", candidate)
+    monkeypatch.setattr(trial.Trial, "_attribute", lambda *args: {})
+    out, _ = history.command_db("plan", "--trial")
+    assert "The trial didn't converge, so this is the static plan" in out
+
+
+def test_sqlite_order_warning_other_alias(history: Project) -> None:
+    result = history.clean()
+    assert sqlite_order_warning(result, "nope") is None

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import pytest
 from django.conf import settings
@@ -10,9 +11,11 @@ from django.core.management import CommandError
 from django.db import connections
 
 from django_clean_migrations import profile as profile_module
+from django_clean_migrations.core import CleanError
 from django_clean_migrations.runner import run_history
 from django_clean_migrations.scratch import ScratchDatabaseError, scratch_database
 from tests.project import Project
+from tests.test_clean import ITEM
 from tests.test_command import history  # noqa: F401
 
 
@@ -80,11 +83,8 @@ def test_scratch_cleaned_up_on_interrupt(
 
 
 def test_scratch_unknown_alias() -> None:
-    with (
-        pytest.raises(ScratchDatabaseError, match="no database alias 'nope'"),
-        scratch_database("nope"),
-    ):
-        pass
+    with pytest.raises(ScratchDatabaseError, match="no database alias 'nope'"):
+        scratch_database("nope").__enter__()
 
 
 def test_hooks_removed(history: Project) -> None:  # noqa: F811
@@ -161,3 +161,18 @@ def test_sigterm_cleans_up(project: Project, monkeypatch: pytest.MonkeyPatch) ->
         project.command_db("profile")
     assert made and not Path(made[0]).exists()
     assert signal.getsignal(signal.SIGTERM) is signal.SIG_DFL
+
+
+def test_profile_quiet_and_without_plan(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project.migration("shop", "0001_initial", ITEM)
+    out, _ = project.command_db("profile", verbosity=0)
+    assert out == ""
+
+    def fail(*args: Any, **kwargs: Any) -> None:
+        raise CleanError("no plan")
+
+    monkeypatch.setattr(profile_module, "plan", fail)
+    out, _ = project.command_db("profile", "--force-color")
+    assert "Could not make the default plan: no plan" in out

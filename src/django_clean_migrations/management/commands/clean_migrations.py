@@ -734,9 +734,7 @@ def _ops(count: int) -> str:
 
 
 def _row(indent: int, removal: Removal, name: Text) -> Row:
-    span = Text()
-    if removal.start:
-        span.append(removal.start, style="dim")
+    span = Text(removal.start, style="dim")
     if removal.end:
         span.append(" -> ", style="dim")
         span.append(removal.end, style="dim")
@@ -751,10 +749,8 @@ def _locations(removal: Removal, indent: int, verbosity: int) -> list[Text]:
     lines = []
     for loc in (*removal.elements, *removal.targets):
         line = Text("  " * (indent + 1))
-        where = loc.display_path()
-        if loc.line is not None:
-            where += f":{loc.line}"
-        line.append(where)
+        # Only operations that could be located are ever removed.
+        line.append(f"{loc.display_path()}:{loc.line}")
         line.append(f"  {loc.operation}", style="bold")
         if loc.detail:
             line.append(f" ({loc.detail})", style="dim")

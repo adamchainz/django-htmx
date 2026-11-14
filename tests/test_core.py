@@ -1,0 +1,276 @@
+"""Planning and writing: failures and the less common paths."""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from django_clean_migrations import core, planfile
+from django_clean_migrations.core import CleanError, Location
+from django_clean_migrations.prune import PruneError
+from django_clean_migrations.rewrite import RewriteError
+from django_clean_migrations.timeline import Timeline
+from tests.project import Project
+from tests.test_clean import ITEM, blocked, kinds
+
+ADD = 'migrations.AddField("item", "legacy", models.IntegerField(default=0)),'
+REMOVE = 'migrations.RemoveField("item", "legacy"),'
+
+
+def dead_field(project: Project) -> None:
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration("shop", "0002_add", ADD)
+    project.migration("shop", "0003_remove", REMOVE)
+
+
+def test_location_without_path() -> None:
+    location = Location(("shop", "0001_initial"), None, None, "CreateModel")
+    assert location.display_path() == "shop.0001_initial"
+
+
+def test_noop_data_needs_scan(project: Project) -> None:
+    project.migration("shop", "0001_initial", ITEM)
+    with pytest.raises(CleanError, match="can't be combined with --opaque"):
+        project.clean(noop_data=True, opaque="block")
+
+
+def test_broken_migration_module(project: Project) -> None:
+    project.migration(
+        "shop", "0001_initial", ITEM + "\n", extra='raise ValueError("boom")'
+    )
+    with pytest.raises(CleanError, match="Could not load migrations: boom"):
+        project.clean()
+
+
+def test_changed_before_writing(project: Project) -> None:
+    dead_field(project)
+    result = project.clean()
+    path = project.path("shop", "0002_add")
+    path.write_text(path.read_text() + "\n")
+    project.path("shop", "0003_remove").unlink()
+    with pytest.raises(CleanError, match="changed since the plan was made") as info:
+        result.write()
+    assert f"{path}," in str(info.value)
+    assert "0003_remove.py (missing)" in str(info.value)
+
+
+def test_restore_failure(project: Project, monkeypatch: pytest.MonkeyPatch) -> None:
+    dead_field(project)
+    result = project.clean()
+
+    def fail(path: Path, text: str, encoding: str = "utf-8") -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(core, "_write_text", fail)
+    with pytest.raises(CleanError, match="could not be restored") as info:
+        result.write()
+    assert "disk full" in str(info.value)
+
+
+def test_write_text_cleans_up(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    path = tmp_path / "m.py"
+    path.write_text("old")
+
+    def fail(*args: Any) -> None:
+        raise OSError("no")
+
+    monkeypatch.setattr(os, "replace", fail)
+    monkeypatch.setattr(os, "unlink", fail)
+    with pytest.raises(OSError, match="no"):
+        core._write_text(path, "new")
+    assert path.read_text() == "old"
+
+
+def test_loaded_plan_with_broken_module(project: Project, tmp_path: Path) -> None:
+    dead_field(project)
+    plan_path = tmp_path / "plan.toml"
+    project.command("plan", "-o", str(plan_path))
+    project.migration("shop", "0004_broken", extra='raise ValueError("boom")')
+    project.purge()
+    with project.db_blocker.unblock():
+        result = planfile.load_plan(plan_path)
+        with pytest.raises(CleanError, match="Could not load migrations: boom"):
+            result.write()
+
+
+def test_pruned_with_broken_module(project: Project) -> None:
+    dead_field(project)
+    result = project.clean(prune=True)
+    project.migration("shop", "0004_broken", extra='raise ValueError("boom")')
+    project.purge()
+    with (
+        project.db_blocker.unblock(),
+        pytest.raises(CleanError, match="Could not load migrations: boom"),
+    ):
+        result.write()
+
+
+def test_internal_errors(project: Project, monkeypatch: pytest.MonkeyPatch) -> None:
+    dead_field(project)
+
+    def fail(*args: Any, **kwargs: Any) -> Any:
+        raise RewriteError("bad edit")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(core, "rewrite_source", fail)
+        with pytest.raises(CleanError, match=r"rewriting shop.0002_add failed \(bad"):
+            project.clean()
+
+    def prune_fail(*args: Any, **kwargs: Any) -> Any:
+        raise PruneError("bad prune")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(core, "plan_prune", prune_fail)
+        with pytest.raises(CleanError, match="Internal error: bad prune"):
+            project.clean(prune=True)
+
+    project.migration(
+        "shop",
+        "0004_after",
+        'migrations.AlterField("item", "name", models.TextField()),',
+    )
+    with monkeypatch.context() as patch:
+        patch.setattr(core, "rewrite_dependencies", prune_fail)
+        with pytest.raises(CleanError, match=r"rewiring shop.0004_after failed"):
+            project.clean(prune=True)
+
+
+def test_folded_history_not_replaying(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration("shop", "0002_add", ADD)
+    real = Timeline.replay
+    calls: list[int] = []
+
+    def replay(self: Timeline) -> None:
+        calls.append(1)
+        if len(calls) > 1:
+            raise ValueError("odd")
+        real(self)
+
+    monkeypatch.setattr(Timeline, "replay", replay)
+    with pytest.raises(CleanError, match=r"the folded history doesn't replay \(odd\)"):
+        project.clean(skip_kinds=[])
+
+
+def test_field_of_removed_model_reported_once(project: Project) -> None:
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration(
+        "shop",
+        "0002_coupon",
+        """
+        migrations.CreateModel(
+            name="Coupon", fields=[("id", models.AutoField(primary_key=True))]
+        ),
+        migrations.AddField("coupon", "legacy", models.IntegerField(default=0)),
+        migrations.RemoveField("coupon", "legacy"),
+        migrations.DeleteModel("Coupon"),
+        """,
+    )
+    assert kinds(project.clean()) == [("model", "shop.Coupon")]
+
+
+def test_blocked_requirement_reported_with_root(project: Project) -> None:
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration(
+        "shop",
+        "0002_add",
+        ADD
+        + '\nmigrations.AddIndex("item", models.Index(fields=["legacy"], name="l_idx")),',
+    )
+    project.migration(
+        "shop",
+        "0003_remove",
+        """
+        migrations.RunSQL("SELECT 'l_idx'"),
+        migrations.RemoveIndex("item", "l_idx"),
+        migrations.RemoveField("item", "legacy"),
+        """,
+    )
+    # Only fields are asked for: the index is no root of its own.
+    assert list(blocked(project.clean(kinds=["field"]))) == ["shop.Item.legacy"]
+
+
+def test_fold_into_unlocatable_create_model(project: Project) -> None:
+    project.migration(
+        "shop",
+        "0001_initial",
+        'migrations.CreateModel(name="Item", fields=FIELDS),',
+        extra='FIELDS = [("id", models.AutoField(primary_key=True)),'
+        ' ("name", models.CharField(max_length=10))]',
+    )
+    project.migration(
+        "shop",
+        "0002_alter",
+        'migrations.AlterField("item", "name", models.CharField(max_length=20)),',
+    )
+    result = project.clean(skip_kinds=[])
+    (removal,) = result.removals
+    (target,) = removal.targets
+    assert target.line == 12  # the whole operation's line
+    assert target.detail == "regenerated"
+
+
+def test_flat_together_located(project: Project) -> None:
+    project.migration(
+        "shop",
+        "0001_initial",
+        ITEM.replace(
+            "        ],\n",
+            '        ],\n    options={"unique_together": ("id", "name")},\n',
+        ),
+    )
+    project.migration(
+        "shop", "0002_drop", 'migrations.AlterUniqueTogether("item", set()),'
+    )
+    removal = project.clean().removals[0]
+    (element,) = removal.elements
+    assert (element.operation, element.line) == ("CreateModel", 16)
+
+
+def test_fold_into_create_model_edited_earlier(project: Project) -> None:
+    # The first round removes the dead unique_together entry from the
+    # CreateModel; the AlterField folds into it in the next round, when the
+    # edited operation no longer matches its source.
+    project.migration(
+        "shop",
+        "0001_initial",
+        ITEM.replace(
+            "        ],\n",
+            '        ],\n    options={"unique_together": {("id", "name")}},\n',
+        ),
+    )
+    project.migration(
+        "shop", "0002_drop", 'migrations.AlterUniqueTogether("item", set()),'
+    )
+    project.migration(
+        "shop",
+        "0003_alter",
+        'migrations.AlterField("item", "name", models.CharField(max_length=20)),',
+    )
+    result = project.check_equivalence(skip_kinds=[])
+    (fold,) = [r for r in result.removals if r.kind == "fold"]
+    (target,) = fold.targets
+    assert (target.operation, target.line) == ("CreateModel", 10)  # the call
+
+
+def test_sub_line_of_edited_together_operation(project: Project) -> None:
+    from django.db.migrations.operations import AlterUniqueTogether
+
+    from django_clean_migrations.history import load_history
+    from django_clean_migrations.timeline import Element
+
+    project.migration(
+        "shop",
+        "0001_initial",
+        ITEM + 'migrations.AlterUniqueTogether("item", {("id", "name")}),',
+    )
+    project.activate()
+    with project.db_blocker.unblock():
+        rec = load_history().ops[-1]
+    rec.op = AlterUniqueTogether("item", set())  # as an earlier round left it
+    assert core._sub_line(Element(rec, ("entry", ("id", "name")), None)) is None

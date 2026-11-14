@@ -74,11 +74,8 @@ def test_unsupported_alias_refused(
     )
     handler["odd"].vendor = "oracle"
     monkeypatch.setattr(scratch_module, "connections", handler)
-    with (
-        pytest.raises(scratch_module.ScratchDatabaseError, match="'odd'"),
-        scratch_module.scratch_database("default"),
-    ):
-        pass
+    with pytest.raises(scratch_module.ScratchDatabaseError, match="'odd'"):
+        scratch_module.scratch_database("default").__enter__()
 
 
 # Forked runs

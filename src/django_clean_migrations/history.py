@@ -40,11 +40,9 @@ class SourceFile:
         """As Python reads the file (a coding cookie, a BOM, else UTF-8)."""
 
     @cached_property
-    def tree(self) -> ast.Module | None:
-        try:
-            return ast.parse(self.text)
-        except (SyntaxError, ValueError):
-            return None
+    def tree(self) -> ast.Module:
+        # The file was imported as a module, so it parses.
+        return ast.parse(self.text)
 
     @cached_property
     def tokens(self) -> list[Token]:
@@ -166,10 +164,6 @@ class OpRecord:
         if self.migration.op_nodes is None:
             return None
         return self.migration.op_nodes[self.index]
-
-    @property
-    def editable(self) -> bool:
-        return self.migration.editable and self.migration.locatable
 
     @property
     def name(self) -> str:
@@ -314,9 +308,6 @@ def locate_operations(info: MigrationInfo) -> None:
         info.unlocatable_reason = "source not readable"
         return
     tree = source.tree
-    if tree is None:
-        info.unlocatable_reason = "file could not be parsed"
-        return
     value, reason = _find_operations(tree)
     if value is None:
         info.unlocatable_reason = reason

@@ -113,20 +113,7 @@ def _migration_text(info: MigrationInfo) -> tuple[str, bool]:
             for node, op in zip(info.op_nodes, info.migration.operations, strict=True)
             if classify(op) != OPAQUE
         )
-    if source.tree is not None:
-        return python_words(source.tree, skip), False
-    spans = sorted(
-        source.node_span(n) for n in skip if isinstance(n, (ast.expr, ast.stmt))
-    )
-    parts: list[str] = []
-    last = 0
-    for start, end in spans:
-        if start < last:
-            continue
-        parts.append(source.text[last:start])
-        last = end
-    parts.append(source.text[last:])
-    return "".join(parts), False
+    return python_words(source.tree, skip), False
 
 
 def python_words(tree: ast.AST, skip: Iterable[ast.AST] = ()) -> str:
@@ -195,9 +182,7 @@ def _source_words(source: str) -> str:
 _METADATA = frozenset({"dependencies", "replaces", "run_before", "initial", "atomic"})
 
 
-def _metadata_statements(tree: ast.Module | None) -> list[ast.stmt]:
-    if tree is None:
-        return []
+def _metadata_statements(tree: ast.Module) -> list[ast.stmt]:
     found: list[ast.stmt] = []
     for node in tree.body:
         if isinstance(node, ast.ClassDef) and node.name == "Migration":

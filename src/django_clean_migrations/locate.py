@@ -20,7 +20,6 @@ from django.db.migrations.operations import (
 from django_clean_migrations.history import OpRecord, SourceFile
 
 TOGETHER_OPTIONS = ("unique_together", "index_together")
-LIST_OPTIONS = {"index": "indexes", "constraint": "constraints"}
 
 Entry = tuple[str, ...]
 
@@ -92,6 +91,8 @@ def _str_tuple(node: ast.expr) -> Entry | None:
 def _locate_together_value(
     source: SourceFile, node: ast.expr | None, value: Any
 ) -> TogetherLoc:
+    # A derived operation (edited by an earlier round) can differ from its
+    # source: every mismatch makes it unlocatable.
     expected = normalize_together(value)
     if node is None or (isinstance(node, ast.Constant) and node.value is None):
         if expected:
@@ -143,10 +144,9 @@ def locate_create_model(rec: OpRecord) -> CreateModelLoc | str:
 def _locate_create_model(rec: OpRecord) -> CreateModelLoc:
     op = rec.op
     assert isinstance(op, CreateModel)
-    call = rec.node
-    source = rec.migration.source
-    if call is None or source is None:
-        raise NotLocatable("operation not located")
+    call, source = rec.node, rec.migration.source
+    # Only located for editable operations, which have both.
+    assert call is not None and source is not None
     fields_node = _arg(call, 1, "fields")
     if not isinstance(fields_node, (ast.List, ast.Tuple)):
         raise NotLocatable("fields is not a literal")
@@ -214,10 +214,8 @@ def locate_together_op(rec: OpRecord) -> TogetherLoc | str:
 def _locate_together_op(rec: OpRecord) -> TogetherLoc:
     op = rec.op
     assert isinstance(op, (AlterUniqueTogether, AlterIndexTogether))
-    call = rec.node
-    source = rec.migration.source
-    if call is None or source is None:
-        raise NotLocatable("operation not located")
+    call, source = rec.node, rec.migration.source
+    assert call is not None and source is not None  # as above
     option_name = op.option_name
     assert option_name is not None
     node = _arg(call, 1, option_name)
@@ -230,24 +228,13 @@ def check_sub_elements(rec: OpRecord, subs: Iterable[tuple[Any, ...]]) -> str | 
     if reason is not None or rec.derived:
         # A derived (already edited) operation is regenerated as a whole.
         return reason
+    # Not derived: the keys come from the operation itself (its fields,
+    # options and entries), which matches its source if that is located.
     for sub in subs:
-        kind = sub[0]
-        if kind in ("field", "index", "constraint", "together"):
+        if sub[0] == "entry":
+            loc: Any = locate_together_op(rec)
+        else:
             loc = locate_create_model(rec)
-            if isinstance(loc, str):
-                return loc
-            if kind == "field" and sub[1] not in loc.field_index:
-                return f"field {sub[1]!r} not found in {rec.describe()}"
-            if kind in LIST_OPTIONS and LIST_OPTIONS[kind] not in loc.lists:
-                return f"{kind} not found in {rec.describe()}"
-            if kind == "together":
-                tloc = loc.together.get(sub[1])
-                if tloc is None or sub[2] not in tloc.entries:
-                    return f"{sub[1]} entry not found in {rec.describe()}"
-        elif kind == "entry":
-            tloc2 = locate_together_op(rec)
-            if isinstance(tloc2, str):
-                return tloc2
-            if sub[1] not in tloc2.entries:
-                return f"together entry not found in {rec.describe()}"
+        if isinstance(loc, str):
+            return loc
     return None

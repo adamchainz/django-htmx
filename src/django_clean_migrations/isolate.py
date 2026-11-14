@@ -70,7 +70,7 @@ def run_isolated(
         try:
             if stream is not None:
                 stream.flush()
-        except Exception:  # pragma: no cover
+        except Exception:
             pass
     read_fd, write_fd = os.pipe()
     with warnings.catch_warnings():
@@ -79,9 +79,10 @@ def run_isolated(
         # database, not what those threads guard.
         warnings.simplefilter("ignore", DeprecationWarning)
         pid = os.fork()
-    if pid == 0:  # pragma: no cover - the child; coverage can't see it
-        os.close(read_fd)
-        _child(function, write_fd)
+    in_child = pid == 0
+    # Coverage doesn't trace the forking frame in the child.
+    if in_child:  # pragma: no cover - in the child, untraced
+        _child(function, read_fd, write_fd)
     os.close(write_fd)
     result: list[Any] = []
     failure: list[BaseException] = []
@@ -112,7 +113,8 @@ def run_isolated(
     return result[0]  # type: ignore[no-any-return]
 
 
-def _child(function: Callable[[Send], Any], write_fd: int) -> None:  # pragma: no cover
+def _child(function: Callable[[Send], Any], read_fd: int, write_fd: int) -> None:
+    os.close(read_fd)
     # A progress display may have replaced stdout/stderr with proxies that
     # take locks held by threads that don't exist here.
     sys.stdout, sys.stderr = sys.__stdout__, sys.__stderr__
@@ -151,11 +153,11 @@ def _child(function: Callable[[Send], Any], write_fd: int) -> None:  # pragma: n
 def _kill(pid: int) -> None:
     try:
         os.kill(pid, signal.SIGKILL)
-    except ProcessLookupError:  # pragma: no cover
+    except ProcessLookupError:
         pass
     try:
         os.waitpid(pid, 0)
-    except ChildProcessError:  # pragma: no cover
+    except ChildProcessError:
         pass
 
 

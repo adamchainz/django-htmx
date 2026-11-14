@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import tomllib
+from collections import Counter
 from collections.abc import Iterator
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from django.db.migrations.operations.base import Operation
 
 from django_clean_migrations import trial as trial_module
-from django_clean_migrations.core import CleanError
+from django_clean_migrations.core import CleanError, UnitInfo, analyse
+from django_clean_migrations.snapshot import Difference, Snapshot
 from tests.project import Project
 from tests.test_clean import ITEM, blocked, kinds
 
@@ -466,3 +469,298 @@ def test_post_migrate_flag(project: Project) -> None:
         assert project.clean(trial=True, trial_post_migrate=True).removals == []
     finally:
         post_migrate.disconnect(dispatch_uid="test_post_migrate_flag")
+
+
+# The trial loop, driven by scripted outcomes
+
+
+MENTIONED = """
+for item in Item.objects.using(alias).all():
+    item.legacy = 1
+"""
+DEAD = 'migrations.AddField("item", "dead", models.IntegerField(default=0)),'
+
+
+def unlockable(project: Project) -> None:
+    """legacy: a removal only a trial unlocks; dead: one the static plan makes."""
+    history(project, MENTIONED)
+    project.migration("shop", "0004_dead", DEAD)
+    project.migration("shop", "0005_dead", 'migrations.RemoveField("item", "dead"),')
+
+
+FAILURE = trial_module.TrialFailure(("shop", "0002_add"), "RunPython", "boom", "", True)
+
+
+def script(
+    monkeypatch: pytest.MonkeyPatch, outcomes: list[Any], attribute: Any
+) -> list[str]:
+    """Replace the runs of candidates and the blame with scripted ones."""
+    keys: list[str] = []
+
+    def candidate(self: Any, solution: Any, built: Any, reference: Any) -> Any:
+        self.passes += 1
+        keys.append(",".join(sorted(solution.unit_keys())))
+        return outcomes.pop(0)
+
+    monkeypatch.setattr(trial_module.Trial, "_candidate", candidate)
+    monkeypatch.setattr(trial_module.Trial, "_attribute", attribute)
+    return keys
+
+
+def static_key(solution: Any) -> str:
+    return next(str(k) for k in solution.unit_keys() if ":dead" in k)
+
+
+def legacy_key(solution: Any) -> str:
+    return next(str(k) for k in solution.unit_keys() if ":legacy" in k)
+
+
+def test_max_runs_reached(project: Project, monkeypatch: pytest.MonkeyPatch) -> None:
+    unlockable(project)
+    script(
+        monkeypatch,
+        [([FAILURE], []), None],
+        lambda self, solution, f, d: {legacy_key(solution): "x"},
+    )
+    result = project.clean(trial=True, trial_max_runs=1)
+    assert result.verification["fallback"] is True
+    assert kinds(result) == [("field", "shop.Item.dead")]
+
+
+def test_nothing_new_to_blame(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    unlockable(project)
+    script(monkeypatch, [([FAILURE], []), None], lambda *args: {})
+    result = project.clean(trial=True)
+    assert result.verification["fallback"] is True
+
+
+def test_trial_plan_worse_than_static(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    unlockable(project)
+    script(monkeypatch, [None, None], None)
+    real = trial_module.make_result  # type: ignore[attr-defined]
+    calls: list[int] = []
+
+    def make_result(*args: Any) -> Any:
+        calls.append(1)
+        result = real(*args)
+        if len(calls) == 2:  # the first candidate's
+            result.removed_positions = frozenset()
+        return result
+
+    monkeypatch.setattr(trial_module, "make_result", make_result)
+    messages: list[str] = []
+    result = project.clean(
+        trial=True, progress=lambda m, note=False: messages.append(m)
+    )
+    assert result.verification["fallback"] is True
+    assert any("using the static plan" in m for m in messages)
+
+
+def as_noop(trial: Any, key: str) -> None:
+    """As if the removal ``key`` relied on a data migration that did nothing."""
+    trial.noop_keys[key] = (0, 0)
+    trial.noop[(0, 0)] = "nothing"
+
+
+def test_static_part_blamed(project: Project, monkeypatch: pytest.MonkeyPatch) -> None:
+    unlockable(project)
+
+    def attribute(self: Any, solution: Any, f: Any, d: Any) -> Any:
+        as_noop(self, static_key(solution))
+        return {static_key(solution): "x", legacy_key(solution): "y"}
+
+    keys = script(monkeypatch, [([FAILURE], []), None], attribute)
+    result = project.clean(trial=True)
+    assert ":dead" not in keys[-1]
+    assert result.removals == []
+
+
+def test_static_plan_blamed(project: Project, monkeypatch: pytest.MonkeyPatch) -> None:
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration("shop", "0002_dead", DEAD)
+    project.migration("shop", "0003_dead", 'migrations.RemoveField("item", "dead"),')
+
+    def attribute(self: Any, solution: Any, f: Any, d: Any) -> Any:
+        as_noop(self, static_key(solution))
+        return {static_key(solution): "x"}
+
+    script(monkeypatch, [([FAILURE], []), None], attribute)
+    assert project.clean(trial=True).removals == []
+
+
+def test_noop_layer_dropped(project: Project, monkeypatch: pytest.MonkeyPatch) -> None:
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration("shop", "0002_dead", DEAD)
+    project.migration("shop", "0003_dead", 'migrations.RemoveField("item", "dead"),')
+
+    def attribute(self: Any, solution: Any, f: Any, d: Any) -> Any:
+        self.noop[(0, 0)] = "nothing"
+        return {}
+
+    script(monkeypatch, [([FAILURE], []), None], attribute)
+    result = project.clean(trial=True)
+    assert any(d.startswith("--noop-data") for d in result.verification["dropped"])
+
+
+def test_single_baseline(project: Project) -> None:
+    history(project, MENTIONED)
+    result = project.clean(trial=True, trial_single_baseline=True)
+    assert result.verification["runs"] == 2
+    assert kinds(result) == [("field", "shop.Item.legacy")]
+
+
+def test_second_baseline_fails(project: Project, tmp_path: Path) -> None:
+    marker = tmp_path / "ran"
+    history(
+        project,
+        "import pathlib\n"
+        f"marker = pathlib.Path({str(marker)!r})\n"
+        "if marker.exists():\n"
+        "    raise ValueError('second run')\n"
+        "marker.write_text('')\n",
+    )
+    with pytest.raises(CleanError, match="not a second time: .*second run"):
+        project.clean(trial=True)
+
+
+def test_scratch_database_failure(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from django_clean_migrations.scratch import ScratchDatabaseError
+
+    history(project, MENTIONED)
+
+    def fail(*args: Any, **kwargs: Any) -> Any:
+        raise ScratchDatabaseError("no room")
+
+    monkeypatch.setattr(trial_module, "scratch_database", fail)
+    with pytest.raises(CleanError, match="no room"):
+        project.clean(trial=True)
+
+
+def test_child_crash(project: Project, monkeypatch: pytest.MonkeyPatch) -> None:
+    history(project, MENTIONED)
+
+    class Odd(Exception):
+        def __init__(self) -> None:
+            super().__init__("odd")
+            self.callback = lambda: None
+
+    def migrate(*args: Any, **kwargs: Any) -> Any:
+        raise Odd()
+
+    monkeypatch.setattr(trial_module.Trial, "_migrate", migrate)
+    with pytest.raises(CleanError, match="crashed: Odd: odd"):
+        project.clean(trial=True)
+
+
+# Attribution, directly
+
+
+def bare_trial(project: Project) -> trial_module.Trial:
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration("shop", "0002_sql", 'migrations.RunSQL("SELECT 1"),')
+    project.migration("shop", "0003_more", 'migrations.RunSQL("SELECT 2"),')
+    project.activate()
+    with project.db_blocker.unblock():
+        return trial_module.Trial(analyse(), "default")
+
+
+def unit(key: str, start: int = 0, end: int | None = None, **kwargs: Any) -> UnitInfo:
+    values: dict[str, Any] = {
+        "tables": frozenset(),
+        "names": frozenset(),
+        "at_risk": frozenset(),
+    }
+    values.update(kwargs)
+    return UnitInfo(key, start, end, **values)
+
+
+def test_in_window(project: Project) -> None:
+    trial = bare_trial(project)
+    assert trial._in_window(unit("u", 0, 2), 1) is True
+    assert trial._in_window(unit("u", 1, 2), 0) is False
+    assert trial._in_window(unit("u", 0, 1), 2) is False
+    assert trial._in_window(unit("u", 0, None), 2) is True
+
+
+def test_attribute_vague_failures(project: Project) -> None:
+    trial = bare_trial(project)
+    sql = trial.analysis.history.ops[1]
+    units = [unit("a", 0, 2), unit("b", 0, 2), unit("fold:c", 1, 2)]
+    solution = SimpleNamespace(units=units)
+    failures = [
+        trial_module.TrialFailure(
+            ("shop", "0002_sql"), "RunSQL", "x", "", True, sql.seq
+        ),
+        trial_module.TrialFailure(
+            ("shop", "0002_sql"), "RunSQL", "y", "", True, sql.seq
+        ),
+    ]
+    # Half the suspects, for the first vague failure only.
+    assert list(trial._attribute(solution, failures, [])) == ["a"]  # type: ignore[arg-type]
+    create = trial.analysis.history.ops[0]
+    schema = trial_module.TrialFailure(
+        ("shop", "0002_sql"), "AddField", "z", "", True, create.seq
+    )
+    # A schema operation failing blames what was folded into its migration.
+    assert list(trial._attribute(solution, [schema], [])) == ["fold:c"]  # type: ignore[arg-type]
+
+
+def test_attribute_data_differences(project: Project) -> None:
+    trial = bare_trial(project)
+    units = [
+        unit("field:a", tables=frozenset({"shop_item"}), fields=frozenset({"a"})),
+        unit("field:b", tables=frozenset({"shop_item"}), fields=frozenset({"b"})),
+        unit("risky", at_risk=frozenset({(1, 0)})),
+    ]
+    solution = SimpleNamespace(units=units)
+    named = Difference("shop_item", "data", "rows differ", ("b",))
+    assert list(trial._attribute(solution, [], [named])) == ["field:b"]  # type: ignore[arg-type]
+    elsewhere = Difference("other", "data", "rows differ")
+    assert list(trial._attribute(solution, [], [elsewhere])) == ["risky"]  # type: ignore[arg-type]
+
+
+def test_mask_nondeterminism(project: Project) -> None:
+    trial = bare_trial(project)
+    trial.single_baseline = True
+    reference = Snapshot("sqlite", data={"t": Counter({("1",): 1}), "u": Counter()})
+    snapshot = Snapshot(
+        "sqlite", data={"t": Counter({("2",): 1}), "u": Counter({("1",): 1})}
+    )
+    diffs = reference.differences(snapshot, trial.mask, trial.masked)
+    solution = SimpleNamespace(units=[unit("u", tables=frozenset({"u"}))])
+    # t: no removal relates to it, so its rows are random; u's are not.
+    (left,) = trial._mask_nondeterminism(solution, diffs, reference, snapshot)  # type: ignore[arg-type]
+    assert left.table == "u"
+    assert trial.masked == {"t"}
+
+
+def test_duration() -> None:
+    assert trial_module._duration(30) == "30s"
+    assert trial_module._duration(600) == "10 min"
+
+
+def test_elidable_in_excluded_app_at_risk(project: Project) -> None:
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration("shop", "0002_add", LEGACY)
+    project.migration(
+        "other",
+        "0001_initial",
+        'migrations.RunSQL("UPDATE shop_item SET legacy = 1", elidable=True),',
+        deps=[("shop", "0002_add")],
+    )
+    project.migration(
+        "shop",
+        "0003_remove",
+        'migrations.RemoveField("item", "legacy"),',
+        extra_deps=[("other", "0001_initial")],
+    )
+    result = project.clean(exclude=["other"], trial=True)
+    # Kept: removing the column breaks the UPDATE, which can't go.
+    assert result.removals == []
+    assert "no such column: legacy" in blocked(result)["shop.Item.legacy"][0]

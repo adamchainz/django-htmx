@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 from django_clean_migrations.core import Result
+from django_clean_migrations.fold import _mentions
 from tests.project import Project
 from tests.test_clean import ITEM, blocked, kinds
 
@@ -615,6 +616,27 @@ class TestDatabaseNames:
         )
         assert bool(folds(project.check_equivalence(**FOLD))) is not bool(custom)
 
+    @pytest.mark.parametrize(
+        "setup", ["HStoreExtension()", 'CreateCollation("natural", "und-u-kn-true")']
+    )
+    def test_postgres_setup_operations(self, project: Project, setup: str) -> None:
+        # Extensions and collations don't change the state, so they aren't
+        # opaque, but they set up what a column may need.
+        project.migration("shop", "0001_initial", ITEM)
+        project.migration(
+            "shop",
+            "0002_tags",
+            f"""
+            {setup},
+            migrations.AddField(
+                "item", "tags", models.TextField(default="", db_collation="nocase")
+            ),
+            """,
+            extra="from django.contrib.postgres.operations import"
+            " CreateCollation, HStoreExtension",
+        )
+        assert folds(project.check_equivalence(**FOLD)) == []
+
     def test_same_check_folds(self, project: Project) -> None:
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
@@ -937,3 +959,458 @@ class TestRenames:
         )
         result = project.check_equivalence(**FOLD)
         assert not [d for _, d in folds(result) if d.startswith("AlterModelTable")]
+
+
+def unordered(project: Project, first: str, second: str) -> None:
+    """
+    Two migrations of the app on parallel branches, merged afterwards
+    (Django happens to run the second branch first).
+    """
+    project.migration("shop", "0002_b", first, deps=[("shop", "0001_initial")])
+    project.migration("shop", "0002_a", second, deps=[("shop", "0001_initial")])
+    project.migration(
+        "shop", "0003_merge", deps=[("shop", "0002_a"), ("shop", "0002_b")]
+    )
+
+
+# A RunSQL naming the model keeps the AddField out of the CreateModel.
+KEPT_QTY = """
+migrations.RunSQL("SELECT 'item'"),
+migrations.AddField("item", "qty", models.IntegerField(default=1)),
+"""
+
+UNMANAGED = """
+migrations.CreateModel(
+    name="Item",
+    fields=[("id", models.AutoField(primary_key=True))],
+    options={"managed": False},
+),
+"""
+
+ITEM_CODE = """
+migrations.CreateModel(
+    name="Item",
+    fields=[
+        ("id", models.AutoField(primary_key=True)),
+        ("name", models.CharField(max_length=10)),
+        ("code", models.CharField(max_length=10)),
+    ],
+),
+"""
+
+
+class TestGuards:
+    """Each condition that keeps an operation where it is."""
+
+    @pytest.mark.parametrize(
+        ("initial", "first", "second"),
+        [
+            (
+                ITEM,
+                KEPT_QTY,
+                'migrations.AlterField("item", "qty", models.IntegerField(default=2)),',
+            ),
+            (ITEM, KEPT_QTY, 'migrations.RenameField("item", "qty", "quantity"),'),
+            (
+                "",
+                ITEM,
+                'migrations.AddField("item", "qty", models.IntegerField(default=1)),',
+            ),
+            (
+                "",
+                ITEM,
+                'migrations.AddIndex("item", models.Index(fields=["name"], name="n_idx")),',
+            ),
+            ("", ITEM, 'migrations.AlterUniqueTogether("item", {("id", "name")}),'),
+            ("", ITEM, 'migrations.AlterModelOptions("item", {"verbose_name": "x"}),'),
+            ("", UNMANAGED, 'migrations.AlterModelTable("item", "things"),'),
+        ],
+    )
+    def test_unordered_branches(
+        self, project: Project, initial: str, first: str, second: str
+    ) -> None:
+        project.migration("shop", "0001_initial", initial)
+        unordered(project, first, second)
+        result = project.clean(**FOLD)
+        assert not [d for _, d in folds(result) if "0002_a" in d]
+
+    def test_unparseable_together(self, project: Project) -> None:
+        project.migration("shop", "0001_initial", ITEM)
+        project.migration(
+            "shop",
+            "0002_together",
+            source="from django.db import migrations\n\n\n"
+            "class Migration(migrations.Migration):\n"
+            "    dependencies = [('shop', '0001_initial')]\n"
+            "    operations = ops = [\n"
+            '        migrations.AlterUniqueTogether("item", {("id", "name")}),\n'
+            "    ]\n",
+        )
+        assert folds(project.clean(**FOLD)) == []
+
+    def test_model_created_with_removed_field(self, project: Project) -> None:
+        # The CreateModel loses an entry: nothing else goes into it in that
+        # round, but a rename folds into its AddField (unless a field was
+        # created in between). The next round fills the CreateModel.
+        project.migration(
+            "shop",
+            "0001_initial",
+            """
+            migrations.CreateModel(
+                name="Item",
+                fields=[
+                    ("id", models.AutoField(primary_key=True)),
+                    ("legacy", models.IntegerField()),
+                ],
+            ),
+            """,
+        )
+        project.migration(
+            "shop",
+            "0002_add",
+            """
+            migrations.AddField("item", "a", models.IntegerField(default=1)),
+            migrations.AddField("item", "b", models.IntegerField(default=1)),
+            migrations.RenameField("item", "b", "c"),
+            migrations.AddField("item", "d", models.IntegerField(default=1)),
+            migrations.RenameField("item", "a", "e"),
+            """,
+        )
+        project.migration(
+            "shop", "0003_remove", 'migrations.RemoveField("item", "legacy"),'
+        )
+        result = project.check_equivalence(**FOLD)
+        into_create = "AddField in 0002_add folded into CreateModel in 0001_initial"
+        assert folds(result) == [
+            ("shop.Item.c", into_create),
+            ("shop.Item.c", "RenameField in 0002_add folded into AddField in 0002_add"),
+            ("shop.Item.d", into_create),
+            ("shop.Item.e", into_create),
+        ]
+
+    def test_order_with_respect_to(self, project: Project) -> None:
+        project.migration(
+            "shop",
+            "0001_initial",
+            """
+            migrations.CreateModel(
+                name="Item",
+                fields=[
+                    ("id", models.AutoField(primary_key=True)),
+                    ("parent", models.ForeignKey("shop.item", models.CASCADE, null=True)),
+                ],
+                options={"order_with_respect_to": "parent"},
+            ),
+            """,
+        )
+        project.migration(
+            "shop",
+            "0002_qty",
+            'migrations.AddField("item", "qty", models.IntegerField(default=1)),',
+        )
+        assert folds(project.check_equivalence(**FOLD)) == []
+
+    def test_one_off_default_into_create_model(self, project: Project) -> None:
+        project.migration("shop", "0001_initial", ITEM)
+        project.migration(
+            "shop",
+            "0002_qty",
+            'migrations.AddField("item", "qty", models.IntegerField(default=1),'
+            " preserve_default=False),",
+        )
+        project.check_equivalence(**FOLD)
+        assert "('qty', models.IntegerField())," in project.read("shop", "0001_initial")
+
+    def test_renamed_sibling_blocks_add_field(self, project: Project) -> None:
+        project.migration("shop", "0001_initial", ITEM_CODE)
+        project.migration(
+            "shop", "0002_rename", 'migrations.RenameField("item", "name", "title"),'
+        )
+        project.migration(
+            "shop",
+            "0003_qty",
+            'migrations.AddField("item", "qty", models.IntegerField(default=1)),',
+        )
+        # Nor does the together option go in, naming a field that doesn't.
+        project.migration(
+            "shop",
+            "0004_together",
+            'migrations.AlterUniqueTogether("item", {("title", "qty")}),',
+        )
+        assert folds(project.check_equivalence(**FOLD)) == []
+
+    def test_index_on_field_left_out(self, project: Project) -> None:
+        project.migration("shop", "0001_initial", ITEM_CODE)
+        project.migration(
+            "shop", "0002_rename", 'migrations.RenameField("item", "name", "title"),'
+        )
+        project.migration(
+            "shop",
+            "0003_qty",
+            """
+            migrations.AddField("item", "qty", models.IntegerField(default=1)),
+            migrations.AddIndex("item", models.Index(fields=["qty"], name="q_idx")),
+            """,
+        )
+        result = project.check_equivalence(**FOLD)
+        assert not [d for _, d in folds(result) if d.startswith("AddIndex")]
+
+    @pytest.mark.parametrize(
+        ("added", "between", "altered"),
+        [
+            # Many-to-many fields have no column to fold a change into.
+            (
+                'models.ManyToManyField("shop.tag")',
+                "",
+                'models.ManyToManyField("shop.tag", blank=True)',
+            ),
+            # The column now follows another field's type.
+            (
+                'models.ForeignKey("shop.tag", models.CASCADE, to_field="code", null=True)',
+                "",
+                'models.ForeignKey("shop.tag", models.CASCADE, null=True)',
+            ),
+            # The table is renamed in between.
+            (
+                "models.IntegerField(default=1)",
+                'migrations.AlterModelTable("item", "things"),',
+                "models.IntegerField(default=2)",
+            ),
+            # An expression no longer names another field.
+            (
+                'models.CharField(max_length=5, db_default=Upper(F("name")))',
+                "",
+                'models.CharField(max_length=5, db_default="x")',
+            ),
+            # The new target's primary key changes in between.
+            (
+                'models.ForeignKey("shop.tag", models.CASCADE, null=True)',
+                'migrations.AlterField("other", "id", models.AutoField(primary_key=True, verbose_name="i")),',
+                'models.ForeignKey("shop.other", models.CASCADE, null=True)',
+            ),
+            # Something names the field in between.
+            (
+                "models.IntegerField(default=1)",
+                'migrations.AddIndex("item", models.Index(fields=["it"], name="it_idx")),',
+                "models.IntegerField(default=2)",
+            ),
+            # A collation may be created in between.
+            (
+                "models.TextField(default='')",
+                'CreateCollation("nocase", "und-u-ks-level2"),',
+                "models.TextField(default='', db_collation='nocase')",
+            ),
+            # An opaque operation may use the column in between.
+            (
+                "models.IntegerField(default=1)",
+                'migrations.RunSQL("UPDATE shop_item SET it = 2"),',
+                "models.IntegerField(default=2)",
+            ),
+        ],
+    )
+    def test_alter_field_kept(
+        self, project: Project, added: str, between: str, altered: str
+    ) -> None:
+        project.migration(
+            "shop",
+            "0001_initial",
+            """
+            migrations.CreateModel(
+                name="Tag",
+                fields=[
+                    ("id", models.AutoField(primary_key=True)),
+                    ("code", models.CharField(max_length=5, unique=True)),
+                ],
+            ),
+            migrations.CreateModel(
+                name="Other", fields=[("id", models.AutoField(primary_key=True))]
+            ),
+            """
+            + ITEM,
+        )
+        # Kept out of the CreateModel by the RunSQL.
+        project.migration(
+            "shop",
+            "0002_it",
+            f"""
+            migrations.RunSQL("SELECT 'item'"),
+            migrations.AddField("item", "it", {added}),
+            {between}
+            """,
+            extra="from django.contrib.postgres.operations import CreateCollation\n"
+            "from django.db.models import F\n"
+            "from django.db.models.functions import Upper",
+        )
+        project.migration(
+            "shop", "0003_alter", f'migrations.AlterField("item", "it", {altered}),'
+        )
+        result = project.clean(**FOLD)
+        assert not [d for _, d in folds(result) if d.startswith("AlterField")]
+
+    def test_together_cleared(self, project: Project) -> None:
+        project.migration(
+            "shop",
+            "0001_initial",
+            """
+            migrations.CreateModel(
+                name="Item",
+                fields=[
+                    ("id", models.AutoField(primary_key=True)),
+                    ("name", models.CharField(max_length=10)),
+                ],
+                options={"index_together": TOGETHER},
+            ),
+            """,
+            extra='TOGETHER = {("id", "name")}',
+        )
+        # The entry can't be located to remove it as dead: the clearing
+        # folds instead.
+        project.migration(
+            "shop",
+            "0002_together",
+            'migrations.AlterIndexTogether("item", set()),',
+        )
+        result = project.check_equivalence(**FOLD)
+        assert [d for _, d in folds(result)] == [
+            "AlterIndexTogether in 0002_together folded into CreateModel in 0001_initial"
+        ]
+        assert "index_together" not in project.read("shop", "0001_initial")
+
+    @pytest.mark.parametrize("same_migration", [True, False])
+    def test_target_deleted_later(self, project: Project, same_migration: bool) -> None:
+        # The target model exists from before the CreateModel until after
+        # the AddField: the foreign key folds into the CreateModel.
+        later = """
+            migrations.RunSQL("SELECT tag_id FROM shop_item, shop_tag"),
+            migrations.RemoveField("item", "tag"),
+            migrations.DeleteModel("Tag"),
+        """
+        add = 'migrations.AddField("item", "tag", models.ForeignKey("shop.tag", models.CASCADE, null=True)),'
+        tag = 'migrations.CreateModel(name="Tag", fields=[("id", models.AutoField(primary_key=True))]),'
+        if same_migration:
+            project.migration("shop", "0001_initial", tag + ITEM + add + later)
+        else:
+            project.migration("shop", "0001_initial", tag + ITEM)
+            project.migration("shop", "0002_tag", add)
+            project.migration("shop", "0003_drop", later)
+        result = project.check_equivalence(**FOLD)
+        assert [label for label, _ in folds(result)] == ["shop.Item.tag"]
+
+    @pytest.mark.parametrize(
+        "operation",
+        [
+            'migrations.AlterUniqueTogether("item", {("id", "name")})',
+            'migrations.AlterModelOptions("item", {"verbose_name": "x"})',
+        ],
+    )
+    def test_opaque_in_window(self, project: Project, operation: str) -> None:
+        project.migration("shop", "0001_initial", ITEM)
+        project.migration(
+            "shop",
+            "0002_change",
+            f'migrations.RunSQL("SELECT 1 FROM shop_item"),\n{operation},',
+        )
+        assert folds(project.clean(**FOLD)) == []
+
+    def test_rename_named_in_options(self, project: Project) -> None:
+        project.migration(
+            "shop",
+            "0001_initial",
+            """
+            migrations.CreateModel(
+                name="Item",
+                fields=[
+                    ("id", models.AutoField(primary_key=True)),
+                    ("name", models.CharField(max_length=10)),
+                ],
+                options={"ordering": ["name"]},
+            ),
+            """,
+        )
+        project.migration(
+            "shop", "0002_rename", 'migrations.RenameField("item", "name", "title"),'
+        )
+        assert folds(project.check_equivalence(**FOLD)) == []
+
+    def test_rename_after_removed_sibling(self, project: Project) -> None:
+        project.migration("shop", "0001_initial", ITEM)
+        project.migration(
+            "shop",
+            "0002_legacy",
+            'migrations.AddField("item", "legacy", models.IntegerField(default=1)),',
+        )
+        project.migration(
+            "shop", "0003_rename", 'migrations.RenameField("item", "name", "title"),'
+        )
+        project.migration(
+            "shop", "0004_remove", 'migrations.RemoveField("item", "legacy"),'
+        )
+        result = project.check_equivalence(**FOLD)
+        assert [d for _, d in folds(result)] == [
+            "RenameField in 0003_rename folded into CreateModel in 0001_initial"
+        ]
+
+    def test_custom_field_rename(self, project: Project) -> None:
+        project.migration(
+            "shop",
+            "0001_initial",
+            """
+            migrations.CreateModel(
+                name="Item",
+                fields=[
+                    ("id", models.AutoField(primary_key=True)),
+                    ("tags", ArrayField(models.IntegerField(), default=list)),
+                ],
+            ),
+            """,
+            extra="from django.contrib.postgres.fields import ArrayField",
+        )
+        project.migration(
+            "shop", "0002_rename", 'migrations.RenameField("item", "tags", "labels"),'
+        )
+        assert folds(project.clean(**FOLD)) == []
+
+    @pytest.mark.parametrize(
+        ("between", "table", "folded"),
+        [
+            ("", '"t"', True),
+            ("", "None", False),
+            (
+                'migrations.AlterModelOptions("item", {"verbose_name": "x"}),',
+                '"t"',
+                False,
+            ),
+            ('migrations.RunSQL("SELECT 1 FROM item"),', '"t"', False),
+        ],
+    )
+    def test_unmanaged_table(
+        self, project: Project, between: str, table: str, folded: bool
+    ) -> None:
+        project.migration(
+            "shop",
+            "0001_initial",
+            UNMANAGED.replace('"managed": False', '"managed": False, "db_table": "x"'),
+        )
+        project.migration(
+            "shop",
+            "0002_table",
+            f'{between}\nmigrations.AlterModelTable("item", {table}),',
+        )
+        result = project.clean(**FOLD)
+        assert (
+            bool([d for _, d in folds(result) if d.startswith("AlterModelTable")])
+            is folded
+        )
+
+    def test_managed_changed_by_options(self, project: Project) -> None:
+        project.migration("shop", "0001_initial", ITEM)
+        project.migration(
+            "shop",
+            "0002_unmanaged",
+            'migrations.AlterModelOptions("item", {"managed": False}),',
+        )
+        assert folds(project.clean(**FOLD)) == []
+
+
+def test_mentions_unserializable() -> None:
+    assert _mentions({"x": object()}, "name") is True

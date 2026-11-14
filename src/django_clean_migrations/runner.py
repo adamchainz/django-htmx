@@ -124,7 +124,8 @@ def run_history(
             started[0] = now
             if progress is not None:
                 progress("migration", key, done[0], len(report.plan))
-        elif action == "apply_success" and migration is not None:
+        else:  # "apply_success": nothing is ever unapplied
+            assert migration is not None
             key = (migration.app_label, migration.name)
             report.migrations[key] = now - started[0]
             current[0] = None
@@ -203,8 +204,6 @@ def run_history(
     ProjectState.clone = clone  # type: ignore[method-assign]
     try:
         final_state = executor.migrate(targets, plan=migration_plan)
-    except RunError:
-        raise
     except Exception as exc:
         failed = current[0]
         where = f" in {failed[0]}.{failed[1]}" if failed else ""

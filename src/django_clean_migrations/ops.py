@@ -87,7 +87,3 @@ def isolated(op: Operation) -> Operation:
         copied.fields = [(n, f.clone()) for n, f in op.fields]  # type: ignore[attr-defined]
         return copied
     return op
-
-
-def is_exact_run_op(op: Operation) -> bool:
-    return type(op) is m.RunPython or type(op) is m.RunSQL

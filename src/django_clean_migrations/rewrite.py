@@ -16,6 +16,7 @@ from tokenize_rt import UNIMPORTANT_WS, Token  # type: ignore[import-untyped]
 from django_clean_migrations.history import OpRecord, SourceFile
 from django_clean_migrations.locate import (
     Entry,
+    check_sub_elements,
     locate_create_model,
     locate_together_op,
     normalize_together,
@@ -176,9 +177,7 @@ class FileEdit:
                     while toks[start - 1].name in (UNIMPORTANT_WS, "NL"):
                         start -= 1
                     if toks[start - 1].name == "COMMENT":
-                        while toks[start].name != "NL":
-                            start += 1
-                        start += 1
+                        start += 1  # keep the comment line, line break included
                     self.deleted.update(range(start, tail + 1))
         if c.kind == "tuple" and len(kept) == 1:
             seg = segs[kept[0]]
@@ -271,8 +270,7 @@ def rewrite_source(source: SourceFile, edits: list[OpEdit]) -> str:
             continue
         if edit.replacement is not None:
             node = rec.node
-            if node is None:
-                raise RewriteError(f"{rec.describe()} was not located")
+            assert node is not None  # located along with the operations list
             fe.regenerate(node, edit.replacement)
             continue
         if type(rec.op) is m.CreateModel:
@@ -321,10 +319,10 @@ def rewrite_source(source: SourceFile, edits: list[OpEdit]) -> str:
 def serialize_operation(op: Operation) -> tuple[str, set[str]]:
     """Source for ``op`` as makemigrations writes it, minus the trailing comma."""
     text, imports = OperationWriter(op, indentation=0).serialize()
-    text = text.rstrip()
-    if text.endswith(","):
-        text = text[:-1]
-    return text, {*imports, "from django.db import migrations"}
+    return text.rstrip().removesuffix(","), {
+        *imports,
+        "from django.db import migrations",
+    }
 
 
 _IMPORT_RE = re.compile(r"^(?:from ([\w.]+) import ([\w, ]+)|import ([\w.]+))$")
@@ -368,8 +366,6 @@ def _missing_imports(source: SourceFile, imports: set[str]) -> list[str] | str:
     name the file already binds to something else.
     """
     tree = source.tree
-    if tree is None:
-        return "the file could not be parsed"
     bound, modules = _bindings(tree)
     missing: list[str] = []
     for line in sorted(imports):
@@ -402,18 +398,19 @@ def _missing_imports(source: SourceFile, imports: set[str]) -> list[str] | str:
 
 def _import_anchor(source: SourceFile) -> int | None:
     """Token after which to add imports: the end of the last top-level one."""
-    tree = source.tree
-    assert tree is not None
-    last = None
-    for stmt in tree.body:
-        if isinstance(stmt, (ast.Import, ast.ImportFrom)):
-            last = stmt
-    if last is None or last.end_lineno is None:
+    imports = [
+        stmt
+        for stmt in source.tree.body
+        if isinstance(stmt, (ast.Import, ast.ImportFrom))
+    ]
+    if not imports:
         return None
-    for i, tok in enumerate(source.tokens):
-        if tok.name == "NEWLINE" and tok.line == last.end_lineno:
-            return i
-    return None
+    line = imports[-1].end_lineno
+    return [
+        i
+        for i, tok in enumerate(source.tokens)
+        if tok.name == "NEWLINE" and tok.line == line
+    ][0]
 
 
 def regeneration_problem(source: SourceFile | None, op: Operation) -> str | None:
@@ -520,7 +517,7 @@ def derive_op_edit(rec: OpRecord, new: Operation) -> OpEdit | None:
                     edit.together[key] = before - after
             elif key not in new.options or new.options[key] is not value:
                 return None
-        return edit
+        return _locatable(edit)
     if type(old) in (m.AlterUniqueTogether, m.AlterIndexTogether):
         assert isinstance(old, (m.AlterUniqueTogether, m.AlterIndexTogether))
         assert isinstance(new, (m.AlterUniqueTogether, m.AlterIndexTogether))
@@ -530,8 +527,25 @@ def derive_op_edit(rec: OpRecord, new: Operation) -> OpEdit | None:
         after = set(normalize_together(new.option_value))
         if not after <= before:
             return None
-        return OpEdit(rec, entries=before - after)
+        return _locatable(OpEdit(rec, entries=before - after))
     return None
+
+
+def _locatable(edit: OpEdit) -> OpEdit | None:
+    """The edit, if the parts it removes can be found in the source; else
+    None, to regenerate the operation."""
+    subs: list[tuple[Any, ...]] = [
+        *(("field", name) for name in edit.fields),
+        *(("index", i) for i in edit.indexes),
+        *(("constraint", i) for i in edit.constraints),
+        *(
+            ("together", option, entry)
+            for option, entries in edit.together.items()
+            for entry in entries
+        ),
+        *(("entry", entry) for entry in edit.entries),
+    ]
+    return edit if check_sub_elements(edit.rec, subs) is None else None
 
 
 def unchanged(old: Operation, new: Operation) -> bool:

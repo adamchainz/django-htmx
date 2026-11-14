@@ -181,11 +181,8 @@ class Snapshot:
 def _column_changes(mine: Any, theirs: Any) -> tuple[str, ...]:
     """Names of the columns that differ between two column lists (name
     first in each entry), or that moved."""
-    try:
-        a = {str(c[0]): c for c in mine}
-        b = {str(c[0]): c for c in theirs}
-    except (TypeError, IndexError):  # pragma: no cover
-        return ()
+    a = {str(c[0]): c for c in mine}
+    b = {str(c[0]): c for c in theirs}
     changed = sorted(n for n in a.keys() | b.keys() if a.get(n) != b.get(n))
     if changed:
         return tuple(changed)
@@ -264,9 +261,9 @@ def _sqlite_schema(
                 if info["check"]:
                     label = "" if cname.startswith("__unnamed") else cname
                     schema[("check", name, f"{label}:{info['columns']}")] = True
-        elif kind == "index" and sql:
+        elif kind == "index":  # sqlite_autoindex ones (no SQL) are left out above
             schema[("index sql", table, name)] = _norm_sql(sql)
-        elif kind in ("trigger", "view"):
+        else:  # triggers and views
             schema[(kind, table, name)] = _norm_sql(sql)
 
 
@@ -454,10 +451,7 @@ def _generic_schema(
 
 def _masked_columns(connection: Any, cursor: Any, table: str) -> set[int]:
     masked: set[int] = set()
-    try:
-        description = connection.introspection.get_table_description(cursor, table)
-    except Exception:
-        return masked
+    description = connection.introspection.get_table_description(cursor, table)
     for i, col in enumerate(description):
         try:
             field_type = connection.introspection.get_field_type(col.type_code, col)

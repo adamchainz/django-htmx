@@ -3,11 +3,26 @@ from __future__ import annotations
 import ast
 import textwrap
 from pathlib import Path
+from typing import Any
 
 import pytest
+from django.db import migrations, models
 
-from django_clean_migrations.history import SourceFile
-from django_clean_migrations.rewrite import FileEdit, RewriteError
+from django_clean_migrations.history import OpRecord, SourceFile, load_history
+from django_clean_migrations.rewrite import (
+    FileEdit,
+    OpEdit,
+    RewriteError,
+    _filter_together,
+    _missing_imports,
+    derive_op_edit,
+    edited_operation,
+    regeneration_problem,
+    rewrite_source,
+    same_operation,
+    unchanged,
+)
+from tests.project import Project
 
 
 def remove(source: str, *indexes: int, target: int = 0) -> str:
@@ -198,3 +213,208 @@ def test_not_a_container() -> None:
     assert sf.tree is not None
     with pytest.raises(RewriteError):
         FileEdit(sf).remove(sf.tree.body[0].value, {0})  # type: ignore[attr-defined]
+
+
+def test_element_without_space_after_comma() -> None:
+    assert remove("x = [a,b]\n", 0) == "x = [b]\n"
+
+
+def test_trailing_element_after_comment_on_shared_line() -> None:
+    source = """\
+    x = [
+        a,
+        # about b
+        b, c]
+    """
+    assert remove(source, 1, 2) == "x = [\n    a,\n    # about b\n]\n"
+
+
+def test_comment_at_line_start_attached() -> None:
+    source = "x = [\n    a,\n# about b\n    b,\n]\n"
+    assert remove(source, 1) == "x = [\n    a,\n]\n"
+
+
+def test_tuple_single_left_with_comma() -> None:
+    assert remove("x = (a, b,)\n", 0) == "x = (b,)\n"
+
+
+# Whole operations
+
+
+def test_filter_together() -> None:
+    assert _filter_together({("a", "b"), ("c", "d")}, {("a", "b")}) == {("c", "d")}
+    assert _filter_together(("a", "b"), set()) == ("a", "b")
+    assert _filter_together([["a", "b"], ["c", "d"]], {("a", "b")}) == [["c", "d"]]
+    assert _filter_together((("a", "b"), ("c", "d")), {("c", "d")}) == (("a", "b"),)
+    assert _filter_together([("a", "b")], {("a", "b")}) is None
+
+
+def records(project: Project, operations: str, extra: str = "") -> list[OpRecord]:
+    project.migration("shop", "0001_initial", operations, extra=extra)
+    project.activate()
+    with project.db_blocker.unblock():
+        return list(load_history().ops)
+
+
+CREATE = """
+migrations.CreateModel(
+    name="Item",
+    fields=[
+        ("id", models.AutoField(primary_key=True)),
+        ("name", models.CharField(max_length=10)),
+        ("code", models.CharField(max_length=10)),
+    ],
+    options={
+        "unique_together": [("id", "name"), ("id", "code")],
+        "indexes": [models.Index(fields=["id"], name="i")],
+    },
+),
+migrations.AlterUniqueTogether("item", ("id", "name")),
+migrations.AddField("item", "qty", models.IntegerField(default=0)),
+"""
+
+
+def test_edited_operation(project: Project) -> None:
+    create, _, add = records(project, CREATE)
+    assert edited_operation(OpEdit(create)) is create.op
+    edit = OpEdit(
+        create, together={"unique_together": {("id", "name")}, "index_together": set()}
+    )
+    new = edited_operation(edit)
+    assert new.options["unique_together"] == [("id", "code")]  # type: ignore[union-attr]
+    with pytest.raises(RewriteError, match="cannot edit AddField"):
+        edited_operation(OpEdit(add, fields={"qty"}))
+
+
+def test_rewrite_source(project: Project) -> None:
+    create, together, add = records(project, CREATE)
+    source = create.migration.source
+    assert source is not None
+    text = rewrite_source(
+        source,
+        [
+            OpEdit(add),  # nothing to do
+            OpEdit(
+                create,
+                together={"unique_together": {("id", "name")}, "index_together": set()},
+            ),
+            OpEdit(together, entries={("id", "name")}),
+        ],
+    )
+    assert '"unique_together": [("id", "code")],' in text
+    assert 'migrations.AlterUniqueTogether("item", ()),' in text
+    unchanged_text = rewrite_source(
+        source, [OpEdit(create, together={"unique_together": set()})]
+    )
+    assert unchanged_text == source.text
+
+
+def test_rewrite_source_failures(project: Project) -> None:
+    create, together, add = records(project, CREATE)
+    source = create.migration.source
+    assert source is not None
+    create.migration.ops_container = None
+    with pytest.raises(RewriteError, match="are not editable"):
+        rewrite_source(source, [OpEdit(add, remove=True)])
+
+
+def test_rewrite_unlocatable(project: Project) -> None:
+    create, together = records(
+        project,
+        """
+        migrations.CreateModel(name="Item", fields=FIELDS),
+        migrations.AlterUniqueTogether("item", TOGETHER),
+        """,
+        extra='FIELDS = [("id", models.AutoField(primary_key=True))]\n'
+        'TOGETHER = [("id",)]',
+    )
+    source = create.migration.source
+    assert source is not None
+    with pytest.raises(RewriteError, match="fields is not a literal"):
+        rewrite_source(source, [OpEdit(create, fields={"id"})])
+    with pytest.raises(RewriteError, match="not a literal"):
+        rewrite_source(source, [OpEdit(together, entries={("id",)})])
+
+
+def test_regenerate_failures() -> None:
+    op = migrations.AddField("item", "qty", models.IntegerField(default=0))
+    clash = SourceFile(
+        Path("m.py"), "from django.db import migrations\nmodels = None\nx = [f()]\n"
+    )
+    node = clash.tree.body[-1].value.elts[0]  # type: ignore[attr-defined]
+    with pytest.raises(RewriteError, match="'models' is already bound"):
+        FileEdit(clash).regenerate(node, op)
+    bare = SourceFile(Path("m.py"), "x = [f()]\n")
+    node = bare.tree.body[0].value.elts[0]  # type: ignore[attr-defined]
+    with pytest.raises(RewriteError, match="no top-level imports"):
+        FileEdit(bare).regenerate(node, op)
+    elsewhere = ast.Call(ast.Name("f"), [], [], lineno=9, col_offset=0)
+    elsewhere.end_lineno, elsewhere.end_col_offset = 9, 3
+    with pytest.raises(RewriteError, match="cannot find the operation at line 9"):
+        FileEdit(bare).regenerate(elsewhere, op)
+
+
+def test_missing_imports() -> None:
+    source = SourceFile(Path("m.py"), "os = 1\n")
+    assert (
+        _missing_imports(source, {"import a as b"})
+        == "unsupported import 'import a as b'"
+    )
+    assert _missing_imports(source, {"from json import dumps"}) == [
+        "from json import dumps"
+    ]
+    assert (
+        _missing_imports(source, {"import os"})
+        == "'os' is already bound to something else"
+    )
+
+
+class Nowhere:
+    def deconstruct(self) -> tuple[str, list[Any], dict[str, Any]]:
+        return ("nowhere_at_all.Thing", [], {})
+
+
+def test_regeneration_problem() -> None:
+    source = SourceFile(Path("m.py"), "from django.db import migrations\n")
+    assert regeneration_problem(None, migrations.RunSQL("")) == (
+        "the source is not readable"
+    )
+    unserializable = migrations.RunPython(lambda apps, editor: None)
+    assert "can't be serialized" in str(regeneration_problem(source, unserializable))
+    unloadable = migrations.RunSQL(Nowhere())  # type: ignore[arg-type]
+    assert "doesn't load" in str(regeneration_problem(source, unloadable))
+
+
+def test_operation_comparisons() -> None:
+    sql = migrations.RunSQL("")
+    add = migrations.AddField("item", "qty", models.IntegerField())
+    assert same_operation(sql, add) is False
+    assert unchanged(sql, add) is False
+    lambda_op = migrations.RunPython(lambda apps, editor: None)
+    assert unchanged(lambda_op, lambda_op) is False
+
+
+def test_derive_op_edit(project: Project) -> None:
+    create, together, add = records(project, CREATE)
+    assert derive_op_edit(create, add.op) is None
+    op = create.op
+    same = migrations.CreateModel(op.name, op.fields, dict(op.options))  # type: ignore[attr-defined]
+    edit = derive_op_edit(create, same)
+    assert edit is not None and edit.empty
+    indexed = migrations.CreateModel(
+        op.name,  # type: ignore[attr-defined]
+        op.fields,  # type: ignore[attr-defined]
+        {**op.options, "indexes": [models.Index(fields=["name"], name="j")]},  # type: ignore[attr-defined]
+    )
+    assert derive_op_edit(create, indexed) is None
+    widened = migrations.CreateModel(
+        op.name,  # type: ignore[attr-defined]
+        op.fields,  # type: ignore[attr-defined]
+        {"unique_together": [("id", "name"), ("name", "code")]},
+    )
+    assert derive_op_edit(create, widened) is None
+    assert derive_op_edit(together, migrations.AlterUniqueTogether("other", ())) is None
+    assert (
+        derive_op_edit(together, migrations.AlterUniqueTogether("item", {("a", "b")}))
+        is None
+    )
