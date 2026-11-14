@@ -61,6 +61,7 @@ repos:
   - id: mypy
     additional_dependencies:
     - django-stubs==6.1.0
+    - types-PyMySQL
     - types-python-dateutil
 - repo: https://github.com/adamchainz/djade-pre-commit
   rev: 728ec80e88767be989d18b53ed47753c85f3f0b8  # frozen: 1.10.0

@@ -346,7 +346,7 @@ The original history is migrated on a scratch database first.
 If that fails, the command stops: the history doesn’t migrate from scratch, so nothing can be learnt from trials.
 The resulting snapshot covers, on SQLite, every table’s columns, foreign keys, indexes and check constraints (through ``PRAGMA`` statements, since the stored ``CREATE TABLE`` text depends on how a table was built), plus index, trigger and view definitions.
 On PostgreSQL it covers columns (type, length, precision, nullability, default, identity, collation, generation), constraints (``pg_get_constraintdef``), indexes (``pg_get_indexdef``), sequences and their owners, views, materialized views, functions and procedures, triggers, enum types, extensions and comments.
-On MySQL and MariaDB a best-effort set from ``information_schema`` is used; this is untested.
+On MySQL and MariaDB it covers what ``mysqldump --no-data`` shows, from ``information_schema``: tables (engine, collation, comment, options), columns in their order (type, nullability, default, extra, collation, comment, generation), indexes and their names (columns or expressions, order, prefix length, uniqueness, type, comment, visibility), constraints, foreign keys (columns, targets, ``ON UPDATE``/``ON DELETE``), check constraints by table, triggers, views and routines; the tests compare it on both servers.
 Other backends fall back to Django’s introspection, which is weaker.
 Data is compared as a multiset of rows per table, with date and time values masked, and ``django_migrations`` compared by app and name only.
 

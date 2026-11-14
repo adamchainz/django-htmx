@@ -368,68 +368,132 @@ def _table(qualified: str) -> str:
     return qualified.rsplit(".", 1)[-1].strip('"')
 
 
+def _rows(cursor: Any, sql: str) -> list[dict[str, Any]]:
+    """Rows as dicts by lower-case column name: MySQL and MariaDB have
+    different information_schema columns."""
+    cursor.execute(sql)
+    names = [str(d[0]).lower() for d in cursor.description]
+    return [dict(zip(names, row, strict=True)) for row in cursor.fetchall()]
+
+
 def _mysql_schema(cursor: Any, schema: dict[tuple[str, str | None, str], Any]) -> None:
-    # Best effort, untested: information_schema of the current database.
+    """What mysqldump --no-data shows, from information_schema."""
     where = "WHERE table_schema = DATABASE()"
-    cols: dict[str, list[tuple[Any, ...]]] = {}
-    for row in _fetch(
+    for t in _rows(
         cursor,
-        "SELECT table_name, column_name, ordinal_position, column_type,"
-        " is_nullable, column_default, extra, collation_name, generation_expression"
-        f" FROM information_schema.columns {where}",
+        "SELECT table_name, engine, table_collation, table_comment, create_options"
+        f" FROM information_schema.tables {where} AND table_type = 'BASE TABLE'",
     ):
-        cols.setdefault(row[0], []).append(row)
+        schema[("table", t["table_name"], t["table_name"])] = (
+            t["engine"],
+            t["table_collation"],
+            t["table_comment"],
+            t["create_options"],
+        )
+    cols: dict[str, list[dict[str, Any]]] = {}
+    for c in _rows(cursor, f"SELECT * FROM information_schema.columns {where}"):
+        cols.setdefault(c["table_name"], []).append(c)
     for table, rows in cols.items():
-        rows.sort(key=lambda r: r[2])
-        schema[("columns", table, table)] = [(r[1], *r[3:]) for r in rows]
+        rows.sort(key=lambda c: c["ordinal_position"])
+        schema[("columns", table, table)] = [
+            (
+                c["column_name"],
+                c["column_type"],
+                c["is_nullable"],
+                c["column_default"],
+                c["extra"],
+                c["collation_name"],
+                c["column_comment"],
+                c.get("generation_expression"),
+            )
+            for c in rows
+        ]
     stats: dict[tuple[str, str], list[tuple[Any, ...]]] = {}
-    for table, name, non_unique, seq, column, sub_part, index_type in _fetch(
-        cursor,
-        "SELECT table_name, index_name, non_unique, seq_in_index, column_name,"
-        f" sub_part, index_type FROM information_schema.statistics {where}",
-    ):
-        stats.setdefault((table, name), []).append(
-            (seq, column, sub_part, non_unique, index_type)
+    for i in _rows(cursor, f"SELECT * FROM information_schema.statistics {where}"):
+        stats.setdefault((i["table_name"], i["index_name"]), []).append(
+            (
+                i["seq_in_index"],
+                i["column_name"],
+                i.get("expression"),  # MySQL's functional indexes
+                i["sub_part"],
+                i["collation"],
+                i["non_unique"],
+                i["index_type"],
+                i["index_comment"],
+                i.get("is_visible", i.get("ignored")),
+            )
         )
     for (table, name), parts in stats.items():
-        schema[("index", table, name)] = sorted(parts)
-    for table, name, ctype in _fetch(
+        schema[("index", table, name)] = sorted(parts, key=lambda p: p[0])
+    check_tables: dict[str, str] = {}
+    for c in _rows(
         cursor,
         "SELECT table_name, constraint_name, constraint_type FROM"
         f" information_schema.table_constraints {where}",
     ):
-        schema[("constraint", table, name)] = ctype
-    for row in _fetch(
+        schema[("constraint", c["table_name"], c["constraint_name"])] = c[
+            "constraint_type"
+        ]
+        if c["constraint_type"] == "CHECK":
+            check_tables[c["constraint_name"]] = c["table_name"]
+    for k in _rows(
         cursor,
         "SELECT table_name, constraint_name, column_name, ordinal_position,"
         " referenced_table_name, referenced_column_name FROM"
         f" information_schema.key_column_usage {where}",
     ):
-        schema[("key column", row[0], f"{row[1]}:{row[3]}")] = row[2:]
-    for name, check in _fetch(
+        schema[
+            (
+                "key column",
+                k["table_name"],
+                f"{k['constraint_name']}:{k['ordinal_position']}",
+            )
+        ] = (k["column_name"], k["referenced_table_name"], k["referenced_column_name"])
+    for r in _rows(
         cursor,
-        "SELECT constraint_name, check_clause FROM information_schema.check_constraints"
+        "SELECT table_name, constraint_name, update_rule, delete_rule,"
+        " unique_constraint_name FROM information_schema.referential_constraints"
         " WHERE constraint_schema = DATABASE()",
     ):
-        schema[("check", None, name)] = check
-    for table, name, timing, event, action in _fetch(
+        schema[("foreign key", r["table_name"], r["constraint_name"])] = (
+            r["update_rule"],
+            r["delete_rule"],
+            r["unique_constraint_name"],
+        )
+    for c in _rows(
+        cursor,
+        "SELECT * FROM information_schema.check_constraints"
+        " WHERE constraint_schema = DATABASE()",
+    ):
+        # MariaDB names a column's check after the column: its table tells
+        # them apart (MySQL's names are unique in the database).
+        owner = c.get("table_name") or check_tables.get(c["constraint_name"])
+        schema[("check", owner, c["constraint_name"])] = c["check_clause"]
+    for t in _rows(
         cursor,
         "SELECT event_object_table, trigger_name, action_timing,"
         " event_manipulation, action_statement FROM information_schema.triggers"
         " WHERE trigger_schema = DATABASE()",
     ):
-        schema[("trigger", table, name)] = (timing, event, action)
-    for name, definition in _fetch(
+        schema[("trigger", t["event_object_table"], t["trigger_name"])] = (
+            t["action_timing"],
+            t["event_manipulation"],
+            t["action_statement"],
+        )
+    for v in _rows(
         cursor,
         f"SELECT table_name, view_definition FROM information_schema.views {where}",
     ):
-        schema[("view", None, name)] = definition
-    for name, rtype, definition in _fetch(
+        schema[("view", None, v["table_name"])] = v["view_definition"]
+    for r in _rows(
         cursor,
         "SELECT routine_name, routine_type, routine_definition FROM"
         " information_schema.routines WHERE routine_schema = DATABASE()",
     ):
-        schema[("routine", None, name)] = (rtype, definition)
+        schema[("routine", None, r["routine_name"])] = (
+            r["routine_type"],
+            r["routine_definition"],
+        )
 
 
 def _generic_schema(

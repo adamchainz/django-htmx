@@ -8,15 +8,13 @@ from __future__ import annotations
 
 import threading
 from collections import Counter
-from collections.abc import Iterator
 from typing import Any
 
 import pytest
-from django.conf import settings
 from django.db import connections
 
+from django_clean_migrations import backends
 from django_clean_migrations import scratch as scratch_module
-from django_clean_migrations import snapshot as snapshot_module
 from django_clean_migrations.scratch import (
     ScratchDatabaseError,
     drop_leftover,
@@ -24,8 +22,9 @@ from django_clean_migrations.scratch import (
     scratch_database,
 )
 from django_clean_migrations.snapshot import Mask, Snapshot, _value, take_snapshot
+from tests.conftest import SERVERS
 from tests.project import Project
-from tests.test_clean import ITEM
+from tests.test_clean import ITEM, blocked
 
 # Comparing snapshots
 
@@ -126,73 +125,6 @@ def test_generic_backend(
     assert ("columns", "t", "t") in snapshot.schema
 
 
-class FakeCursor:
-    """Answers information_schema queries with canned rows."""
-
-    ROWS: dict[str, list[Any]] = {
-        "information_schema.columns": [
-            ("t", "b", 2, "int", "YES", None, "", None, None),
-            ("t", "a", 1, "int", "NO", None, "auto_increment", None, None),
-        ],
-        "information_schema.statistics": [("t", "PRIMARY", 0, 1, "a", None, "BTREE")],
-        "information_schema.table_constraints": [("t", "PRIMARY", "PRIMARY KEY")],
-        "information_schema.key_column_usage": [("t", "PRIMARY", "a", 1, None, None)],
-        "information_schema.check_constraints": [("t_chk", "(b > 0)")],
-        "information_schema.triggers": [("t", "tr", "AFTER", "INSERT", "SET @x = 1")],
-        "information_schema.views": [("v", "select 1")],
-        "information_schema.routines": [("f", "FUNCTION", "RETURN 1")],
-    }
-
-    def __init__(self) -> None:
-        self.rows: list[Any] = []
-
-    def execute(self, sql: str, params: Any = None) -> None:
-        self.rows = next(
-            (rows for table, rows in self.ROWS.items() if table in sql), []
-        )
-
-    def fetchall(self) -> list[tuple[Any, ...]]:
-        return self.rows
-
-
-def test_mysql_schema() -> None:
-    schema: dict[Any, Any] = {}
-    snapshot_module._mysql_schema(FakeCursor(), schema)
-    assert schema[("columns", "t", "t")][0][0] == "a"
-    assert schema[("index", "t", "PRIMARY")] == [(1, "a", None, 0, "BTREE")]
-    assert schema[("trigger", "t", "tr")] == ("AFTER", "INSERT", "SET @x = 1")
-    assert {key[0] for key in schema} == {
-        "columns",
-        "index",
-        "constraint",
-        "key column",
-        "check",
-        "trigger",
-        "view",
-        "routine",
-    }
-
-
-def test_mysql_vendor_dispatch(monkeypatch: pytest.MonkeyPatch) -> None:
-    class Connection:
-        vendor = "mysql"
-
-        def cursor(self) -> Any:
-            class Context:
-                def __enter__(self) -> FakeCursor:
-                    return FakeCursor()
-
-                def __exit__(self, *args: Any) -> None:
-                    pass
-
-            return Context()
-
-    monkeypatch.setattr(snapshot_module, "_data", lambda *args: None)
-    snapshot = take_snapshot(Connection())  # type: ignore[arg-type]
-    assert snapshot.exact
-    assert ("view", None, "v") in snapshot.schema
-
-
 # Scratch databases without a server
 
 
@@ -278,36 +210,6 @@ def test_leftovers_unsupported(monkeypatch: pytest.MonkeyPatch) -> None:
 # PostgreSQL
 
 
-def _postgres() -> dict[str, Any]:
-    return {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": "cm_dev_tests",
-        # These match compose.yaml.
-        "HOST": "localhost",
-        "PORT": "55432",
-        "USER": "postgres",
-        "PASSWORD": "postgres",
-    }
-
-
-@pytest.fixture
-def pg(django_db_blocker: Any) -> Iterator[str]:
-    """An alias "pg" for the PostgreSQL server from compose.yaml."""
-    config = _postgres()
-    connections.settings["pg"] = connections.configure_settings(
-        {"default": {"ENGINE": "django.db.backends.sqlite3"}, "pg": config}
-    )["pg"]
-    settings.DATABASES["pg"] = connections.settings["pg"]
-    try:
-        with django_db_blocker.unblock():
-            yield "pg"
-    finally:
-        connections["pg"].close()
-        del connections["pg"]
-        connections.settings.pop("pg", None)
-        settings.DATABASES.pop("pg", None)
-
-
 def test_postgres_snapshot(pg: str) -> None:
     with scratch_database(pg) as connection:
         assert connection.settings_dict["NAME"].startswith("cleanmig_")
@@ -353,7 +255,7 @@ def test_postgres_snapshot(pg: str) -> None:
 def test_postgres_drop_forced(pg: str) -> None:
     import psycopg
 
-    config = _postgres()
+    config = SERVERS[pg]
     with scratch_database(pg) as connection:
         name = connection.settings_dict["NAME"]
         # A connection the command doesn't know about: plain DROP DATABASE
@@ -429,3 +331,152 @@ def test_postgres_scratch_name_taken(pg: str, monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr(scratch_module, "_scratch_name", lambda name, length: name)
     with pytest.raises(ScratchDatabaseError, match="it is a real database's name"):
         scratch_database(pg).__enter__()
+
+
+# MySQL and MariaDB
+
+MY_TABLE = (
+    "CREATE TABLE t (id int AUTO_INCREMENT PRIMARY KEY,"
+    " p int NOT NULL, n int CHECK (n > 0), body text DEFAULT ('x'),"
+    " name varchar(10) COLLATE utf8mb4_bin COMMENT 'the name',"
+    " KEY t_p (p)) COMMENT 'things'"
+)
+
+
+SERVERS_KIND = {"mysql": backends.MYSQL, "mariadb": backends.MARIADB}
+SERVER_NAMES = {"mysql": "MySQL", "mariadb": "MariaDB"}
+
+
+def my_snapshot(alias: str, *statements: str) -> Snapshot:
+    with scratch_database(alias) as connection:
+        with connection.cursor() as cursor:
+            for sql in statements:
+                cursor.execute(sql)
+        return take_snapshot(connection)
+
+
+def test_mysql_snapshot(my: str) -> None:
+    base = my_snapshot(
+        my,
+        "CREATE TABLE parent (id int PRIMARY KEY)",
+        MY_TABLE,
+        "ALTER TABLE t ADD CONSTRAINT t_fk FOREIGN KEY (p) REFERENCES parent (id)",
+        "CREATE VIEW v AS SELECT id FROM t",
+        "CREATE TRIGGER tr BEFORE INSERT ON t FOR EACH ROW SET NEW.n = 1",
+        "CREATE FUNCTION f() RETURNS int DETERMINISTIC RETURN 1",
+        "INSERT INTO parent VALUES (1)",
+        "INSERT INTO t (p, n, name) VALUES (1, 2, 'a')",
+    )
+    assert {key[0] for key in base.schema} >= {
+        "table",
+        "columns",
+        "index",
+        "constraint",
+        "key column",
+        "foreign key",
+        "check",
+        "trigger",
+        "view",
+        "routine",
+    }
+    assert [c[0] for c in base.schema[("columns", "t", "t")]] == [
+        "id",
+        "p",
+        "n",
+        "body",
+        "name",
+    ]
+    # body, id, n (the trigger's), name, p
+    assert base.data["t"] == Counter({("'x'", "1", "1", "'a'", "1"): 1})
+    # Checks are told apart by table (MariaDB names them after the column).
+    assert [k for k in base.schema if k[0] == "check"] == [("check", "t", "n")] or [
+        k for k in base.schema if k[0] == "check"
+    ] == [("check", "t", "t_chk_1")]
+
+
+@pytest.mark.parametrize(
+    ("table", "what"),
+    [
+        (MY_TABLE.replace("KEY t_p (p)", "KEY t_p2 (p)"), "index t_p2 unexpected"),
+        (MY_TABLE.replace("DEFAULT ('x')", "DEFAULT ('y')"), "columns t changed: body"),
+        (
+            MY_TABLE.replace("utf8mb4_bin", "utf8mb4_general_ci"),
+            "columns t changed: name",
+        ),
+        (MY_TABLE.replace("'the name'", "'a name'"), "columns t changed: name"),
+        (MY_TABLE.replace("'things'", "'stuff'"), "table t changed"),
+        (
+            MY_TABLE.replace(
+                " p int NOT NULL, n int CHECK (n > 0),",
+                " n int CHECK (n > 0), p int NOT NULL,",
+            ),
+            "columns t changed",
+        ),
+    ],
+)
+def test_mysql_differences(my: str, table: str, what: str) -> None:
+    base = my_snapshot(my, MY_TABLE)
+    other = my_snapshot(my, table)
+    details = [d.detail for d in base.differences(other, Mask())]
+    assert any(d.startswith(what) for d in details), details
+
+
+def test_mysql_trial(my: str, project: Project) -> None:
+    # The removal the static rules keep on MySQL (see test_backends), found
+    # by the trial when the rules don't know the server.
+    project.migration(
+        "shop",
+        "0001_initial",
+        """
+        migrations.CreateModel("Parent", [("id", models.AutoField(primary_key=True))]),
+        migrations.CreateModel(
+            "Child",
+            [
+                ("id", models.AutoField(primary_key=True)),
+                ("x", models.IntegerField()),
+                ("parent", models.ForeignKey("shop.parent", models.CASCADE)),
+            ],
+        ),
+        """,
+    )
+    project.migration(
+        "shop",
+        "0002_add",
+        'migrations.AlterUniqueTogether("child", {("parent", "x")}),',
+    )
+    project.migration(
+        "shop", "0003_drop", 'migrations.AlterUniqueTogether("child", set()),'
+    )
+    static = project.clean()
+    assert static.options["backends"] == [SERVERS_KIND[my]]
+    assert static.removals == []
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(backends, "configured", lambda: frozenset())
+        assert project.clean().removals
+        result = project.check_equivalence(trial=True, database=my)
+    assert result.removals == []
+    (reason,) = blocked(result)["shop.Child unique_together (parent, x)"]
+    assert reason.startswith("trial: schema of table shop_child differs (index")
+    info = result.verification
+    assert (info["vendor"], info["server"]) == ("mysql", SERVER_NAMES[my])
+
+
+def test_mysql_noop_trial(my: str, project: Project) -> None:
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration(
+        "shop",
+        "0002_data",
+        "migrations.RunPython(migrations.RunPython.noop),",
+    )
+    project.migration(
+        "shop",
+        "0003_qty",
+        'migrations.AddField("item", "qty", models.TextField(default="a")),',
+    )
+    result = project.check_equivalence(
+        trial=True, noop_data=True, prune=True, database=my, skip_kinds=[]
+    )
+    assert [r.kind for r in result.removals if r.kind == "noop"] == ["noop"]
+    # The TEXT default: kept out of the CreateModel on MySQL only.
+    folded = any(r.kind == "fold" for r in result.removals)
+    assert folded is (my == "mariadb")

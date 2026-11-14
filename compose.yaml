@@ -1,5 +1,5 @@
-# PostgreSQL for the tests, on a non-default port so it doesn't clash with any
-# local installation. Start it with:
+# The database servers for the tests, on non-default ports so they don't
+# clash with any local installation. Start them with:
 #
 #   docker compose up -d --wait
 
@@ -16,3 +16,27 @@ services:
       interval: 2s
       timeout: 5s
       retries: 15
+
+  mysql:
+    image: mysql:latest
+    environment:
+      MYSQL_ROOT_PASSWORD: mysql
+    ports:
+    - 127.0.0.1:53306:3306
+    healthcheck:
+      test: [CMD, mysqladmin, ping, --host=127.0.0.1, --user=root, --password=mysql]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  mariadb:
+    image: mariadb:latest
+    environment:
+      MARIADB_ROOT_PASSWORD: mariadb
+    ports:
+    - 127.0.0.1:53307:3306
+    healthcheck:
+      test: [CMD, healthcheck.sh, --connect, --innodb_initialized]
+      interval: 2s
+      timeout: 5s
+      retries: 30

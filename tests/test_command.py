@@ -14,7 +14,6 @@ from django_clean_migrations.management.commands.clean_migrations import (
 )
 from tests.project import Project
 from tests.test_clean import ITEM
-from tests.test_snapshots import pg  # noqa: F401
 
 
 @pytest.fixture
@@ -369,7 +368,7 @@ def test_trial_masked_tables(project: Project) -> None:
     assert "not compared: shop_item." in out
 
 
-def test_trial_report_postgres(project: Project, pg: str) -> None:  # noqa: F811
+def test_trial_report_postgres(project: Project, pg: str) -> None:
     from tests.test_trial import MENTIONED
     from tests.test_trial import history as trial_history
 
