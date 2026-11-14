@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import itertools
+import json
 import sys
 from argparse import ArgumentParser
 from dataclasses import dataclass
@@ -10,9 +11,11 @@ from typing import Any
 from django.core.management.base import CommandError
 from django_rich.management import RichCommand
 from rich.console import Console
+from rich.table import Table
 from rich.text import Text
 
 from django_clean_migrations.core import CleanError, Removal, Result, load_plan, plan
+from django_clean_migrations.profile import Profile, profile
 from django_clean_migrations.solver import KINDS, OPAQUE_POLICIES
 
 KIND_STYLES = {
@@ -44,7 +47,7 @@ class Command(RichCommand):
 
     def add_arguments(self, parser: ArgumentParser) -> None:
         subparsers = parser.add_subparsers(
-            dest="subcommand", metavar="{plan,apply}", title="subcommands"
+            dest="subcommand", metavar="{plan,apply,profile}", title="subcommands"
         )
         plan_parser = subparsers.add_parser(
             "plan",
@@ -83,6 +86,31 @@ class Command(RichCommand):
         _add_selection_arguments(apply_parser)
         _add_show_blocked(apply_parser)
         _add_common_arguments(apply_parser)
+        profile_parser = subparsers.add_parser(
+            "profile",
+            help="Migrate a scratch database from scratch and report where the"
+            " time goes.",
+            description="Create an empty scratch database, run the whole"
+            " migration history on it, report timings, and drop it. The real"
+            " database is never touched.",
+        )
+        profile_parser.add_argument(
+            "--database",
+            default="default",
+            help="Database alias whose backend and settings to use (default:"
+            " 'default').",
+        )
+        profile_parser.add_argument(
+            "--top",
+            type=int,
+            default=10,
+            metavar="N",
+            help="How many of the slowest migrations to list (default 10).",
+        )
+        profile_parser.add_argument(
+            "--json", action="store_true", help="Print the report as JSON."
+        )
+        _add_common_arguments(profile_parser)
 
     def handle(self, *args: Any, **options: Any) -> None:
         subcommand = options.get("subcommand")
@@ -90,6 +118,9 @@ class Command(RichCommand):
             self.print_help("manage.py", "clean_migrations")
             return
         verbosity: int = options["verbosity"]
+        if subcommand == "profile":
+            self._profile(options, verbosity)
+            return
         show_blocked = options["show_blocked"] or verbosity >= 2
         if subcommand == "apply" and options["plan_file"]:
             if _has_selection(options):
@@ -127,6 +158,98 @@ class Command(RichCommand):
                 result.write()
             except CleanError as exc:
                 raise CommandError(str(exc)) from exc
+
+    def _profile(self, options: dict[str, Any], verbosity: int) -> None:
+        count = [0]
+
+        def progress(event: str, key: tuple[str, str] | None) -> None:
+            if key is not None and status is not None:
+                count[0] += 1
+                status.update(f"Migrating {key[0]}.{key[1]} ({count[0]})...")
+
+        try:
+            if verbosity > 0 and not options["json"]:
+                with self.console.status(
+                    "Creating a scratch database...", spinner="dots"
+                ) as status:
+                    result = profile(options["database"], progress)
+            else:
+                status = None
+                result = profile(options["database"], progress)
+        except CleanError as exc:
+            raise CommandError(str(exc)) from exc
+        if options["json"]:
+            self.stdout.write(json.dumps(result.as_dict(options["top"]), indent=2))
+            return
+        if verbosity > 0:
+            self._report_profile(result, options["top"])
+
+    def _report_profile(self, result: Profile, top: int) -> None:
+        total = result.total or 1e-9
+
+        def pct(seconds: float) -> str:
+            return f"{100 * seconds / total:.1f}%"
+
+        self._print(
+            Text(
+                f"Migrated {len(result.migrations)} migrations in"
+                f" {result.total:.2f}s on {result.vendor}"
+                f" ({result.operations_total:.2f}s inside operations).",
+                style="bold",
+            )
+        )
+        table = Table(title=f"Slowest {top} migrations", title_justify="left")
+        table.add_column("Migration")
+        table.add_column("Operations", justify="right")
+        table.add_column("Seconds", justify="right")
+        table.add_column("Share", justify="right")
+        for key, seconds in result.slowest(top):
+            table.add_row(
+                f"{key[0]}.{key[1]}",
+                str(result.migration_ops.get(key, 0)),
+                f"{seconds:.3f}",
+                pct(seconds),
+            )
+        self.console.print(table)
+        table = Table(title="By operation type", title_justify="left")
+        table.add_column("Operation")
+        table.add_column("Count", justify="right")
+        table.add_column("Seconds", justify="right")
+        table.add_column("Share", justify="right")
+        for name, stats in sorted(
+            result.by_type.items(), key=lambda kv: -kv[1].seconds
+        ):
+            table.add_row(
+                name, str(stats.count), f"{stats.seconds:.3f}", pct(stats.seconds)
+            )
+        self.console.print(table)
+        table = Table(title="By app", title_justify="left")
+        table.add_column("App")
+        table.add_column("Seconds", justify="right")
+        table.add_column("Share", justify="right")
+        for app, seconds in sorted(result.by_app.items(), key=lambda kv: -kv[1]):
+            table.add_row(app, f"{seconds:.3f}", pct(seconds))
+        self.console.print(table)
+        if result.removable is None:
+            self._print(
+                Text(
+                    f"Could not make the default plan: {result.plan_error}",
+                    style="yellow",
+                )
+            )
+        else:
+            assert result.editable is not None
+            self._print(
+                Text(
+                    f"The default plan removes {_ops(result.removable_count)}"
+                    f" taking {result.removable:.3f}s ({pct(result.removable)}),"
+                    f" and edits operations taking {result.editable:.3f}s"
+                    f" ({pct(result.editable)}).",
+                    style="bold green",
+                )
+            )
+        for note in result.notes:
+            self._print(Text(note, style="dim"))
 
     def _analyse(self, options: dict[str, Any], verbosity: int) -> Result:
         try:

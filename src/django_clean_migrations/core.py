@@ -148,6 +148,10 @@ class Result:
     """The options the plan was made with, as passed to ``plan()``."""
     verification: dict[str, Any] = field(default_factory=lambda: {"mode": "static"})
     """How the plan was checked before being reported."""
+    removed_positions: frozenset[tuple[Key, int]] = frozenset()
+    """(migration, operation index) of every operation removed outright."""
+    edited_positions: frozenset[tuple[Key, int]] = frozenset()
+    """(migration, operation index) of every operation edited."""
     _plan_keys: list[Key] | None = field(default=None, repr=False)
     _final_state: ProjectState | None = field(default=None, repr=False)
 
@@ -456,6 +460,18 @@ def plan(
             "opaque": opaque,
             "elidable": elidable,
         },
+        removed_positions=frozenset(
+            (history.migrations[m].key, i)
+            for m, op_edits in edits.items()
+            for i, e in op_edits.items()
+            if e.remove
+        ),
+        edited_positions=frozenset(
+            (history.migrations[m].key, i)
+            for m, op_edits in edits.items()
+            for i, e in op_edits.items()
+            if not e.remove and not e.empty
+        ),
         _plan_keys=list(history.plan),
         _final_state=timeline.state,
     )

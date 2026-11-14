@@ -164,6 +164,11 @@ class Project:
         call_command("clean_migrations", *args, stdout=out, stderr=err, **options)
         return out.getvalue(), err.getvalue()
 
+    def command_db(self, *args: str, **options: Any) -> tuple[str, str]:
+        """Like command(), allowing database access (scratch databases)."""
+        with self.db_blocker.unblock():
+            return self.command(*args, **options)
+
     def migrate_schema(self) -> dict[str, Any]:
         """Migrate a fresh SQLite database from scratch and introspect it."""
         self.activate()

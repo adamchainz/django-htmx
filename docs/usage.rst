@@ -332,6 +332,35 @@ Functions that only an operation used, such as a ``RunPython`` callable, are lef
 
 .. _verifying-your-schema:
 
+Profiling migrations
+--------------------
+
+``clean_migrations profile`` shows where the time goes when migrating from scratch.
+It creates an empty scratch database, runs the whole history on it with Django’s migration executor, prints timings, and drops the database:
+
+.. code-block:: console
+
+    $ python manage.py clean_migrations profile --top 5
+    Migrated 412 migrations in 48.31s on postgresql (39.02s inside operations).
+    Slowest 5 migrations
+    ...
+    By operation type
+    ...
+    By app
+    ...
+    The default plan removes 151 operations taking 6.204s (12.8%), and edits operations taking 0.412s (0.9%).
+
+It reports the total time, the slowest migrations (``--top N``, default 10), time by operation type and by app, and how much of the time is spent in operations that ``plan`` (with default options) would remove or edit.
+Operation times include rendering model states, which Django does lazily inside operations.
+``post_migrate`` signal handlers, such as creating content types and permissions, are not run: they are not part of the history.
+``--json`` prints the same report as JSON.
+
+The scratch database uses the backend and settings of the ``default`` database, or of ``--database ALIAS``.
+For SQLite it is a temporary file; for PostgreSQL and MySQL a new database named ``cleanmig_<random>_<name>`` is created next to the real one, so the database user needs permission to create databases, as for running tests.
+While migrating, the alias is pointed at the scratch database, as Django’s test runner does, so data migrations that query the default database run against it.
+It is always dropped afterwards, also on errors and interrupts.
+The real database is never touched, but data migrations that explicitly use *another* database alias would still reach that database.
+
 Verifying your schema
 ---------------------
 
