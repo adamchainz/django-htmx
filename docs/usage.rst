@@ -450,7 +450,7 @@ Once operations are removed and folded, many migrations are left with no operati
     ...
     Removed 42 operations in 30 migration files. 12 migrations deleted.
 
-Every remaining migration still runs after exactly the same migrations as before (minus the deleted ones): a dependency is only added where the migration didn't already have it through its other dependencies, and the result is checked, in memory and after writing the files.
+Every remaining migration still runs after exactly the same migrations as before (minus the deleted ones), ``migrate`` runs them in exactly the same order, and every app keeps its first and latest migrations: a dependency is only added where the migration didn't already have it through its other dependencies, and the result is checked, in memory and after writing the files.
 Migrations that were already empty are pruned too.
 
 A migration is kept, and listed with ``--show-blocked``, when:
@@ -476,6 +476,8 @@ Rewritten dependency lists keep their other entries as written, ``swappable_depe
     * Tooling that names migrations, such as ``migrate app 0042_x`` in scripts or documentation, needs updating.
 
 With ``--trial``, the trial runs use the pruned graph too, and expect exactly the pruned migrations to be missing from ``django_migrations``.
+If the plan fails its trial run and nothing more can be blamed, the trial doesn’t give up: it drops ``--prune``, then ``--noop-data``, then what it blocked itself, trying again each time, and says which layer it dropped and why (``verification.dropped`` in the plan file).
+If even the default plan differs, that plan is reported with a warning that the trial didn’t verify it.
 
 
 No-op data migrations

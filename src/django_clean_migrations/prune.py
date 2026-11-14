@@ -21,7 +21,13 @@ from typing import TYPE_CHECKING
 from django.db.migrations.graph import MigrationGraph
 from django.db.migrations.operations.base import Operation
 
-from django_clean_migrations.history import History, Key, MigrationInfo, SourceFile
+from django_clean_migrations.history import (
+    History,
+    Key,
+    MigrationInfo,
+    SourceFile,
+    generate_plan,
+)
 
 if TYPE_CHECKING:
     from django_clean_migrations.solver import Scope
@@ -104,18 +110,54 @@ def plan_prune(
             literal_deps[key] = _literal_dependencies(by_key[key])
         return literal_deps[key]
 
-    while True:
-        _block_unrewritable(plan, pruned, graph, by_key, scope, literals)
-        if not pruned:
-            plan.dependants, plan.parents, plan.added, plan.removed = {}, {}, {}, {}
-            return plan
-        # Rewire; a dependency the dependants need copied must be a plain
-        # tuple in the pruned file (not a swappable or __first__ one).
-        if not _rewire(plan, pruned, history, literals):
+    def settle(chosen: set[Key]) -> PrunePlan:
+        """The prune plan for ``chosen``, minus what must be kept."""
+        attempt = PrunePlan(blocked=dict(plan.blocked))
+        remaining = set(chosen)
+        while True:
+            _block_unrewritable(attempt, remaining, graph, by_key, scope, literals)
+            # A dependency the dependants need copied must be a plain tuple
+            # in the pruned file (not a swappable or __first__ one).
+            if remaining and _rewire(attempt, remaining, history, literals):
+                continue
             break
-    plan.pruned = sorted(pruned, key=lambda k: by_key[k].index)
-    check_ancestors(history, plan)
-    return plan
+        if not remaining:
+            attempt.dependants, attempt.parents = {}, {}
+            attempt.added, attempt.removed = {}, {}
+        attempt.pruned = sorted(remaining, key=lambda k: by_key[k].index)
+        return attempt
+
+    result = settle(pruned)
+    if result.pruned and not _same_order(history, result):
+        # migrate must still run the others in exactly the same order: two
+        # unordered migrations that swap could, say, add columns to a table
+        # in another order. Keep adding migrations to prune, in plan order,
+        # as long as the order holds.
+        accepted: set[Key] = set()
+        best = settle(accepted)
+        for key in result.pruned:
+            attempt = settle(accepted | {key})
+            if key in attempt.pruned and _same_order(history, attempt):
+                accepted = set(attempt.pruned)
+                best = attempt
+        for key in result.pruned:
+            if key not in best.pruned and key not in best.blocked:
+                best.blocked[key] = (
+                    "deleting it would change the order migrate runs the other"
+                    " migrations in"
+                )
+        result = best
+    if result.pruned:
+        check_ancestors(history, result)
+    return result
+
+
+def _same_order(history: History, plan: PrunePlan) -> bool:
+    """Whether Django's plan (MigrationGraph's depth-first walk, following
+    each migration's sorted dependencies) is the old one minus the pruned."""
+    pruned = set(plan.pruned)
+    old = [k for k in history.plan if k not in pruned]
+    return generate_plan(pruned_graph(history.loader.graph, plan)) == old
 
 
 def _block_unrewritable(

@@ -416,3 +416,102 @@ def test_pruned_merge_migration(project: Project) -> None:
     text = project.read("shop", "0004_more")
     assert '("shop", "0002_a")' in text and '("shop", "0002_b")' in text
     assert leaves_and_roots(project) == before
+
+
+def test_merge_with_branch_reached_through_other_app(project: Project) -> None:
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration("shop", "0002_a", QTY)
+    project.migration(
+        "shop",
+        "0002_b",
+        'migrations.AddField("item", "size", models.IntegerField(default=1)),',
+        deps=[("shop", "0001_initial")],
+    )
+    project.migration(
+        "other",
+        "0001_initial",
+        'migrations.RunSQL("SELECT 1"),',
+        deps=[("shop", "0002_a")],
+    )
+    project.migration(
+        "shop", "0003_merge", "", deps=[("shop", "0002_a"), ("shop", "0002_b")]
+    )
+    # As saleor's payment.0032: it depends on the merge and on another app's
+    # migration that already runs after one branch.
+    project.migration(
+        "shop",
+        "0004_more",
+        'migrations.RunSQL("SELECT 2"),',
+        deps=[("shop", "0003_merge"), ("other", "0001_initial")],
+    )
+    project.activate()
+    before = leaves_and_roots(project)
+    result = project.check_equivalence(**PRUNE)
+    assert pruned(result) == ["shop.0003_merge"]
+    text = project.read("shop", "0004_more")
+    assert '("shop", "0002_a")' in text and '("shop", "0002_b")' in text
+    assert leaves_and_roots(project) == before
+
+
+def plan_order(project: Project) -> list[tuple[str, str]]:
+    from django_clean_migrations.history import generate_plan
+
+    project.purge()
+    with project.db_blocker.unblock():
+        return generate_plan(MigrationLoader(None, ignore_no_migrations=True).graph)
+
+
+def test_order_preserved(project: Project) -> None:
+    sql = 'migrations.RunSQL("SELECT 1"),'
+    project.migration("cc", "0001_initial", sql)
+    project.migration("cc", "0002_more", sql)
+    project.migration("bb", "0001_initial", sql)
+    project.migration("aa", "0001_initial", sql)
+    project.migration("aa", "0002_empty", "", extra_deps=[("cc", "0002_more")])
+    project.migration("aa", "0003_more", sql, extra_deps=[("bb", "0001_initial")])
+    project.activate()
+    before = plan_order(project)
+    result = project.check_equivalence(**PRUNE)
+    # Rewired to cc.0002, aa.0003 would make migrate run cc's migrations
+    # before bb.0001: kept.
+    assert pruned(result) == []
+    assert "order" in prune_blocks(result)["aa.0002_empty"]
+    assert plan_order(project) == before
+
+
+def test_trial_drops_prune_when_it_fails(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from django_clean_migrations import runner
+    from django_clean_migrations.prune import PruneError
+
+    dead_field(project)
+
+    def broken(*args: Any) -> None:
+        raise PruneError("simulated")
+
+    monkeypatch.setattr(runner, "check_ends", broken)
+    result = project.check_equivalence(trial=True, **PRUNE)
+    assert pruned(result) == []
+    assert result.verification["dropped"][0].startswith("--prune (")
+    assert result.removals  # the rest of the plan stays
+
+
+def test_trial_never_ends_with_nothing(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from django.db import migrations
+
+    from django_clean_migrations import trial as trial_module
+
+    dead_field(project)
+
+    def sabotage(operations: dict[Any, list[Any]], passes: int) -> None:
+        for ops in operations.values():
+            ops.append(migrations.RunSQL("SELECT * FROM nowhere"))
+
+    monkeypatch.setattr(trial_module, "_candidate_hook", sabotage)
+    result = project.clean(trial=True, trial_max_runs=1, **PRUNE)
+    assert result.removals
+    assert any("NOT verified" in w for w in result.warnings)
+    assert result.verification["dropped"][-1].startswith("the trial itself")

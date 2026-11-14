@@ -261,6 +261,10 @@ def verify_on_disk(
                 "the migration graph doesn't hold exactly the migrations that"
                 " were not pruned"
             )
+        if plan != expected_keys:
+            raise VerificationError(
+                "after pruning, migrate would run the other migrations in another order"
+            )
         if ancestors is not None:
             found = ancestor_sets(loader.graph, plan)
             for key in plan:

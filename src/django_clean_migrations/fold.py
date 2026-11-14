@@ -206,9 +206,13 @@ class Folder:
         up in the database (an extension such as hstore, a type, a function),
         possibly by a RunSQL or custom operation between P and E: creating
         the column at P would come before it. Such fields aren't folded
-        across any opaque operation other than RunPython.
+        across any opaque operation other than RunPython. Nor are fields
+        with a ``db_collation``, which such an operation may create
+        (NetBox's natural_sort collation).
         """
-        if type(field).__module__.startswith("django.db.models"):
+        if type(field).__module__.startswith("django.db.models") and not getattr(
+            field, "db_collation", None
+        ):
             return True
         index = self.solver.opaque
         return not any(

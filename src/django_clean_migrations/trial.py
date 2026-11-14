@@ -146,6 +146,9 @@ class Trial:
         """(plan index, index on disk) of data migrations that did nothing on
         the baseline run, with what they did."""
         self.noop_keys: dict[str, tuple[int, int]] = {}
+        self.dropped: list[str] = []
+        """Optional layers given up because the plan failed with them."""
+        self._blocks_dropped = False
         self.wrote: dict[tuple[int, int], frozenset[str]] = {}
         """(plan index, index on disk) of opaque operations -> the tables
         they wrote to on the baseline run."""
@@ -567,13 +570,37 @@ class Trial:
                 )
                 continue
             problems = [f.describe() for f in failures] + [str(d) for d in diffs]
-            raise CleanError(
-                "Even the static plan failed its trial run, so nothing can be"
-                " planned with --trial: "
-                + "; ".join(problems[:5])
-                + "".join(f"\n{f.traceback}" for f in failures[:1])
-                + ENVIRONMENT_HINT
+            # Never end with nothing: drop one layer at a time, and say so.
+            layer = self._drop_layer(problems)
+            if layer is None:
+                break
+            if layer == "noop":
+                static = self.analysis.solve(trial_blocked=trial_blocked)
+            elif layer == "trial blocks":
+                trial_blocked = {}
+                static = self.analysis.solve()
+        if outcome is not None:
+            # Even the plain static plan differs: report it, untrialled, and
+            # say why loudly rather than abort after many runs.
+            solution = static = self.analysis.solve()
+            built = build(self.analysis, solution)
+            problems = [f.describe() for f in outcome[0]] + [str(d) for d in outcome[1]]
+            message = (
+                "The static plan failed its trial run, so this plan is NOT"
+                " verified by the trial: " + "; ".join(problems[:5]) + ENVIRONMENT_HINT
             )
+            self.dropped.append(f"the trial itself ({problems[0]})")
+            self._say(message, note=True)
+            result = self._result(
+                make_result(self.analysis, solution, built),
+                solution,
+                static,
+                {},
+                True,
+                begin,
+            )
+            result.warnings.append(message)
+            return result
         return self._result(
             make_result(self.analysis, solution, built),
             solution,
@@ -582,6 +609,32 @@ class Trial:
             fallback,
             begin,
         )
+
+    def _drop_layer(self, problems: list[str]) -> str | None:
+        """
+        The static plan failed its trial and nothing more can be blamed:
+        drop the next optional layer (--prune, then --noop-data, then what
+        the trial blocked), say so, and return which; None if none is left.
+        """
+        reason = problems[0] if problems else "unknown"
+        if self.analysis.options.get("prune"):
+            self.analysis.options["prune"] = False
+            layer, label = "prune", "--prune"
+        elif self.noop:
+            self.noop.clear()
+            self.noop_keys.clear()
+            layer, label = "noop", "--noop-data"
+        elif not self._blocks_dropped:
+            self._blocks_dropped = True
+            layer, label = "trial blocks", "the trial's own blocks"
+        else:
+            return None
+        self.dropped.append(f"{label} ({reason})")
+        self._say(
+            f"The plan failed its trial run with {label}; trying without it: {reason}",
+            note=True,
+        )
+        return layer
 
     def _candidate(
         self, solution: Solution, built: Built, reference: Snapshot
@@ -820,6 +873,7 @@ class Trial:
             if self.noop_data
             else None,
             "trial_blocked": len(trial_blocked),
+            "dropped": list(self.dropped),
             "fallback": fallback,
             "can_rollback_ddl": self.can_rollback_ddl,
             "nondeterministic_tables": sorted(self.masked | self.mask.tables),

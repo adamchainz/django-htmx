@@ -589,9 +589,9 @@ class TestDatabaseNames:
         )
         assert folds(project.check_equivalence(**FOLD)) == []
 
-    @pytest.mark.parametrize("custom", [True, False])
+    @pytest.mark.parametrize("custom", [True, False, "collation"])
     def test_custom_field_not_folded_across_setup(
-        self, project: Project, custom: bool
+        self, project: Project, custom: bool | str
     ) -> None:
         # A RunSQL may create what a custom column type needs (CREATE
         # EXTENSION hstore): the column can't move before it.
@@ -600,7 +600,10 @@ class TestDatabaseNames:
             "from django.db import models\n\n\nclass Tagged(models.TextField):\n"
             "    pass\n"
         )
-        field = "Tagged" if custom else "models.TextField"
+        field = "Tagged" if custom is True else "models.TextField"
+        if custom == "collation":
+            field = 'functools.partial(models.TextField, db_collation="nocase")'
+
         project.migration(
             "shop",
             "0002_tags",
@@ -608,9 +611,9 @@ class TestDatabaseNames:
             migrations.RunSQL("SELECT 1"),
             migrations.AddField("item", "tags", {field}(default="")),
             """,
-            extra=f"from {project.package}.shop.fields import Tagged",
+            extra=f"import functools\nfrom {project.package}.shop.fields import Tagged",
         )
-        assert bool(folds(project.check_equivalence(**FOLD))) is not custom
+        assert bool(folds(project.check_equivalence(**FOLD))) is not bool(custom)
 
     def test_same_check_folds(self, project: Project) -> None:
         project.migration("shop", "0001_initial", ITEM)
