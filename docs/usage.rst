@@ -535,9 +535,11 @@ Nothing in Django depends on that order, but a trial compares it anyway, so its 
 ``--trial-ignore-column-order`` turns that comparison off.
 A plan made without a trial on SQLite says, in its summary, when it may change column order.
 
-Removals the default plan makes on its own are never blamed for a failure: they are proven without a trial.
-The exceptions are folds, no-op data migrations (see below), and SQLite column order: when the default plan’s own trial run fails or differs because of one of those, it is solved again without them.
-Only removals that the name scan would have kept, and folds, are tried and blocked on evidence.
+Removals that the name scan would have kept, folds and no-op data migrations are the first suspects of a failure or difference.
+The removals the default plan makes on its own are blamed only when nothing else explains it: the static analysis can't see everything (a model a data migration names by a computed string, database objects whose names depend on the backend's history), so none is taken as proven once a trial run differs.
+A problem is blamed on what it names (a field, a model, a table) when it can be, else on half of the suspects at a time, and the plan is solved again without what was blamed, until a plan passes its own trial run.
+Only when nothing is left to blame are ``--prune`` and then ``--noop-data`` given up, with a note.
+If even that plan fails, ``plan --trial`` exits with an error and ``apply --trial`` writes nothing.
 
 Pruning empty migrations
 ------------------------

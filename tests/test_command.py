@@ -389,7 +389,7 @@ def test_trial_fallback_report(
         return None if self.passes > 1 else ([], [])
 
     monkeypatch.setattr(trial.Trial, "_candidate", candidate)
-    monkeypatch.setattr(trial.Trial, "_attribute", lambda *args: {})
+    monkeypatch.setattr(trial.Trial, "_attribute", lambda *args, **kwargs: {})
     out, _ = history.command_db("plan", "--trial")
     assert "The trial didn't converge, so this is the static plan" in out
 
@@ -397,3 +397,25 @@ def test_trial_fallback_report(
 def test_sqlite_order_warning_other_alias(history: Project) -> None:
     result = history.clean()
     assert sqlite_order_warning(result, "nope") is None
+
+
+def test_trial_failure_writes_nothing(
+    history: Project, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from django_clean_migrations import trial
+    from tests.test_trial import FAILURE
+
+    def candidate(self: Any, solution: Any, built: Any, reference: Any) -> Any:
+        self.passes += 1
+        return ([FAILURE], [])
+
+    monkeypatch.setattr(trial.Trial, "_candidate", candidate)
+    monkeypatch.setattr(trial.Trial, "_attribute", lambda *args, **kwargs: {})
+    before = history.files()
+    plan_path = tmp_path / "plan.toml"
+    with pytest.raises(CommandError, match="found no plan"):
+        history.command_db("plan", "--trial", "-o", str(plan_path))
+    assert not plan_path.exists()
+    with pytest.raises(CommandError, match="found no plan"):
+        history.command_db("apply", "--trial")
+    assert history.files() == before

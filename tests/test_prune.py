@@ -22,7 +22,7 @@ from django_clean_migrations.prune import (
 )
 from django_clean_migrations.verify import VerificationError
 from tests.project import Project
-from tests.test_clean import ITEM
+from tests.test_clean import ITEM, blocked
 
 PRUNE: dict[str, Any] = {"prune": True}
 LEGACY = 'migrations.AddField("item", "legacy", models.IntegerField(default=0)),'
@@ -506,7 +506,7 @@ def test_trial_drops_prune_when_it_fails(
     assert result.removals  # the rest of the plan stays
 
 
-def test_trial_never_ends_with_nothing(
+def test_trial_blames_until_a_plan_passes(
     project: Project, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from django.db import migrations
@@ -520,10 +520,11 @@ def test_trial_never_ends_with_nothing(
             ops.append(migrations.RunSQL("SELECT * FROM nowhere"))
 
     monkeypatch.setattr(trial_module, "_candidate_hook", sabotage)
+    # Every edited migration fails: blamed until nothing is edited.
     result = project.clean(trial=True, trial_max_runs=1, **PRUNE)
-    assert result.removals
-    assert any("NOT verified" in w for w in result.warnings)
-    assert result.verification["dropped"][-1].startswith("the trial itself")
+    assert result.removals == []
+    assert result.verification["dropped"] == []
+    assert "no such table: nowhere" in blocked(result)["shop.Item.legacy"][0]
 
 
 def same_app_shape(project: Project) -> None:

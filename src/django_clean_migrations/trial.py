@@ -73,6 +73,10 @@ _candidate_hook: Callable[[dict[Key, list[Operation]], int], None] | None = None
 """Test hook: may alter a candidate's operations before pass ``n`` runs."""
 
 
+class TrialFailed(CleanError):
+    """No plan passes its trial run: nothing may be written."""
+
+
 @dataclass(frozen=True)
 class TrialFailure:
     migration: Key
@@ -148,7 +152,6 @@ class Trial:
         self.noop_keys: dict[str, tuple[int, int]] = {}
         self.dropped: list[str] = []
         """Optional layers given up because the plan failed with them."""
-        self._blocks_dropped = False
         self.wrote: dict[tuple[int, int], frozenset[str]] = {}
         """(plan index, index on disk) of opaque operations -> the tables
         they wrote to on the baseline run."""
@@ -428,9 +431,9 @@ class Trial:
                 + ".",
                 note=True,
             )
-        # Only what the static analysis alone proves is never blamed: not
-        # folds (a snapshot difference may come from one: database object
-        # names), nor anything the removal of no-op data migrations unlocks.
+        # What the static analysis alone proves is blamed last, only when
+        # nothing else explains a difference (folds, and what removing no-op
+        # data migrations unlocks, are suspects from the start).
         static = self.analysis.solve()
         self.static_units = _proven(static)
         if self.noop:
@@ -509,6 +512,13 @@ class Trial:
                 break
             blocks = self._attribute(solution, outcome[0], outcome[1])
             fresh = {k: r for k, r in blocks.items() if k not in trial_blocked}
+            if not fresh:
+                # Nothing at risk explains it: what the static analysis
+                # removes isn't proven after all.
+                blocks = self._attribute(
+                    solution, outcome[0], outcome[1], include_static=True
+                )
+                fresh = {k: r for k, r in blocks.items() if k not in trial_blocked}
             self._say(
                 f"Run {self.passes}: {_count(len(outcome[0]), 'failure')},"
                 f" {_count(len(outcome[1]), 'difference')}; blocked"
@@ -539,6 +549,10 @@ class Trial:
         if not candidates:
             self._say("Nothing to unlock: only the static plan is trialled.", note=True)
 
+        # The static plan (with what the trial blocked) must pass its own
+        # run: nothing in it is proven once a run of it differs. Each run
+        # blocks something more (of finitely many removals), or drops a
+        # layer, or ends.
         while True:
             solution = static
             built = build(self.analysis, solution)
@@ -546,19 +560,19 @@ class Trial:
             if outcome is None:
                 break
             failures, diffs = outcome
-            # What the static plan builds on (folds, no-op data migrations,
-            # SQLite column moves) can be blamed too: solve it again without.
-            blocks = self._attribute(solution, failures, diffs)
+            blocks = self._attribute(solution, failures, diffs, include_static=True)
             fresh = {
                 k: r
                 for k, r in blocks.items()
                 if k not in trial_blocked and k in static.unit_keys()
             }
-            if fresh and self.passes < self.max_runs + 2:
+            problems = [f.describe() for f in failures] + [str(d) for d in diffs]
+            if fresh:
                 self._say(
                     f"Run {self.passes} (static plan): blocked {len(fresh)}: "
                     + ", ".join(sorted(fresh)[:5])
-                    + (", ..." if len(fresh) > 5 else ""),
+                    + (", ..." if len(fresh) > 5 else "")
+                    + "".join(f"\n  {p}" for p in problems[:5]),
                     note=True,
                 )
                 trial_blocked.update(fresh)
@@ -569,38 +583,19 @@ class Trial:
                     noop=self.noop, trial_blocked=trial_blocked
                 )
                 continue
-            problems = [f.describe() for f in failures] + [str(d) for d in diffs]
-            # Never end with nothing: drop one layer at a time, and say so.
-            layer = self._drop_layer(problems)
-            if layer is None:
-                break
-            if layer == "noop":
-                static = self.analysis.solve(trial_blocked=trial_blocked)
-            elif layer == "trial blocks":
-                trial_blocked = {}
-                static = self.analysis.solve()
-        if outcome is not None:
-            # Even the plain static plan differs: report it, untrialled, and
-            # say why loudly rather than abort after many runs.
-            solution = static = self.analysis.solve()
-            built = build(self.analysis, solution)
-            problems = [f.describe() for f in outcome[0]] + [str(d) for d in outcome[1]]
-            message = (
-                "The static plan failed its trial run, so this plan is NOT"
-                " verified by the trial: " + "; ".join(problems[:5]) + ENVIRONMENT_HINT
+            # Nothing left to blame: drop an optional layer, or give up.
+            if self._drop_layer(problems):
+                static = self.analysis.solve(
+                    noop=self.noop, trial_blocked=trial_blocked
+                )
+                continue
+            raise TrialFailed(
+                "The trial found no plan that migrates a fresh"
+                f" {self.vendor} database like the original history, so"
+                " nothing was planned or written: "
+                + "; ".join(problems[:5])
+                + ENVIRONMENT_HINT
             )
-            self.dropped.append(f"the trial itself ({problems[0]})")
-            self._say(message, note=True)
-            result = self._result(
-                make_result(self.analysis, solution, built),
-                solution,
-                static,
-                {},
-                True,
-                begin,
-            )
-            result.warnings.append(message)
-            return result
         return self._result(
             make_result(self.analysis, solution, built),
             solution,
@@ -610,31 +605,28 @@ class Trial:
             begin,
         )
 
-    def _drop_layer(self, problems: list[str]) -> str | None:
+    def _drop_layer(self, problems: list[str]) -> bool:
         """
-        The static plan failed its trial and nothing more can be blamed:
-        drop the next optional layer (--prune, then --noop-data, then what
-        the trial blocked), say so, and return which; None if none is left.
+        The static plan failed its trial and nothing in it can be blamed:
+        drop the next optional layer (--prune, then --noop-data), say so,
+        and return whether there was one.
         """
-        reason = problems[0] if problems else "unknown"
+        reason = problems[0]
         if self.analysis.options.get("prune"):
             self.analysis.options["prune"] = False
-            layer, label = "prune", "--prune"
+            label = "--prune"
         elif self.noop:
             self.noop.clear()
             self.noop_keys.clear()
-            layer, label = "noop", "--noop-data"
-        elif not self._blocks_dropped:
-            self._blocks_dropped = True
-            layer, label = "trial blocks", "the trial's own blocks"
+            label = "--noop-data"
         else:
-            return None
+            return False
         self.dropped.append(f"{label} ({reason})")
         self._say(
             f"The plan failed its trial run with {label}; trying without it: {reason}",
             note=True,
         )
-        return layer
+        return True
 
     def _candidate(
         self, solution: Solution, built: Built, reference: Snapshot
@@ -700,6 +692,8 @@ class Trial:
         solution: Solution,
         failures: list[TrialFailure],
         diffs: list[Difference],
+        *,
+        include_static: bool = False,
     ) -> dict[str, str]:
         """
         Which removals to block for this run's failures and differences.
@@ -717,13 +711,20 @@ class Trial:
         # The static plan's pass 1/2 removals are proven without a trial; if
         # nothing else is to blame, the loop falls back to the static plan,
         # which is trialled too.
-        units = [u for u in solution.units if u.key not in self.static_units]
+        units = [
+            u
+            for u in solution.units
+            if include_static or u.key not in self.static_units
+        ]
         blocks: dict[str, str] = {}
         history = self.analysis.history
         vague_seen = False
         for failure in failures:
             reason = failure.describe()
-            named = _missing(failure.error, units)
+            # Evidence counts against any removal, the static plan's too.
+            named = _missing(failure.error, units) or _missing(
+                failure.error, solution.units
+            )
             origin = self.origins.get(failure.seq) if failure.seq is not None else None
             mentioned_by_op = [u for u in named if origin in u.at_risk]
             # "Cannot resolve keyword 'user'" doesn't say of which model: the
@@ -804,7 +805,11 @@ class Trial:
                     for key in writers:
                         blocks.setdefault(key, reason)
                     continue
-            targets = _related(units, d.table) if d.table else []
+            targets = (
+                _related(units, d.table) or _related(solution.units, d.table)
+                if d.table
+                else []
+            )
             if d.columns:
                 # Only those changing the columns that differ, if any do.
                 named = [
@@ -815,6 +820,16 @@ class Trial:
                 targets = [u for u in units if u.at_risk]
             for u in targets:
                 blocks.setdefault(u.key, reason)
+        # No evidence names any: half of them, the rest if it persists. Not
+        # for what happens outside the migrations (the pruned graph's checks)
+        # or in django_migrations: an optional layer explains those.
+        located = [f.describe() for f in failures if f.migration in history.by_key]
+        located += [str(d) for d in diffs if d.table != "django_migrations"]
+        if include_static and not blocks and units and located:
+            for key in self._halve(
+                ("unattributed", *sorted(located)), [u.key for u in units]
+            ):
+                blocks[key] = f"trial: {located[0]}"
         return blocks
 
     def _halve(self, signature: tuple[Any, ...], keys: Iterable[str]) -> list[str]:
@@ -970,9 +985,10 @@ def _count(n: int, noun: str) -> str:
 
 def _proven(solution: Solution) -> set[str]:
     """
-    The static plan's removals that need no trial, so are never blamed: not
-    folds (a snapshot difference may come from one: database object names),
-    nor no-op data migrations (only shown harmless on the baseline).
+    The static plan's removals blamed only when nothing else explains a
+    difference: not folds (a snapshot difference may come from one: database
+    object names), nor no-op data migrations (only shown harmless on the
+    baseline).
     """
     return {
         k for k in solution.unit_keys() if not k.startswith((FOLD_PREFIX, NOOP_PREFIX))

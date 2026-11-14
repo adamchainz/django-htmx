@@ -520,7 +520,7 @@ def test_max_runs_reached(project: Project, monkeypatch: pytest.MonkeyPatch) -> 
     script(
         monkeypatch,
         [([FAILURE], []), None],
-        lambda self, solution, f, d: {legacy_key(solution): "x"},
+        lambda self, solution, f, d, **kw: {legacy_key(solution): "x"},
     )
     result = project.clean(trial=True, trial_max_runs=1)
     assert result.verification["fallback"] is True
@@ -531,7 +531,7 @@ def test_nothing_new_to_blame(
     project: Project, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     unlockable(project)
-    script(monkeypatch, [([FAILURE], []), None], lambda *args: {})
+    script(monkeypatch, [([FAILURE], []), None], lambda *args, **kwargs: {})
     result = project.clean(trial=True)
     assert result.verification["fallback"] is True
 
@@ -569,7 +569,7 @@ def as_noop(trial: Any, key: str) -> None:
 def test_static_part_blamed(project: Project, monkeypatch: pytest.MonkeyPatch) -> None:
     unlockable(project)
 
-    def attribute(self: Any, solution: Any, f: Any, d: Any) -> Any:
+    def attribute(self: Any, solution: Any, f: Any, d: Any, **kw: Any) -> Any:
         as_noop(self, static_key(solution))
         return {static_key(solution): "x", legacy_key(solution): "y"}
 
@@ -584,7 +584,7 @@ def test_static_plan_blamed(project: Project, monkeypatch: pytest.MonkeyPatch) -
     project.migration("shop", "0002_dead", DEAD)
     project.migration("shop", "0003_dead", 'migrations.RemoveField("item", "dead"),')
 
-    def attribute(self: Any, solution: Any, f: Any, d: Any) -> Any:
+    def attribute(self: Any, solution: Any, f: Any, d: Any, **kw: Any) -> Any:
         as_noop(self, static_key(solution))
         return {static_key(solution): "x"}
 
@@ -597,7 +597,7 @@ def test_noop_layer_dropped(project: Project, monkeypatch: pytest.MonkeyPatch) -
     project.migration("shop", "0002_dead", DEAD)
     project.migration("shop", "0003_dead", 'migrations.RemoveField("item", "dead"),')
 
-    def attribute(self: Any, solution: Any, f: Any, d: Any) -> Any:
+    def attribute(self: Any, solution: Any, f: Any, d: Any, **kw: Any) -> Any:
         self.noop[(0, 0)] = "nothing"
         return {}
 
@@ -764,3 +764,51 @@ def test_elidable_in_excluded_app_at_risk(project: Project) -> None:
     # Kept: removing the column breaks the UPDATE, which can't go.
     assert result.removals == []
     assert "no such column: legacy" in blocked(result)["shop.Item.legacy"][0]
+
+
+def test_static_removal_blamed(project: Project) -> None:
+    # The scan can't see the model's name: the static plan removes it, and
+    # its own trial run shows it is used.
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration(
+        "shop",
+        "0002_coupon",
+        """
+        migrations.CreateModel(
+            name="Coupon", fields=[("id", models.AutoField(primary_key=True))]
+        ),
+        migrations.RunPython(forwards),
+        migrations.DeleteModel("Coupon"),
+        """,
+        extra="def forwards(apps, schema_editor):\n"
+        "    alias = schema_editor.connection.alias\n"
+        "    apps.get_model('shop', 'Cou' + 'pon').objects.using(alias).count()\n",
+    )
+    assert kinds(project.clean()) == [("model", "shop.Coupon")]
+    result = project.check_equivalence(trial=True)
+    assert result.removals == []
+    (reason,) = blocked(result)["shop.Coupon"]
+    assert "doesn't have a 'Coupon' model" in reason
+
+
+def test_no_plan_passes(project: Project, monkeypatch: pytest.MonkeyPatch) -> None:
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration("shop", "0002_dead", DEAD)
+    project.migration("shop", "0003_dead", 'migrations.RemoveField("item", "dead"),')
+    script(monkeypatch, [([FAILURE], [])], lambda *args, **kwargs: {})
+    with pytest.raises(trial_module.TrialFailed, match="found no plan") as info:
+        project.clean(trial=True)
+    assert "boom" in str(info.value)
+
+
+def test_unattributed_difference_halved(project: Project) -> None:
+    trial = bare_trial(project)
+    solution = SimpleNamespace(units=[unit("a"), unit("b")])
+    odd = Difference(None, "schema", "extension x missing")
+    first = trial._attribute(solution, [], [odd], include_static=True)  # type: ignore[arg-type]
+    again = trial._attribute(solution, [], [odd], include_static=True)  # type: ignore[arg-type]
+    assert (list(first), list(again)) == (["a"], ["b"])
+    assert first["a"] == "trial: schema of the schema differs (extension x missing)"
+    failure = trial_module.TrialFailure(("shop", "0002_sql"), "RunSQL", "x", "", True)
+    other: Any = SimpleNamespace(units=[unit("c", 2)])
+    assert list(trial._attribute(other, [failure], [], include_static=True)) == ["c"]
