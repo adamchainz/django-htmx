@@ -398,6 +398,7 @@ def plan(
     trial_max_runs: int = 8,
     trial_single_baseline: bool = False,
     trial_ignore_column_order: bool = False,
+    trial_post_migrate: bool = False,
     noop_data: bool = False,
     prune: bool = False,
     progress: Any = None,
@@ -442,6 +443,7 @@ def plan(
             progress=progress,
             single_baseline=trial_single_baseline,
             ignore_column_order=trial_ignore_column_order,
+            post_migrate=trial_post_migrate,
             noop_data=noop_data,
         )
         return result
@@ -475,6 +477,9 @@ class UnitInfo:
     """Names and columns of the fields it removes or changes (lower case)."""
     models: frozenset[str] = frozenset()
     """Names of the models it removes (lower case)."""
+    removed_opaque: frozenset[tuple[int, int]] = frozenset()
+    """(plan index, index on disk) of opaque operations it removes too (an
+    elidable one that mentions it, or a no-op data migration)."""
 
 
 @dataclass
@@ -915,6 +920,13 @@ def _units(solver: Solver) -> list[UnitInfo]:
     plan = solver.plan
     units: list[UnitInfo] = []
 
+    with_elidable: dict[int, set[tuple[int, int]]] = {}
+    for element, _, owner in plan.elidable:
+        if owner is not None:
+            with_elidable.setdefault(id(owner), set()).add(
+                (element.rec.migration.index, element.rec.original_index)
+            )
+
     def add(
         unit: Unit, start: int, end: int | None, life: Life, prefix: str = ""
     ) -> None:
@@ -938,6 +950,9 @@ def _units(solver: Solver) -> list[UnitInfo]:
                 models=frozenset(n.lower() for n in model.names)
                 if isinstance(life, ModelLife) and isinstance(unit, Life)
                 else frozenset(),
+                removed_opaque=frozenset(with_elidable.get(id(life), ()))
+                if unit is life
+                else frozenset(),
             )
         )
 
@@ -959,6 +974,9 @@ def _units(solver: Solver) -> list[UnitInfo]:
                 names=frozenset(),
                 at_risk=frozenset(),
                 app=e.rec.migration.app_label,
+                removed_opaque=frozenset(
+                    {(e.rec.migration.index, e.rec.original_index)}
+                ),
             )
         )
     return units

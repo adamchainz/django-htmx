@@ -395,3 +395,74 @@ def test_sqlite_column_order(project: Project) -> None:
     assert "physical order of columns" in out
     out, _ = project.command("plan", "--kind", "fold", "--trial")
     assert "physical order of columns" not in out
+
+
+def test_elidable_writer_kept(project: Project) -> None:
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration(
+        "shop",
+        "0002_coupon",
+        """
+        migrations.CreateModel(
+            name="Coupon",
+            fields=[("id", models.AutoField(primary_key=True))],
+        ),
+        migrations.RunPython(seed, elidable=True),
+        migrations.DeleteModel("Coupon"),
+        """,
+        extra="""
+        def seed(apps, schema_editor):
+            alias = schema_editor.connection.alias
+            apps.get_model("shop", "Coupon").objects.using(alias).count()
+            apps.get_model("shop", "Item").objects.using(alias).create(name="x")
+        """,
+    )
+    static = project.clean()
+    # The elidable operation goes with the model it mentions...
+    assert [r.kind for r in static.removals] == ["elidable", "model"]
+    # ...but it wrote a row on a fresh database: the trial keeps both.
+    out, _ = project.command("plan")
+    assert "Elidable operations are removed on trust" in out
+    result = project.check_equivalence(trial=True)
+    assert result.removals == []
+    assert result.verification["nondeterministic_tables"] == []
+
+
+def test_post_migrate_flag(project: Project) -> None:
+    from django.db.models.signals import post_migrate
+
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration(
+        "shop",
+        "0002_coupon",
+        """
+        migrations.CreateModel(
+            name="Coupon",
+            fields=[("id", models.AutoField(primary_key=True))],
+        ),
+        migrations.RunPython(churn, elidable=True),
+        migrations.DeleteModel("Coupon"),
+        """,
+        extra="""
+        def churn(apps, schema_editor):
+            alias = schema_editor.connection.alias
+            apps.get_model("shop", "Coupon").objects.using(alias).count()
+            Item = apps.get_model("shop", "Item")
+            Item.objects.using(alias).create(name="tmp").delete()
+        """,
+    )
+
+    def create(using: str, apps: Any, **kwargs: Any) -> None:
+        apps.get_model("shop", "Item").objects.using(using).get_or_create(name="p")
+
+    # post_migrate is only sent for apps with a models module.
+    (project.path("shop").parent / "models.py").write_text("")
+    post_migrate.connect(create, dispatch_uid="test_post_migrate_flag")
+    try:
+        # The history leaves no row behind: without post_migrate, the
+        # elidable operation's removal shows nowhere.
+        assert len(project.clean(trial=True).removals) == 2
+        # With it, the row post_migrate creates gets another id.
+        assert project.clean(trial=True, trial_post_migrate=True).removals == []
+    finally:
+        post_migrate.disconnect(dispatch_uid="test_post_migrate_flag")

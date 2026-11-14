@@ -389,6 +389,7 @@ class Command(RichCommand):
             trial_max_runs=options["trial_max_runs"],
             trial_single_baseline=options["trial_single_baseline"],
             trial_ignore_column_order=options["trial_ignore_column_order"],
+            trial_post_migrate=options["trial_post_migrate"],
             noop_data=options["noop_data"],
             prune=options["prune"],
             progress=progress,
@@ -507,6 +508,17 @@ class Command(RichCommand):
         )
         if order_warning:
             self._print(Text(order_warning, style="yellow"))
+        if result.verification.get("mode") != "trial" and any(
+            r.kind == "elidable" for r in result.removals
+        ):
+            self._print(
+                Text(
+                    "Elidable operations are removed on trust: one that writes"
+                    " on a fresh database (a content type, a seed row) changes"
+                    " the data and later ids; --trial checks it.",
+                    style="yellow",
+                )
+            )
 
     def _report_removals(self, removals: list[Removal], verbosity: int) -> None:
         rows: list[tuple[Row, list[Text]]] = []
@@ -671,6 +683,13 @@ def _add_trial_arguments(parser: ArgumentParser) -> None:
         help="Also remove RunPython/RunSQL operations that write nothing on a"
         " fresh database, as a trial run observes them (implies --trial)."
         " Their reverse code and any effect outside the database are lost.",
+    )
+    parser.add_argument(
+        "--trial-post-migrate",
+        action="store_true",
+        help="Send post_migrate at the end of every trial run, as migrate"
+        " does, so the content types and permissions it creates are compared"
+        " too (their ids show rows the history created first).",
     )
     parser.add_argument(
         "--trial-ignore-column-order",

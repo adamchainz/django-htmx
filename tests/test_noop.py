@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from django.core.management import CommandError
 
-from django_clean_migrations.noop import classify, source_concern
+from django_clean_migrations.noop import classify, source_concern, written_tables
 from tests.project import Project, temp_database
 from tests.test_clean import ITEM, kinds
 
@@ -281,3 +281,19 @@ def test_plain_progress_without_terminal(project: Project) -> None:
     _, err = project.command("plan", "--noop-data")
     assert "Baseline: migration 1/" in err
     assert "Trial run 1: migration 1/" in err
+
+
+@pytest.mark.parametrize(
+    ("sql", "tables"),
+    [
+        (
+            'INSERT INTO "django_content_type" ("app_label") VALUES (%s)',
+            {"django_content_type"},
+        ),
+        ('UPDATE "shop_item" SET "name" = 1', {"shop_item"}),
+        ("DELETE FROM public.shop_item WHERE id = 1", {"shop_item"}),
+        ("SELECT setval('x', 1)", {"*"}),
+    ],
+)
+def test_written_tables(sql: str, tables: set[str]) -> None:
+    assert written_tables(sql) == tables

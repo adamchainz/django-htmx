@@ -115,6 +115,7 @@ class Trial:
         single_baseline: bool = False,
         noop_data: bool = False,
         ignore_column_order: bool = False,
+        post_migrate: bool = False,
     ) -> None:
         self.analysis = analysis
         self.alias = alias
@@ -138,11 +139,16 @@ class Trial:
         self.single_baseline = single_baseline
         self.noop_data = noop_data
         self.ignore_column_order = ignore_column_order
+        self.post_migrate = post_migrate
+        """Send post_migrate at the end of every run, as migrate does."""
         """Don't compare the physical column order of SQLite tables."""
         self.noop: dict[tuple[int, int], str] = {}
         """(plan index, index on disk) of data migrations that did nothing on
         the baseline run, with what they did."""
         self.noop_keys: dict[str, tuple[int, int]] = {}
+        self.wrote: dict[tuple[int, int], frozenset[str]] = {}
+        """(plan index, index on disk) of opaque operations -> the tables
+        they wrote to on the baseline run."""
         self.noop_seen = 0
         self.noop_suspect: dict[str, str] = {}
         """Data migrations that wrote nothing but whose source suggests
@@ -237,6 +243,7 @@ class Trial:
                 hook=hook,
                 progress=on_progress,
                 prune=prune,
+                post_migrate=self.post_migrate,
             )
         except RunError as exc:
             where = current[0]
@@ -286,7 +293,7 @@ class Trial:
                 observations is not None
                 and rec is not None
                 and opaque is not None
-                and self._noop_candidate(opaque)
+                and not opaque.state_changed
             )
 
             def database_forwards(*args: Any, **kwargs: Any) -> Any:
@@ -337,8 +344,20 @@ class Trial:
 
     def _learn_noop(self, observations: Mapping[int, Observation]) -> None:
         by_seq = {rec.seq: rec for rec in self.analysis.history.ops}
-        self.noop_seen = len(observations)
         for seq, observation in observations.items():
+            rec = by_seq[seq]
+            position = (rec.migration.index, rec.original_index)
+            if observation.tables:
+                self.wrote[position] = frozenset(observation.tables)
+        if not self.noop_data:
+            return
+        candidates = {
+            seq: o
+            for seq, o in observations.items()
+            if self._noop_candidate(self.opaque[seq])
+        }
+        self.noop_seen = len(candidates)
+        for seq, observation in candidates.items():
             if not observation.no_op:
                 continue
             rec = by_seq[seq]
@@ -366,7 +385,9 @@ class Trial:
     def run(self) -> Result:
         begin = time.perf_counter()
         baseline_begin = time.perf_counter()
-        baseline = self._run("Baseline", None, observing=self.noop_data)
+        # Every opaque operation is watched: what it writes to says which
+        # removal to blame for a data difference, and finds no-ops.
+        baseline = self._run("Baseline", None, observing=True)
         baseline_seconds = time.perf_counter() - baseline_begin
         if baseline.aborted or baseline.snapshot is None:
             failure = baseline.failures[0] if baseline.failures else None
@@ -385,8 +406,8 @@ class Trial:
         reference = baseline.snapshot
         if self.ignore_column_order:
             self.mask.schema.update(k for k in reference.schema if k[0] == COLUMN_ORDER)
+        self._learn_noop(baseline.observations)
         if self.noop_data:
-            self._learn_noop(baseline.observations)
             self._say(
                 f"{_count(len(self.noop), 'data migration operation')} of"
                 f" {self.noop_seen} did nothing on a fresh {self.vendor} database"
@@ -605,7 +626,9 @@ class Trial:
         is left to blame, come from the history itself (random or time-based
         values in seeded rows): mask those tables rather than loop.
         """
-        if any(u.at_risk for u in solution.units):
+        if not self.single_baseline or any(u.at_risk for u in solution.units):
+            # With two baseline runs, what differs between runs of the
+            # original history is known: any other difference is real.
             return diffs
         for d in diffs:
             if (
@@ -691,14 +714,7 @@ class Trial:
                 continue
             vague_seen = True
             signature = (failure.migration, failure.seq, failure.error.split(":")[0])
-            keys = sorted(u.key for u in targets)
-            suspects = self.suspects.pop(signature, None)
-            if suspects is not None:
-                keys = sorted(set(keys) & suspects) or keys
-            elif len(keys) > 1:
-                self.suspects[signature] = set(keys[len(keys) // 2 :])
-                keys = keys[: len(keys) // 2]
-            for key in keys:
+            for key in self._halve(signature, [u.key for u in targets]):
                 blocks.setdefault(key, reason)
         for d in diffs:
             reason = f"trial: {d}"
@@ -716,6 +732,25 @@ class Trial:
                 for u in targets:
                     blocks.setdefault(u.key, reason)
                 continue
+            if d.kind == "data":
+                # Rows written by an opaque operation that a removal took
+                # away (an elidable one, a no-op that wasn't): whatever
+                # proves the removal otherwise.
+                table = (d.table or "").lower()
+                writers = [
+                    u.key
+                    for u in solution.units
+                    if any(
+                        table in tables or "*" in tables
+                        for tables in (
+                            self.wrote.get(p, frozenset()) for p in u.removed_opaque
+                        )
+                    )
+                ]
+                if writers:
+                    for key in writers:
+                        blocks.setdefault(key, reason)
+                    continue
             targets = _related(units, d.table) if d.table else []
             if d.columns:
                 # Only those changing the columns that differ, if any do.
@@ -728,6 +763,21 @@ class Trial:
             for u in targets:
                 blocks.setdefault(u.key, reason)
         return blocks
+
+    def _halve(self, signature: tuple[Any, ...], keys: Iterable[str]) -> list[str]:
+        """
+        Suspects to block for a problem that doesn't say which is to blame:
+        half of them the first time; if the same problem comes back, the
+        rest.
+        """
+        ordered = sorted(keys)
+        suspects = self.suspects.pop(signature, None)
+        if suspects is not None:
+            return sorted(set(ordered) & suspects) or ordered
+        if len(ordered) > 1:
+            self.suspects[signature] = set(ordered[len(ordered) // 2 :])
+            return ordered[: len(ordered) // 2]
+        return ordered
 
     def _in_window(self, unit: UnitInfo, mig: int) -> bool:
         history = self.analysis.history
@@ -903,6 +953,7 @@ def run_trial(
     single_baseline: bool = False,
     noop_data: bool = False,
     ignore_column_order: bool = False,
+    post_migrate: bool = False,
 ) -> Result:
     return Trial(
         analysis,
@@ -912,4 +963,5 @@ def run_trial(
         single_baseline=single_baseline,
         noop_data=noop_data,
         ignore_column_order=ignore_column_order,
+        post_migrate=post_migrate,
     ).run()

@@ -122,6 +122,8 @@ class Observation:
     """Statements that changed (or may have changed) something."""
     other_alias: bool = False
     """It executed a statement on another configured database."""
+    tables: set[str] = field(default_factory=set)
+    """Tables its writes name (lower case); "*" if one names none."""
 
     @property
     def no_op(self) -> bool:
@@ -189,6 +191,7 @@ def observe(alias: str, observation: Observation) -> Iterator[None]:
                 reason = "executemany"
             if reason is not None:
                 observation.writes.append(reason)
+                observation.tables |= written_tables(str(sql))
             return result
 
         return wrapper
@@ -384,3 +387,19 @@ def _bound_names(tree: ast.AST) -> set[str]:
         elif isinstance(node, ast.arg):
             bound.add(node.arg)
     return bound
+
+
+_WRITTEN = re.compile(
+    r"\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM|COPY|INTO|TRUNCATE(?:\s+TABLE)?)"
+    r"\s+(?:ONLY\s+)?([`\"\[]?[\w.]+[`\"\]]?)",
+    re.I,
+)
+
+
+def written_tables(sql: str) -> set[str]:
+    """The tables a write statement names; {"*"} if it names none."""
+    found = {
+        m.group(1).strip('`"[]').lower().rsplit(".", 1)[-1]
+        for m in _WRITTEN.finditer(_COMMENTS.sub(" ", sql))
+    }
+    return found or {"*"}

@@ -244,6 +244,7 @@ The command respects that in two ways.
 First, an elidable ``RunPython`` or ``RunSQL`` operation never blocks a removal.
 If its code mentions something that is being removed, and it certainly runs while that thing exists (its migration comes after the creation and before the removal in every possible migration order), the elidable operation is removed too, since leaving it in place could crash on the missing model or field.
 An elidable operation that mentions the name but could run in a different order, for example in another app with no dependency either way, blocks the removal like any other ``RunPython`` or ``RunSQL``: a matching word is not proof that it is about the same thing.
+An elidable operation may still write something on a fresh database (Zulip’s ``confirmation.0016`` creates a content type, and every later content type then gets another id); like ``squashmigrations``, the default plan trusts the ``elidable`` flag, and ``--trial`` checks the data and keeps such operations.
 Elidable operations in excluded apps are never removed, so they block too.
 In this example, the data fix in ``0003_widen_sku`` mentions ``Coupon``, so it is removed along with the model:
 
@@ -409,7 +410,14 @@ The plan file records the trial: backend, number of runs, what it unlocked, and 
     That is the tool’s premise anyway, since every real database must already be fully migrated.
     But if your test suite tests migrations with data, for example with django-test-migrations, a migration that now finds a removed field may fail there.
 
-If data from the original history itself differs between runs (random or time-based values in seeded rows), the command reports the table and stops comparing its data, rather than blaming removals for it.
+If data from the original history itself differs between its two baseline runs (random or time-based values in seeded rows), the command reports the columns or tables concerned and doesn’t compare them, rather than blaming removals for it.
+Any other difference in data is real.
+When rows are missing or different and the plan removes operations that may have written them (an elidable operation removed with what it mentions, or a no-op data migration), those removals are blamed first, half at a time, even when the default plan makes them: an elidable data migration that wrote something on a fresh database (Zulip’s ``confirmation.0016`` creates a content type) is kept, with what it mentions.
+
+By default, trial runs don’t send ``post_migrate``, so the content types and permissions it creates aren’t compared.
+Their ids follow the rows the history created first, and the order of the models; the default plan never changes the order of the models (that is verified), but dropping an operation that created and deleted such rows changes the ids of later ones.
+``--trial-post-migrate`` sends ``post_migrate`` at the end of every run, as ``migrate`` does, and compares what its handlers create.
+It is off by default because a project’s own ``post_migrate`` handlers run too, and may need services or settings a scratch database doesn’t have.
 
 .. warning::
 

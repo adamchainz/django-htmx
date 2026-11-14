@@ -217,6 +217,10 @@ def verify_in_memory(
     diff = first_difference(original_final.models, state.models)
     if diff is not None:
         raise VerificationError(f"the edited history ends in a different state: {diff}")
+    if list(original_final.models) != list(state.models):
+        # post_migrate creates content types and permissions in this order:
+        # a different order numbers their rows differently.
+        raise VerificationError("the edited history lists the models in another order")
 
 
 def state_from_disk() -> tuple[MigrationLoader, list[Key], ProjectState]:
