@@ -20,6 +20,7 @@ from django.db.migrations.loader import MigrationLoader
 from django.db.migrations.operations.base import Operation
 from django.db.migrations.state import ProjectState
 
+from django_clean_migrations import backends
 from django_clean_migrations.history import (
     History,
     Key,
@@ -573,6 +574,7 @@ class Analysis:
                 trial_blocked=trial_blocked,
                 texts=self.texts,
                 noop=noop if rounds == 1 else None,
+                backends=frozenset(self.options["backends"]),
             )
             if solver.noop:
                 solver.drop_noop()
@@ -687,6 +689,9 @@ def analyse(
             "kinds": sorted(kind_set),
             "opaque": opaque,
             "elidable": elidable,
+            # MySQL-family servers configured: their history-dependent DDL
+            # keeps some removals and folds (see backends).
+            "backends": sorted(backends.configured()),
         },
     )
 

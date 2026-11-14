@@ -12,7 +12,7 @@ the same round; the core runs rounds until nothing changes.
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -20,6 +20,7 @@ from django.db.migrations import operations as m
 from django.db.migrations.operations.base import Operation
 from django.db.models import NOT_PROVIDED
 
+from django_clean_migrations import backends
 from django_clean_migrations.locate import normalize_together
 from django_clean_migrations.ops import POSTGRES_MODULE, classify
 from django_clean_migrations.timeline import (
@@ -29,6 +30,10 @@ from django_clean_migrations.timeline import (
     IndexLife,
     Life,
     ModelLife,
+    TogetherLife,
+    backs_foreign_key,
+    first_field,
+    lasting_foreign_key,
 )
 
 if TYPE_CHECKING:
@@ -239,6 +244,25 @@ class Folder:
             if r is not e and r is not p
         )
 
+    def _backing_index_kept(
+        self, field: FieldLife | None, p: Element, e: Element
+    ) -> bool:
+        """
+        On MySQL and MariaDB, an index or unique constraint starting with a
+        foreign key, created at P instead of E, must not exist when another
+        such one is dropped in between: Django creates the foreign key's own
+        index only if none other starts with the column (see backends).
+        """
+        if field is None or not self.solver.backends:
+            return True
+        return not any(
+            isinstance(other, (IndexLife, ConstraintLife, TogetherLife))
+            and other.end_pos is not None
+            and first_field(other) is field
+            and self.solver._pos_between(other.end_pos, p.pos, e.pos)
+            for other in field.model.children
+        )
+
     def _commit(
         self, kind: str, p: Element, e: Element, life: Life, op: Operation
     ) -> bool:
@@ -342,6 +366,8 @@ class Folder:
             return
         if _occupied(dp) != _occupied(de) or not same_named_objects(dp, de):
             return
+        if solver.backends and not mysql_safe_alters([dp, de], solver.backends):
+            return
         # An AlterField changing the type of a field that foreign keys point
         # at (via to_field) recreates those keys under other names.
         if referenced_by_fields(life):
@@ -433,6 +459,11 @@ class Folder:
             return False
         add = a.rec.op
         assert isinstance(add, m.AddField)
+        if backends.MYSQL in self.solver.backends and backends.leaves_default(
+            add.field
+        ):
+            # CreateModel doesn't give the column the DEFAULT AddField leaves.
+            return False
         names = {n.lower() for n in life.names} | life.extra_names
         for sibling in model.children:
             if (
@@ -543,6 +574,8 @@ class Folder:
             return False
         if not self._stable_names([*x.refs, model], create, x):
             return False
+        if not self._backing_index_kept(backs_foreign_key(life), create, x):
+            return False
         obj = getattr(x.rec.op, "index" if kind == "index" else "constraint")
         scan = set(names)
         if kind == "constraint" or getattr(obj, "condition", None) is not None:
@@ -584,6 +617,10 @@ class Folder:
             assert isinstance(op, (m.AlterUniqueTogether, m.AlterIndexTogether))
             current = self._current(create)
             assert isinstance(current, m.CreateModel)
+            if self.solver.backends and not self._together_keeps_backing(
+                model, current, op, create, e
+            ):
+                continue
             options = dict(current.options)
             value = normalize_together(op.option_value)
             if value:
@@ -593,6 +630,36 @@ class Folder:
             self._commit(
                 "together", create, e, model, _create(current, options=options)
             )
+
+    def _together_keeps_backing(
+        self,
+        model: ModelLife,
+        current: m.CreateModel,
+        op: m.AlterUniqueTogether | m.AlterIndexTogether,
+        create: Element,
+        e: Element,
+    ) -> bool:
+        """
+        On MySQL and MariaDB: an entry the CreateModel loses mustn't start
+        with a foreign key (dropping it is removing it, see Solver), nor may
+        one it gains while another index on that foreign key is dropped in
+        between.
+        """
+        option = op.option_name
+        assert option is not None
+        before = set(normalize_together(current.options.get(option)))
+        after = set(normalize_together(op.option_value))
+        for entry in before ^ after:
+            field = next(
+                f
+                for f in model.children
+                if isinstance(f, FieldLife) and entry[0] in f.names
+            )
+            if not lasting_foreign_key(field):
+                continue
+            if entry in before or not self._backing_index_kept(field, create, e):
+                return False
+        return True
 
     # 5. Model options, managers, table comment
 
@@ -907,6 +974,23 @@ def _mentions(value: Any, name: str) -> bool:
     except Exception:
         return True
     return re.search(rf"(?<![\w]){re.escape(name)}(?![\w])", text) is not None
+
+
+def mysql_safe_alters(defs: Sequence[Any], servers: frozenset[str]) -> bool:
+    """
+    Whether going through ``defs`` (a field's definitions, in order) by
+    AlterField, rather than straight to the last one, leaves the same schema
+    on the MySQL-family ``servers`` (see backends): a foreign key's
+    backing index depends on whether the column was indexed, unique or a
+    foreign key before, and on MySQL a TEXT/BLOB/JSON column keeps the
+    DEFAULT its AddField gave it until the column is redefined.
+    """
+    shapes = {backends.index_shape(d) for d in defs}
+    if len(shapes) > 1 and any(backends.is_foreign_key(d) for d in defs):
+        return False
+    return not (
+        backends.MYSQL in servers and any(backends.leaves_default(d) for d in defs)
+    )
 
 
 def same_named_objects(a: Any, b: Any) -> bool:

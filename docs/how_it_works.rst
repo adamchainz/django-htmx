@@ -387,6 +387,31 @@ This invariant is checked on the planned graph, and again on the graph loaded fr
 Keeping the first and latest migration of every app means ``__first__`` and ``__latest__`` dependencies, ``swappable_dependency()`` (which means ``__first__``), Django’s inference of ``initial`` and ``--fake-initial`` all resolve as before.
 Only literal ``("app", "name")`` entries are rewritten, in the dependants’ ``dependencies`` lists, which are regenerated keeping their other entries’ source text.
 
+MySQL and MariaDB
+-----------------
+
+The analysis reasons about Django’s project state, which is the same on every backend.
+On MySQL and MariaDB, two parts of the schema also depend on how the database got there, so a removal or fold the state calls harmless can change the schema:
+
+* **The index backing a foreign key.**
+  InnoDB needs an index starting with a foreign key’s column.
+  Creating the foreign key creates one implicitly, named like the constraint (``…_fk_<table>_<column>``), unless an index starting with that column exists already; the server drops it when another index starting with the column is created; and Django, before dropping such an index, creates its own index on the column, named ``<table>_<column>_<hash>``.
+  So, when any configured database is MySQL or MariaDB, the command keeps:
+
+  - an index, unique constraint or together-entry whose first column is a foreign key (unless that column is dropped later anyway): removing it removes those renames;
+  - a fold of an ``AlterUniqueTogether`` or ``AlterIndexTogether`` that drops such an entry from the ``CreateModel`` (the same thing), and a fold that would create such an index earlier, while another one on the same foreign key is dropped in between;
+  - folds of ``AlterField``, and superseded ``AlterField`` operations, on a field that is or becomes a foreign key, when they change whether it is one, its ``db_constraint``, ``unique`` or ``db_index``.
+
+  Changing a foreign key’s target or ``on_delete``, and folding indexes into the ``CreateModel``, keep the same names: those still go.
+* **Defaults of TEXT, BLOB and JSON columns, on MySQL only.**
+  ``AddField`` of a ``TextField``, ``BinaryField`` or ``JSONField`` with a (non-empty) default adds the column with ``DEFAULT (…)`` and never drops it, as MySQL can’t, while ``CreateModel`` creates the column without one.
+  So, when a configured database is MySQL (not MariaDB, which drops the default as other backends do), such an ``AddField`` isn’t folded into its ``CreateModel``, and ``AlterField`` operations on such fields are neither folded nor dropped as superseded.
+
+A plan doesn’t know which database production runs, so the rules apply when any configured database uses the MySQL backend; telling MySQL from MariaDB needs the server, which is asked for its version (a server that can’t be reached counts as MySQL, whose rules are a superset).
+Plans for projects without MySQL or MariaDB are unchanged.
+The plan file records the servers the rules were applied for, under ``options.backends``.
+A trial run on a MySQL or MariaDB database (``--trial --database …``) compares index names, defaults and column order, so it checks what these rules can’t foresee.
+
 Limitations
 -----------
 

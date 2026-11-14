@@ -20,6 +20,7 @@ from django.db.migrations.utils import resolve_relation
 from django.db.models.expressions import F
 from django.db.models.query_utils import Q
 
+from django_clean_migrations import backends
 from django_clean_migrations.history import History, HistoryError, Key, OpRecord
 from django_clean_migrations.locate import (
     TOGETHER_OPTIONS,
@@ -1289,3 +1290,46 @@ class Timeline:
 
     def candidates(self) -> Iterable[Life]:
         return (life for life in self.lives if life.is_candidate)
+
+
+def first_field(life: Life) -> FieldLife | None:
+    """
+    The field of the first column of an index, unique constraint or
+    together entry: on MySQL it decides which index backs a foreign key.
+    """
+    if isinstance(life, TogetherLife):
+        return life.fields[0] if life.fields else None
+    if not isinstance(life, (IndexLife, ConstraintLife)):
+        return None
+    creation = life.creation
+    assert creation is not None
+    op, sub = creation.rec.op, creation.sub
+    if sub is None:
+        obj = getattr(op, "index", None) or getattr(op, "constraint", None)
+    else:
+        key = "indexes" if sub[0] == "index" else "constraints"
+        obj = op.options[key][sub[1]]  # type: ignore[attr-defined]
+    name = backends.first_field_name(obj)
+    return next(
+        (r for r in creation.refs if isinstance(r, FieldLife) and name in r.names),
+        None,
+    )
+
+
+def ever_foreign_key(life: FieldLife) -> bool:
+    return any(backends.is_foreign_key(d) for _, d, _ in life.defs)
+
+
+def backs_foreign_key(life: Life) -> FieldLife | None:
+    """
+    The foreign key, alive at the end of the history, whose backing index
+    on MySQL depends on whether ``life`` (an index, unique constraint or
+    together entry starting with it) ever existed.
+    """
+    field = first_field(life)
+    return field if field is not None and lasting_foreign_key(field) else None
+
+
+def lasting_foreign_key(field: FieldLife) -> bool:
+    """Ever a foreign key, and its column not dropped later anyway."""
+    return ever_foreign_key(field) and field.end is None and field.model.end is None

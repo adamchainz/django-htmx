@@ -14,3 +14,5 @@ Changelog
 * An operation referring to a model or field that doesn't exist at that point (a broken history) stops the analysis with a message naming it.
 
 * A trial blames the default plan's own removals too when nothing else explains a difference, until a plan passes its run; when none does, ``plan --trial`` fails and ``apply --trial`` writes nothing.
+
+* On MySQL and MariaDB, removals and folds that would change the name of the index backing a foreign key, or (on MySQL) the default of a TEXT, BLOB or JSON column, are kept when any configured database uses that backend.

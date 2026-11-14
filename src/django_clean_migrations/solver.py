@@ -9,11 +9,13 @@ from typing import Any
 from django.db.migrations import operations as m
 from django.db.migrations.operations.base import Operation
 
+from django_clean_migrations.backends import describe
 from django_clean_migrations.fold import (
     FOLD_KINDS,
     Fold,
     Folder,
     RegenerationCheck,
+    mysql_safe_alters,
     referenced_by_fields,
     same_named_objects,
 )
@@ -26,6 +28,7 @@ from django_clean_migrations.timeline import (
     ModelLife,
     Timeline,
     TogetherLife,
+    backs_foreign_key,
 )
 
 Unit = Life | Element
@@ -137,6 +140,7 @@ class Solver:
         trial_blocked: Mapping[str, str] | None = None,
         texts: TextBuilder | None = None,
         noop: Mapping[tuple[int, int], str] | None = None,
+        backends: frozenset[str] = frozenset(),
     ) -> None:
         """
         ``aggressive``: name-scan and soft-reference hits don't block but are
@@ -146,7 +150,10 @@ class Solver:
         ``noop``: (plan index, index on disk) of data migrations a trial run
         showed to do nothing on a fresh database, with what it saw: they
         are removed (drop_noop()) and don't count for the name scan.
+        ``backends``: MySQL-family servers configured (see backends), whose
+        history-dependent DDL keeps some removals and folds.
         """
+        self.backends = backends
         self.noop: dict[int, str] = {}
         for rec in history.ops:
             note = (noop or {}).get((rec.migration.index, rec.original_index))
@@ -213,9 +220,12 @@ class Solver:
 
     def _between(self, e: Element, start: Pos, end: Pos) -> bool:
         """Whether ``e`` may run between two positions (conservative)."""
+        return self._pos_between(e.pos, start, end)
+
+    def _pos_between(self, pos: Pos, start: Pos, end: Pos) -> bool:
         anc = self.history.ancestors
         desc = self.history.descendants
-        mig, idx = e.pos
+        mig, idx = pos
         if mig == start[0]:
             if idx <= start[1]:
                 return False
@@ -335,6 +345,15 @@ class Solver:
                     break
             if reason:
                 break
+        if reason is None and self.backends:
+            field = backs_foreign_key(life)
+            if field is not None:
+                reason = (
+                    f"on {describe(self.backends)}, the index backing the foreign"
+                    f" key {field.label} would get another name (the server"
+                    f" drops it when this {life.kind} is created, Django creates"
+                    " another one when it is removed)"
+                )
         if reason is None:
             hits: list[tuple[OpaqueOp, str]] = []
             reason = self._opaque_block(
@@ -650,6 +669,8 @@ class Solver:
         field_defs = [d for d in (d0, d1, d2) if d is not None]
         # (Never a primary key: see _superseded_fields.)
         if any(getattr(d, "many_to_many", False) for d in field_defs):
+            return False
+        if self.backends and not mysql_safe_alters(field_defs, self.backends):
             return False
         # Without E1, E2 makes the transition from d0: a UNIQUE or CHECK that
         # E1 added (or dropped and E2 re-added) would end up with another
