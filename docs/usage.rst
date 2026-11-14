@@ -37,14 +37,24 @@ This is a dry run, and doesn’t touch any files:
 .. code-block:: console
 
     $ python manage.py clean_migrations
-    blog.Post.draft_notes: field added in 0001_initial, removed in 0002_tidy (2 operations)
-    blog.Post: index 'post_title_idx' added in 0001_initial, removed in 0002_tidy (2 operations)
-    shop.Coupon: model created in 0002_coupon_legacy_ref, deleted in 0004_cleanup (2 operations)
-    shop.Product.legacy_ref: field added in 0002_coupon_legacy_ref, removed in 0004_cleanup (2 operations)
-    shop.Product.sku: AlterField in 0003_widen_sku superseded by AlterField in 0004_cleanup (1 operation)
-    Would remove 9 operations in 5 migration files. 2 migrations would be left with no operations.
+    blog
+      Post
+        spam_score      field       0001_initial -> 0002_tidy               2 operations
+        draft_notes     field       0001_initial -> 0002_tidy               2 operations
+        post_title_idx  index       0001_initial -> 0002_tidy               2 operations
+    shop
+      RunPython         elidable    0003_widen_sku                           1 operation  (mentions 'coupon', removed with shop.Coupon)
+      Coupon            model       0002_coupon_legacy_ref -> 0004_cleanup  2 operations
+      Product
+        legacy_ref      field       0002_coupon_legacy_ref -> 0004_cleanup  2 operations
+        sku             superseded  0003_widen_sku -> 0004_cleanup           1 operation
+    Would remove 11 operations and edit 1 operation in 5 migration files. 2 migrations would be left with no operations.
+    Run with --write to apply.
 
-Each line names the thing that would be removed, then where it appeared and disappeared in the history.
+Removals are grouped by app, then by model.
+Each line names the thing that would be removed, its kind, the migrations where it appeared and disappeared, and how many operations are involved.
+With colour enabled, kinds and names are highlighted and migration names are dimmed.
+The kind column is one of the kinds listed below.
 The summary counts operations removed outright, operations edited (for example a single field taken out of a ``CreateModel``), and migration files that end up with no operations at all.
 Counts that are zero are left out.
 
@@ -54,7 +64,7 @@ When you are happy with the plan, apply it with ``--write``:
 
     $ python manage.py clean_migrations --write
     ...
-    Removed 9 operations in 5 migration files. 2 migrations now have no operations.
+    Removed 11 operations and edited 1 operation in 5 migration files. 2 migrations now have no operations.
 
 Running the command again then reports that there’s nothing left to do:
 
@@ -193,8 +203,9 @@ In this example, the data fix in ``0003_widen_sku`` mentions ``Coupon``, so it i
 
     $ python manage.py clean_migrations
     ...
-    shop: elidable RunPython in 0003_widen_sku (mentions 'coupon', removed with shop.Coupon) (1 operation)
-    shop.Coupon: model created in 0002_coupon_legacy_ref, deleted in 0004_cleanup (2 operations)
+    shop
+      RunPython         elidable    0003_widen_sku                           1 operation  (mentions 'coupon', removed with shop.Coupon)
+      Coupon            model       0002_coupon_legacy_ref -> 0004_cleanup  2 operations
     ...
 
 Second, with ``--elidable``, *every* elidable ``RunPython`` and ``RunSQL`` operation in the selected apps is removed, regardless of what it mentions:
@@ -232,9 +243,9 @@ Add ``--show-blocked`` to also list things that cancel out in the history but we
 
     $ python manage.py clean_migrations --show-blocked
     ...
-    Blocked:
-      shop.Product.rank: field added in 0002_coupon_legacy_ref, removed in 0004_cleanup
-        - RunPython in shop.0002_coupon_legacy_ref mentions 'rank'
+    Blocked
+      shop.Product.rank  field added in 0002_coupon_legacy_ref, removed in 0004_cleanup
+        RunPython in shop.0002_coupon_legacy_ref mentions 'rank'
 
 The reasons say which operation, in which migration, is in the way.
 You can then make that operation more specific, or accept it and leave the field in place.
@@ -243,18 +254,21 @@ The output also depends on the verbosity (``-v``):
 
 * ``-v 0`` prints nothing.
   Combine it with ``--check`` when you only want the exit status.
-* ``-v 1`` (the default) prints the summary shown above.
+* ``-v 1`` (the default) prints the removals and the summary shown above.
 * ``-v 2`` also lists each operation to remove as ``path:line  OperationName``, and implies ``--show-blocked``.
   Paths are relative to the current directory.
   When a single entry is taken out of a larger operation, its detail is shown in parentheses:
 
   .. code-block:: console
 
-      $ python manage.py clean_migrations -v 2 blog.Comment
-      blog.Comment.spam_score: field added in 0003_comment, removed in 0004_drop_spam (2 operations)
-          blog/migrations/0003_comment.py:13  CreateModel (field 'spam_score')
-          blog/migrations/0004_drop_spam.py:8  RemoveField
-      Would remove 1 operation and edit 1 operation in 2 migration files. 1 migration would be left with no operations.
+      $ python manage.py clean_migrations -v 2 blog.Post.spam_score
+      blog
+        Post
+          spam_score  field  0001_initial -> 0002_tidy  2 operations
+            blog/migrations/0001_initial.py:15  CreateModel (field 'spam_score')
+            blog/migrations/0002_tidy.py:10  RemoveField
+      Would remove 1 operation and edit 1 operation in 2 migration files.
+      Run with --write to apply.
 
 Warnings, such as migrations skipped because a squashed migration replaces them, go to stderr.
 

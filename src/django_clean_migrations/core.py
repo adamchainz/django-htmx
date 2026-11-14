@@ -85,6 +85,14 @@ class Removal:
     label: str
     description: str
     elements: tuple[Location, ...]
+    name: str = ""
+    """What was removed within its model, e.g. a field or index name."""
+    start: str = ""
+    """Migration where it first appeared."""
+    end: str = ""
+    """Migration where it was removed or replaced, if any."""
+    note: str = ""
+    """Extra context, e.g. why an elidable operation is removed."""
 
 
 @dataclass(frozen=True)
@@ -240,6 +248,15 @@ def _describe_life(life: Life) -> str:
         names = ", ".join(f.names[-1] for f in life.fields)
         return f"{life.option} ({names}) added in {created}, removed in {ended}"
     return f"{life.kind} {life.names[0]!r} added in {created}, removed in {ended}"
+
+
+def _entity_name(life: Life) -> str:
+    if isinstance(life, TogetherLife):
+        names = ", ".join(f.names[-1] for f in life.fields)
+        return f"{life.option} ({names})"
+    if isinstance(life, (ModelLife, FieldLife)):
+        return life.names[-1]
+    return str(life.names[0])
 
 
 def _life_label(life: Life) -> str:
@@ -434,6 +451,8 @@ def _removals(solver: Solver) -> list[Removal]:
             ),
             key=_sort_key,
         )
+        creation, end = life.creation, life.end
+        assert creation is not None and end is not None
         result.append(
             Removal(
                 kind=life.kind,
@@ -442,6 +461,9 @@ def _removals(solver: Solver) -> list[Removal]:
                 label=_life_label(life),
                 description=_describe_life(life),
                 elements=tuple(_location(e) for e in elements),
+                name=_entity_name(life),
+                start=_mig_name(creation.rec, life.app_label),
+                end=_mig_name(end, life.app_label),
             )
         )
     for e1, e2 in plan.superseded:
@@ -459,6 +481,11 @@ def _removals(solver: Solver) -> list[Removal]:
                     f" {_mig_name(e2.rec, owner.app_label)}"
                 ),
                 elements=(_location(e1),),
+                name=_entity_name(owner)
+                if isinstance(owner, FieldLife)
+                else e1.rec.name,
+                start=_mig_name(e1.rec, owner.app_label),
+                end=_mig_name(e2.rec, owner.app_label),
             )
         )
     for e in plan.redundant:
@@ -475,6 +502,9 @@ def _removals(solver: Solver) -> list[Removal]:
                     " no longer changes anything"
                 ),
                 elements=(_location(e),),
+                name=e.rec.name,
+                start=_mig_name(e.rec, owner.app_label),
+                note="no longer changes anything",
             )
         )
     for e, name, removed_life in plan.elidable:
@@ -491,6 +521,9 @@ def _removals(solver: Solver) -> list[Removal]:
                 label=app,
                 description=f"elidable {e.rec.name} in {e.rec.migration.name} ({why})",
                 elements=(_location(e),),
+                name=e.rec.name,
+                start=e.rec.migration.name,
+                note=why,
             )
         )
     result.sort(key=lambda r: (r.app_label, (r.model or "").lower()))

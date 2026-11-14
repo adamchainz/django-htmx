@@ -247,12 +247,22 @@ def test_blocked_lines_name_their_migrations(project: Project) -> None:
     )
     project.migration("shop", "0005_remove", 'migrations.RemoveField("item", "body"),')
     out, _ = project.command("--show-blocked")
-    assert out.splitlines()[:4] == [
-        "shop.Item.body: field added in 0002_add, removed in 0003_remove (2 operations)",
-        "Blocked:",
-        "  shop.Item.body: field added in 0004_add, removed in 0005_remove",
-        "    - RunSQL in shop.0004_add mentions 'body'",
+    lines = out.splitlines()
+    assert lines[2].split() == [
+        "body",
+        "field",
+        "0002_add",
+        "->",
+        "0003_remove",
+        "2",
+        "operations",
     ]
+    blocked = lines.index("Blocked")
+    assert lines[blocked + 1].split(None, 1) == [
+        "shop.Item.body",
+        "field added in 0004_add, removed in 0005_remove",
+    ]
+    assert lines[blocked + 2] == "    RunSQL in shop.0004_add mentions 'body'"
 
 
 NETBOX_OPTIONS = """

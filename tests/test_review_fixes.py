@@ -453,7 +453,7 @@ def test_summary_wording(project: Project) -> None:
     )
     project.migration("shop", "0002_drop", 'migrations.RemoveField("item", "legacy"),')
     out, _ = project.command()
-    assert out.splitlines()[-1] == (
+    assert out.splitlines()[-2] == (
         "Would remove 1 operation and edit 1 operation in 2 migration files."
         " 1 migration would be left with no operations."
     )
