@@ -375,7 +375,7 @@ def test_trial_report_postgres(project: Project, pg: str) -> None:  # noqa: F811
 
     trial_history(project, MENTIONED)
     out, _ = project.command_db("plan", "--trial", "--database", pg)
-    assert "on postgresql" in out
+    assert "on PostgreSQL" in out
     assert "SQLite trials" not in out
 
 

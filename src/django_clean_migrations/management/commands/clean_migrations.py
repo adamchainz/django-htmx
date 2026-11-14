@@ -152,6 +152,20 @@ class Command(RichCommand):
         _add_common_arguments(scratch_parser)
 
     def handle(self, *args: Any, **options: Any) -> None:
+        try:
+            self._handle(options)
+        except KeyboardInterrupt:
+            # Scratch databases are dropped and written files restored on
+            # the way out; a traceback would only hide that.
+            self._stderr_console(options).print(
+                "Interrupted: scratch databases were dropped and no migration"
+                " file was changed.",
+                style="yellow",
+                highlight=False,
+            )
+            raise SystemExit(130) from None
+
+    def _handle(self, options: dict[str, Any]) -> None:
         subcommand = options.get("subcommand")
         if subcommand is None:
             self.print_help("manage.py", "clean_migrations")
@@ -268,7 +282,8 @@ class Command(RichCommand):
         self._print(
             Text(
                 f"Migrated {len(result.migrations)} migrations in"
-                f" {result.total:.2f}s on {result.vendor}: {result.operations_total:.2f}s"
+                f" {result.total:.2f}s on {result.server or result.vendor}:"
+                f" {result.operations_total:.2f}s"
                 f" in the database, {result.state_total:.2f}s updating the"
                 f" project state, {result.overhead:.2f}s other.",
                 style="bold",
@@ -401,7 +416,7 @@ class Command(RichCommand):
             return
         line = (
             f"Trial: {_count(info['runs'], 'migrate run')} on"
-            f" {info['vendor']} in {info['seconds']:.1f}s;"
+            f" {info.get('server') or info['vendor']} in {info['seconds']:.1f}s;"
             f" unlocked {_count(info['unlocked'], 'removal')} of"
             f" {info['at_risk']} that the static scan blocks"
         )
@@ -410,7 +425,8 @@ class Command(RichCommand):
         if info.get("noop") is not None:
             line += (
                 f"; {_count(len(info['noop']), 'data migration operation')}"
-                f" did nothing on a fresh {info['vendor']} database"
+                f" did nothing on a fresh {info.get('server') or info['vendor']}"
+                " database"
             )
         self._print(Text(line + ".", style="bold"))
         if info["fallback"]:

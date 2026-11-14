@@ -134,6 +134,8 @@ class Trial:
             rec.seq: (rec.migration.index, rec.index) for rec in history.ops
         }
         self.vendor = ""
+        self.server = ""
+        """The server's name ("MariaDB" for Django's "mysql" vendor)."""
         self.can_rollback_ddl = False
         self.harvested: list[TrialFailure] = []
         self.masked: set[str] = set()
@@ -192,6 +194,7 @@ class Trial:
         try:
             with scratch_database(self.alias) as connection:
                 self.vendor = connection.vendor
+                self.server = connection.display_name
                 self.can_rollback_ddl = bool(connection.features.can_rollback_ddl)
 
                 def child(send: Send) -> PassResult:
@@ -381,7 +384,7 @@ class Trial:
             key = f"{NOOP_PREFIX}element:{rec.migration.label}#{rec.original_index}"
             self.noop_keys[key] = position
             self.noop[position] = (
-                f"no writes on a fresh {self.vendor} database: "
+                f"no writes on a fresh {self.server} database: "
                 f"{observation.statements}"
                 f" {'query' if observation.statements == 1 else 'queries'}"
             )
@@ -399,7 +402,7 @@ class Trial:
             failure = baseline.failures[0] if baseline.failures else None
             raise CleanError(
                 "The original migration history doesn't migrate a fresh"
-                f" {self.vendor or 'scratch'} database, so it can't be trialled:"
+                f" {self.server or 'scratch'} database, so it can't be trialled:"
                 + (
                     f" {failure.error} (in {failure.migration[0]}."
                     f"{failure.migration[1]} {failure.operation})"
@@ -416,7 +419,7 @@ class Trial:
         if self.noop_data:
             self._say(
                 f"{_count(len(self.noop), 'data migration operation')} of"
-                f" {self.noop_seen} did nothing on a fresh {self.vendor} database"
+                f" {self.noop_seen} did nothing on a fresh {self.server} database"
                 + (
                     f"; {len(self.noop_suspect)} more wrote nothing but are kept"
                     " for what their source does ("
@@ -591,7 +594,7 @@ class Trial:
                 continue
             raise TrialFailed(
                 "The trial found no plan that migrates a fresh"
-                f" {self.vendor} database like the original history, so"
+                f" {self.server} database like the original history, so"
                 " nothing was planned or written: "
                 + "; ".join(problems[:5])
                 + ENVIRONMENT_HINT
@@ -869,6 +872,7 @@ class Trial:
         result.verification = {
             "mode": "trial",
             "vendor": self.vendor,
+            "server": self.server,
             "database": self.alias,
             "runs": self.passes + (1 if self.single_baseline else 2),
             "baseline_runs": 1 if self.single_baseline else 2,

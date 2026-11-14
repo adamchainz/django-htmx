@@ -472,7 +472,7 @@ By default, the command decides whether a data migration (``RunPython``, ``RunSQ
 
     $ python manage.py clean_migrations plan --trial --output plan.toml
     ...
-    Trial: 5 migrate runs on postgresql in 141.7s; unlocked 212 removals of 221 that the static scan blocks, blocked 9 on evidence.
+    Trial: 5 migrate runs on PostgreSQL in 141.7s; unlocked 212 removals of 221 that the static scan blocks, blocked 9 on evidence.
     $ python manage.py clean_migrations apply --plan plan.toml
 
 It works like this:
@@ -598,7 +598,7 @@ On a fresh database there are no such rows, so they run a few ``SELECT`` queries
     $ python manage.py clean_migrations plan --noop-data
     ...
     shop
-      RunPython  noop  0042_backfill_x  1 operation  (no writes on a fresh postgresql database: 3 queries)
+      RunPython  noop  0042_backfill_x  1 operation  (no writes on a fresh PostgreSQL database: 3 queries)
     ...
     Would remove 26 operations in 12 migration files. Of the operations removed, 4 are data migrations that did nothing on a fresh database.
 
@@ -619,7 +619,7 @@ The plan file lists them under ``verification.noop``, with what was observed.
 
 .. warning::
 
-    The evidence comes from one backend: the one the trial runs on, which the plan names (“no writes on a fresh sqlite database”).
+    The evidence comes from one backend: the one the trial runs on, which the plan names (“no writes on a fresh SQLite database”).
     A data migration that branches on the backend, such as a ``RunSQL`` built per vendor or a sequence reset that is empty on SQLite, may do nothing there and something elsewhere; the source scan catches common forms in ``RunPython``, not all.
     Libraries and other projects that support several database backends should not use ``--noop-data``; projects should run it against their production backend (``--database``).
     What a data migration does outside the database can’t be observed: files, caches, e-mails, calls to other services, or changes to the process, beyond what the source scan recognises.
@@ -638,7 +638,7 @@ It creates an empty scratch database, runs the whole history on it with Django�
 .. code-block:: console
 
     $ python manage.py clean_migrations profile --top 5
-    Migrated 412 migrations in 68.50s on postgresql: 14.85s in the database, 47.20s updating the project state, 6.45s other.
+    Migrated 412 migrations in 68.50s on PostgreSQL: 14.85s in the database, 47.20s updating the project state, 6.45s other.
     Slowest 5 migrations
     ...
     By operation type

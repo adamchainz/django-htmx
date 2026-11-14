@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import tempfile
+from io import StringIO
 from pathlib import Path
 from typing import Any
 
@@ -76,8 +77,17 @@ def test_scratch_cleaned_up_on_interrupt(
 
     monkeypatch.setattr(tempfile, "mkdtemp", mkdtemp)
     monkeypatch.setattr(profile_module, "run_history", interrupt)
-    with pytest.raises(KeyboardInterrupt):
-        project.command_db("profile")
+    from django.core.management import call_command
+
+    project.activate()
+    err = StringIO()
+    with project.db_blocker.unblock(), pytest.raises(SystemExit) as info:
+        call_command("clean_migrations", "profile", stdout=StringIO(), stderr=err)
+    assert info.value.code == 130
+    assert err.getvalue() == (
+        "Interrupted: scratch databases were dropped and no migration file was"
+        " changed.\n"
+    )
     assert made and not Path(made[0]).exists()
     assert connections["default"].settings_dict["NAME"] == ":memory:"
 

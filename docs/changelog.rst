@@ -16,3 +16,5 @@ Changelog
 * A trial blames the default plan's own removals too when nothing else explains a difference, until a plan passes its run; when none does, ``plan --trial`` fails and ``apply --trial`` writes nothing.
 
 * On MySQL and MariaDB, removals and folds that would change the name of the index backing a foreign key, or (on MySQL) the default of a TEXT, BLOB or JSON column, are kept when any configured database uses that backend.
+
+* Reports name the server (MariaDB, not Django’s “mysql” vendor), and plans record both under ``verification``; Ctrl+C ends a run with a short message (exit status 130) instead of a traceback.

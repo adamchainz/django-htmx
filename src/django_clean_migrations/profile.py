@@ -57,6 +57,8 @@ class Profile:
     """Database + state time of operations the default plan edits."""
     plan_error: str | None = None
     notes: list[str] = field(default_factory=list)
+    server: str = ""
+    """The server's name ("MariaDB" for Django's "mysql" vendor)."""
 
     @property
     def overhead(self) -> float:
@@ -77,6 +79,7 @@ class Profile:
 
         return {
             "vendor": self.vendor,
+            "server": self.server,
             "total_seconds": self.total,
             "database_seconds": self.operations_total,
             "state_seconds": self.state_total,
@@ -131,7 +134,7 @@ def profile(alias: str = "default", progress: Progress | None = None) -> Profile
         static, plan_error = None, str(exc)
     try:
         with scratch_database(alias) as connection:
-            vendor = connection.vendor
+            vendor, server = connection.vendor, connection.display_name
 
             def child(send: Send) -> RunReport:
                 def forward(event: str, key: Key | None, done: int, total: int) -> None:
@@ -170,6 +173,7 @@ def profile(alias: str = "default", progress: Progress | None = None) -> Profile
                 editable += t.total
     return Profile(
         vendor=vendor,
+        server=server,
         total=report.total,
         operations_total=sum(t.seconds for t in report.operations),
         state_total=sum(t.state_seconds for t in report.operations),

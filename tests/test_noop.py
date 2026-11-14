@@ -57,7 +57,7 @@ def test_loop_over_empty_table(project: Project) -> None:
     assert ("field", "shop.Item.legacy") in kinds(result)
     (noop,) = result.verification["noop"]
     assert noop["migration"] == ["shop", "0003_data"]
-    assert noop["note"] == "no writes on a fresh sqlite database: 1 query"
+    assert noop["note"] == "no writes on a fresh SQLite database: 1 query"
     assert result.removals[0].kind in ("noop", "field")
 
 
