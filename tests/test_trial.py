@@ -174,7 +174,9 @@ def break_index_once() -> Iterator[None]:
 
 @pytest.mark.usefixtures("break_index_once")
 def test_schema_difference_detected(project: Project) -> None:
-    history(project, "Item.objects.using(alias).count()")
+    # The mention makes legacy's removal depend on the trial (the static plan
+    # keeps it); removals the static plan makes are never blamed.
+    history(project, 'Item.objects.using(alias).count()\nunused = "legacy"')
     project.migration(
         "shop",
         "0004_index",

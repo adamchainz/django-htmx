@@ -71,14 +71,22 @@ class OpaqueOp:
 
 
 class TextBuilder:
+    """Texts of opaque operations; reusable across analyses of one history."""
+
     def __init__(self) -> None:
         self._base: dict[int, tuple[str, bool]] = {}
+        self._texts: dict[int, Text] = {}
 
     def text(self, opaque: OpaqueOp) -> Text:
         if opaque._text is None:
-            base, match_all = self._migration_text(opaque.rec.migration)
-            extra, extra_all = _extra_text(opaque.rec.op, opaque.rec.migration.path)
-            opaque._text = Text(base + "\n" + extra, match_all or extra_all)
+            cached = self._texts.get(id(opaque.rec.op))
+            if cached is None:
+                info = opaque.rec.migration.on_disk
+                base, match_all = self._migration_text(info)
+                extra, extra_all = _extra_text(opaque.rec.op, info.path)
+                cached = Text(base + "\n" + extra, match_all or extra_all)
+                self._texts[id(opaque.rec.op)] = cached
+            opaque._text = cached
         return opaque._text
 
     def _migration_text(self, info: MigrationInfo) -> tuple[str, bool]:
@@ -271,10 +279,15 @@ class OpaqueIndex:
     other, so their migrations fall into each other's windows).
     """
 
-    def __init__(self, history: History, ops: list[OpaqueOp]) -> None:
+    def __init__(
+        self,
+        history: History,
+        ops: list[OpaqueOp],
+        texts: TextBuilder | None = None,
+    ) -> None:
         self.history = history
         self.ops = ops
-        self.texts = TextBuilder()
+        self.texts = texts if texts is not None else TextBuilder()
         self.word_masks: dict[str, int] = {}
         self.match_all = 0
         self.blocking_migrations = 0

@@ -113,7 +113,13 @@ def _sqlite_schema(
     for kind, name, table, sql in rows:
         if kind == "table":
             q = connection.ops.quote_name(name)
-            schema[("columns", name, name)] = _fetch(cursor, f"PRAGMA table_xinfo({q})")
+            # By name: Django rebuilds SQLite tables in the project state's
+            # field order, which depends on the history (RenameField and some
+            # AlterFields move a field to the end), so the physical order of
+            # columns is incidental there.
+            schema[("columns", name, name)] = sorted(
+                r[1:] for r in _fetch(cursor, f"PRAGMA table_xinfo({q})")
+            )
             schema[("foreign keys", name, name)] = sorted(
                 r[2:] for r in _fetch(cursor, f"PRAGMA foreign_key_list({q})")
             )

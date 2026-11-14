@@ -7,9 +7,11 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from django.db.migrations import operations as m
+from django.db.migrations.operations.base import Operation
 
+from django_clean_migrations.fold import FOLD_KINDS, Fold, Folder, RegenerationCheck
 from django_clean_migrations.history import History
-from django_clean_migrations.opaque import OpaqueIndex, OpaqueOp, Pos
+from django_clean_migrations.opaque import OpaqueIndex, OpaqueOp, Pos, TextBuilder
 from django_clean_migrations.timeline import (
     Element,
     FieldLife,
@@ -22,7 +24,7 @@ from django_clean_migrations.timeline import (
 Unit = Life | Element
 """What a trial can block: an entity's whole removal, or one dropped element."""
 
-KINDS = ("model", "field", "index", "constraint", "together", "superseded")
+KINDS = ("model", "field", "index", "constraint", "together", "superseded", "fold")
 OPAQUE_POLICIES = ("scan", "block", "ignore")
 
 
@@ -107,6 +109,9 @@ class Plan:
         default_factory=list
     )
     """Removed elidable ops, with the name that matched and the entity."""
+    folds: list[Fold] = field(default_factory=list)
+    regenerated: dict[int, Operation] = field(default_factory=dict)
+    """rec.seq -> the operation that replaces it (a fold's target)."""
 
 
 class Solver:
@@ -119,19 +124,21 @@ class Solver:
         remove_all_elidable: bool = False,
         *,
         aggressive: bool = False,
-        trial_blocked: Mapping[Unit, str] | None = None,
+        trial_blocked: Mapping[str, str] | None = None,
+        texts: TextBuilder | None = None,
     ) -> None:
         """
         ``aggressive``: name-scan and soft-reference hits don't block but are
         recorded in ``at_risk``, for a trial run to confirm or refute.
-        ``trial_blocked``: removal units a trial run showed to be unsafe.
+        ``trial_blocked``: keys (see unit_key()) of removal units a trial run
+        showed to be unsafe.
         """
         self.history = history
         self.timeline = timeline
         self.scope = scope
         self.policy = opaque_policy
         self.remove_all_elidable = remove_all_elidable
-        self.opaque = OpaqueIndex(history, timeline.opaque)
+        self.opaque = OpaqueIndex(history, timeline.opaque, texts)
         self.opaque_elements: dict[int, Element] = {}
         for elements in timeline.elements.values():
             for e in elements:
@@ -142,8 +149,36 @@ class Solver:
         self._query_names_cache: dict[ModelLife, set[str]] = {}
         self._elidable_hits: dict[Life, list[tuple[OpaqueOp, str]]] = {}
         self.aggressive = aggressive
-        self.trial_blocked: Mapping[Unit, str] = trial_blocked or {}
+        self.trial_blocked: Mapping[str, str] = trial_blocked or {}
         self.at_risk: dict[Unit, dict[int, OpaqueOp]] = {}
+
+    def unit_key(self, unit: Unit) -> str:
+        """
+        A name for a removal unit that stays the same across fold rounds and
+        trial runs (which re-analyse the history and so make new objects).
+        """
+        if isinstance(unit, Life):
+            # Keyed by where it ends: folds can move where a life starts
+            # (an AddField into a CreateModel), never where it ends.
+            name = unit.names[0] if unit.names else ""
+            if isinstance(unit, TogetherLife):
+                name = f"{unit.option}:{','.join(f.names[0] for f in unit.fields)}"
+            if unit.end is not None:
+                end = f"{unit.end.migration.label}#{unit.end.original_index}"
+            else:
+                assert unit.creation is not None
+                end = f"from {_origin(unit.creation)}"
+            return f"{unit.kind}:{end}:{unit.model.names[0]}:{name}"
+        return f"element:{_origin(unit)}"
+
+    @property
+    def fold_kinds(self) -> frozenset[str]:
+        return frozenset(FOLD_KINDS) if "fold" in self.scope.kinds else frozenset()
+
+    def solve_folds(self, can_regenerate: RegenerationCheck) -> None:
+        folder = Folder(self, can_regenerate)
+        self.plan.folds = folder.run()
+        self.plan.regenerated = dict(folder.pending)
 
     # Element state
 
@@ -253,7 +288,7 @@ class Solver:
         """Blockers that don't depend on which other lives are removed."""
         if life in self._static:
             return self._static[life]
-        reason: str | None = self.trial_blocked.get(life)
+        reason: str | None = self.trial_blocked.get(self.unit_key(life))
         if reason is not None:
             self._static[life] = reason
             return reason
@@ -570,7 +605,7 @@ class Solver:
         defs: dict[int, tuple[Any, Life | None]],
     ) -> bool:
         if (
-            e1 in self.trial_blocked
+            self.unit_key(e1) in self.trial_blocked
             or e1.not_editable_reason() is not None
             or self.removed(e2)
         ):
@@ -626,7 +661,7 @@ class Solver:
 
     def _can_drop_model_op(self, model: ModelLife, e1: Element, e2: Element) -> bool:
         if (
-            e1 in self.trial_blocked
+            self.unit_key(e1) in self.trial_blocked
             or e1.not_editable_reason() is not None
             or self.removed(e2)
         ):
@@ -649,6 +684,11 @@ class Solver:
                     if self._between(e, e1.pos, e2.pos):
                         return False
         return self._window_clear(model.scan_names(), e1, e2, model)
+
+
+def _origin(e: Element) -> str:
+    rec = e.rec
+    return f"{rec.migration.label}#{rec.original_index}"
 
 
 def _short_label(life: Life) -> str:
@@ -688,10 +728,10 @@ def _same_kind(a: Any, ta: Life | None, b: Any, tb: Life | None) -> bool:
     return True
 
 
-def kinds_from(kinds: Collection[str] | None) -> frozenset[str]:
-    if not kinds:
-        return frozenset(KINDS)
-    unknown = set(kinds) - set(KINDS)
+def kinds_from(
+    kinds: Collection[str] | None, skip: Collection[str] = ()
+) -> frozenset[str]:
+    unknown = (set(kinds or ()) | set(skip)) - set(KINDS)
     if unknown:
         raise SelectionError(f"Unknown kind(s): {', '.join(sorted(unknown))}")
-    return frozenset(kinds)
+    return frozenset(kinds or KINDS) - frozenset(skip)

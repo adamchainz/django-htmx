@@ -21,6 +21,7 @@ from django.db.migrations.migration import Migration
 from django.db.migrations.operations.base import Operation
 
 from django_clean_migrations.history import Key, generate_plan
+from django_clean_migrations.ops import isolated
 
 DatabaseForwards = Callable[..., Any]
 OpHook = Callable[[Key, int, Operation, DatabaseForwards], DatabaseForwards]
@@ -98,10 +99,15 @@ def run_history(
     if executor.loader.applied_migrations:
         raise RunError("The scratch database already has applied migrations.")
     report.plan = generate_plan(graph)
-    for key, ops in (operations or {}).items():
+    replaced = operations or {}
+    for key in report.plan:
         # The loader made these Migration instances; the shared class-level
-        # operations list is not touched.
-        graph.nodes[key].operations = list(ops)
+        # operations list (and, via isolated(), its field objects) is not
+        # touched.
+        migration = graph.nodes[key]
+        migration.operations = [
+            isolated(op) for op in replaced.get(key, migration.operations)
+        ]
 
     patched: list[Operation] = []
     seen: set[int] = set()

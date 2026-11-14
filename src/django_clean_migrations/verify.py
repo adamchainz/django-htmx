@@ -18,7 +18,7 @@ from django.db.migrations.writer import MigrationWriter
 
 from django_clean_migrations.history import Key, generate_plan
 from django_clean_migrations.locate import TOGETHER_OPTIONS, normalize_together
-from django_clean_migrations.ops import INERT, OPAQUE, classify
+from django_clean_migrations.ops import INERT, OPAQUE, classify, isolated
 
 if TYPE_CHECKING:
     from django_clean_migrations.history import History
@@ -200,7 +200,7 @@ def verify_in_memory(
         for op in edited.get(info.index, info.migration.operations):
             touched = tracker.before(op, app_label, state)
             try:
-                op.state_forwards(app_label, state)
+                isolated(op).state_forwards(app_label, state)
             except Exception as exc:
                 raise VerificationError(
                     f"the edited history fails in {info.label}: {exc!r}"

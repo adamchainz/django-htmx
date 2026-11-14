@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import copy
+
 from django.db.migrations import operations as m
 from django.db.migrations.operations.base import Operation
 
@@ -63,6 +65,28 @@ def classify(op: Operation) -> str:
         ):
             return INERT
     return OPAQUE
+
+
+def isolated(op: Operation) -> Operation:
+    """
+    A copy of ``op`` with its own field objects, for replaying state.
+
+    ProjectState.rename_field() rewrites to_fields/from_fields/field_name of
+    the field objects held in the state in place, and those are the
+    operations' own objects: replaying a history twice (fold rounds, trial
+    runs) would otherwise see the renamed values where the original names
+    belong.
+    """
+    cls = type(op)
+    if cls is m.AddField or cls is m.AlterField:
+        copied = copy.copy(op)
+        copied.field = op.field.clone()  # type: ignore[attr-defined]
+        return copied
+    if cls is m.CreateModel:
+        copied = copy.copy(op)
+        copied.fields = [(n, f.clone()) for n, f in op.fields]  # type: ignore[attr-defined]
+        return copied
+    return op
 
 
 def is_exact_run_op(op: Operation) -> bool:

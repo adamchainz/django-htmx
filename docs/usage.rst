@@ -152,6 +152,7 @@ Use ``--kind``, repeated as needed, to only consider some of them:
     $ python manage.py clean_migrations plan --kind field --kind index
 
 The default is all kinds.
+``--skip-kind``, also repeatable, leaves some out instead, for example ``--skip-kind fold``.
 
 .. list-table::
    :header-rows: 1
@@ -175,6 +176,28 @@ The default is all kinds.
      - An ``AlterField``, ``AlterModelOptions``, ``AlterModelManagers`` or ``AlterModelTableComment`` operation that a later operation of the same type completely replaces.
        For fields, an ``AlterField`` can also be replaced by the ``RemoveField`` that follows it.
        Only a safe subset of such cases are removed, as described in :doc:`how_it_works`.
+   * - ``fold``
+     - A later operation moved into the one that created the thing it changes, and deleted: an ``AlterField`` into the ``AddField`` or ``CreateModel`` that added the field, an ``AddField``, ``AddIndex`` or ``AddConstraint`` into the model’s ``CreateModel``, and the model’s first ``AlterUniqueTogether``, ``AlterIndexTogether``, ``AlterModelOptions``, ``AlterModelManagers`` or ``AlterModelTableComment`` into its ``CreateModel`` options.
+       The operation that absorbs it is rewritten.
+       Only when nothing in between can tell the difference; see :doc:`how_it_works`.
+
+Folded operations are reported against the thing they change, from the deleted operation’s migration to the migration of the operation that absorbs it, and counted separately in the summary:
+
+.. code-block:: console
+
+    $ python manage.py clean_migrations plan -v 2
+    shop
+      Product
+        price  fold  0007_alter_price -> 0002_product_price  1 operation
+            shop/migrations/0007_alter_price.py:12  AlterField
+            shop/migrations/0002_product_price.py:14  AddField (regenerated)
+    Would fold 1 operation and edit 1 operation in 2 migration files. 1 migration would be left with no operations.
+
+.. note::
+
+    An operation that absorbs a fold is rewritten as a whole, the way ``makemigrations`` writes operations (with Django’s migration writer), so its own formatting and comments are lost, and new imports may be added after the file’s last import.
+    Run your code formatter afterwards.
+    Operations that only lose parts, such as one field of a ``CreateModel``, keep their formatting.
 
 Operations from ``django.contrib.postgres.operations`` are handled the same way as their standard equivalents.
 For example, ``AddIndexConcurrently`` is treated as ``AddIndex``.
@@ -371,6 +394,12 @@ The plan file records the trial: backend, number of runs, what it unlocked, and 
     But if your test suite tests migrations with data, for example with django-test-migrations, a migration that now finds a removed field may fail there.
 
 If data from the original history itself differs between runs (random or time-based values in seeded rows), the command reports the table and stops comparing its data, rather than blaming removals for it.
+
+On SQLite, columns are compared by name rather than position: Django rebuilds SQLite tables in the order fields have in its model state, which shifts as the history renames and alters fields, so the physical column order there depends on incidental details of the history.
+On other backends column order is compared.
+
+Removals the default plan makes on its own are never blamed for a failure: they are proven without a trial.
+Only removals that the name scan would have kept, and folds, are tried and blocked on evidence.
 
 Profiling migrations
 --------------------

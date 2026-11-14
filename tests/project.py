@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import importlib
 import itertools
+import os
 import sys
 import textwrap
 from collections.abc import Iterator
@@ -29,6 +30,11 @@ from django.db import migrations, models
 """
 
 _counter = itertools.count()
+
+# Most scenarios predate folding and assert exact plans without it. Set
+# CLEANMIG_TEST_FOLD=1 to run them all with folding too: equivalence checks
+# must still pass (expected plans then differ).
+FOLD_BY_DEFAULT = os.environ.get("CLEANMIG_TEST_FOLD") == "1"
 
 
 def migration_source(
@@ -155,12 +161,21 @@ class Project:
     def clean(self, *targets: str, **options: Any) -> Result:
         self.activate()
         self.purge()
+        if not FOLD_BY_DEFAULT and "kinds" not in options:
+            options.setdefault("skip_kinds", ["fold"])
         with self.db_blocker.unblock():
             return plan(targets, **options)
 
     def command(self, *args: str, **options: Any) -> tuple[str, str]:
         self.activate()
         self.purge()
+        if (
+            not FOLD_BY_DEFAULT
+            and args
+            and args[0] in ("plan", "apply")
+            and not {"--plan", "--kind", "--skip-kind"} & set(args)
+        ):
+            args = (args[0], "--skip-kind", "fold", *args[1:])
         out, err = StringIO(), StringIO()
         with self.db_blocker.unblock():
             call_command("clean_migrations", *args, stdout=out, stderr=err, **options)

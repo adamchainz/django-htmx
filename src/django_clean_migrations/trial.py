@@ -28,8 +28,11 @@ from django.db.migrations.operations.base import Operation
 
 from django_clean_migrations.core import (
     Analysis,
+    Built,
     CleanError,
     Result,
+    Solution,
+    UnitInfo,
     build,
     make_result,
 )
@@ -39,10 +42,9 @@ from django_clean_migrations.ops import OPAQUE, classify
 from django_clean_migrations.runner import DatabaseForwards, RunError, run_history
 from django_clean_migrations.scratch import ScratchDatabaseError, scratch_database
 from django_clean_migrations.snapshot import Difference, Snapshot, take_snapshot
-from django_clean_migrations.timeline import Life
 
 if TYPE_CHECKING:
-    from django_clean_migrations.solver import Solver, Unit
+    pass
 
 Progress = Callable[[str], None]
 
@@ -92,11 +94,15 @@ class Trial:
         self.opaque: dict[int, OpaqueOp] = {
             o.rec.seq: o for o in analysis.timeline.opaque
         }
+        self.origins: dict[int, tuple[int, int]] = {
+            rec.seq: (rec.migration.index, rec.index) for rec in history.ops
+        }
         self.vendor = ""
         self.can_rollback_ddl = False
         self.harvested: list[TrialFailure] = []
         self.masked: set[str] = set()
         self.passes = 0
+        self.static_units: set[str] = set()
 
     # Running
 
@@ -215,31 +221,30 @@ class Trial:
                 )
             )
         reference = baseline.snapshot
-        static_solver = self.analysis.solve()
-        static_units = _removed_units(static_solver)
-        trial_blocked: dict[Unit, str] = {}
+        static_units = self.static_units = self.analysis.solve().unit_keys()
+        trial_blocked: dict[str, str] = {}
         fallback = False
         while True:
             if self.passes >= self.max_runs:
                 fallback = True
                 break
-            solver = self.analysis.solve(aggressive=True, trial_blocked=trial_blocked)
-            built = build(self.analysis, solver)
-            outcome = self._candidate(solver, built, reference)
+            solution = self.analysis.solve(aggressive=True, trial_blocked=trial_blocked)
+            built = build(self.analysis, solution)
+            outcome = self._candidate(solution, built, reference)
             if outcome is None:
                 return self._result(
-                    solver, built, static_units, trial_blocked, fallback, begin
+                    solution, built, static_units, trial_blocked, fallback, begin
                 )
-            blocks = self._attribute(solver, outcome[0], outcome[1])
-            fresh = {u: r for u, r in blocks.items() if u not in trial_blocked}
+            blocks = self._attribute(solution, outcome[0], outcome[1])
+            fresh = {k: r for k, r in blocks.items() if k not in trial_blocked}
             if not fresh:
                 fallback = True
                 break
             trial_blocked.update(fresh)
 
-        solver = self.analysis.solve()
-        built = build(self.analysis, solver)
-        outcome = self._candidate(solver, built, reference)
+        solution = self.analysis.solve()
+        built = build(self.analysis, solution)
+        outcome = self._candidate(solution, built, reference)
         if outcome is not None:
             failures, diffs = outcome
             problems = [f.describe() for f in failures] + [str(d) for d in diffs]
@@ -247,10 +252,12 @@ class Trial:
                 "Even the static plan failed its trial run, so nothing can be"
                 " planned with --trial: " + "; ".join(problems[:5])
             )
-        return self._result(solver, built, static_units, trial_blocked, fallback, begin)
+        return self._result(
+            solution, built, static_units, trial_blocked, fallback, begin
+        )
 
     def _candidate(
-        self, solver: Solver, built: Any, reference: Snapshot
+        self, solution: Solution, built: Built, reference: Snapshot
     ) -> tuple[list[TrialFailure], list[Difference]] | None:
         """Run a candidate; None if it passes, else failures and differences."""
         operations = built.operations_by_key(self.analysis.history)
@@ -264,15 +271,17 @@ class Trial:
             # so only the failures are attributed this time.
             return result.failures, []
         diffs = reference.differences(result.snapshot, self.masked)
-        if not result.failures and diffs:
-            diffs = self._mask_nondeterminism(solver, diffs, reference, result.snapshot)
-        if not result.failures and not diffs:
+        if diffs:
+            diffs = self._mask_nondeterminism(
+                solution, diffs, reference, result.snapshot
+            )
+        if not diffs:
             return None
-        return result.failures, diffs
+        return [], diffs
 
     def _mask_nondeterminism(
         self,
-        solver: Solver,
+        solution: Solution,
         diffs: list[Difference],
         reference: Snapshot,
         snapshot: Snapshot,
@@ -282,12 +291,10 @@ class Trial:
         is left to blame, come from the history itself (random or time-based
         values in seeded rows): mask those tables rather than loop.
         """
-        at_risk = [u for u in _removed_units(solver) if solver.at_risk.get(u)]
-        if at_risk:
+        if any(u.at_risk for u in solution.units):
             return diffs
-        units = _removed_units(solver)
         for d in diffs:
-            if d.kind == "data" and d.table and not self._related(units, d.table):
+            if d.kind == "data" and d.table and not _related(solution.units, d.table):
                 self.masked.add(d.table)
         return reference.differences(snapshot, self.masked)
 
@@ -295,19 +302,22 @@ class Trial:
 
     def _attribute(
         self,
-        solver: Solver,
+        solution: Solution,
         failures: list[TrialFailure],
         diffs: list[Difference],
-    ) -> dict[Unit, str]:
-        units = _removed_units(solver)
-        blocks: dict[Unit, str] = {}
+    ) -> dict[str, str]:
+        # The static plan's removals are proven without a trial; only what
+        # the static scan would have kept can be to blame (if nothing is,
+        # the loop falls back to the static plan, which is trialled too).
+        units = [u for u in solution.units if u.key not in self.static_units]
+        blocks: dict[str, str] = {}
         history = self.analysis.history
         for failure in failures:
             reason = failure.describe()
-            targets: list[Unit] = []
-            seq = failure.seq
-            if seq is not None and seq in self.opaque:
-                targets = [u for u in units if seq in solver.at_risk.get(u, {})]
+            targets: list[UnitInfo] = []
+            origin = self.origins.get(failure.seq) if failure.seq is not None else None
+            if origin is not None and failure.seq in self.opaque:
+                targets = [u for u in units if origin in u.at_risk]
                 # One data migration can be at risk for several removals; when
                 # the error names some of them ("Cannot resolve keyword
                 # 'legacy'"), only those are to blame.
@@ -316,60 +326,37 @@ class Trial:
                     targets = named
             if not targets and failure.migration in history.by_key:
                 mig = history.by_key[failure.migration].index
-                targets = [u for u in units if self._in_window(solver, u, mig)]
+                targets = [u for u in units if self._in_window(u, mig)]
             for u in targets:
-                blocks.setdefault(u, reason)
+                blocks.setdefault(u.key, reason)
         for d in diffs:
             reason = f"trial: {d}"
-            targets = self._related(units, d.table) if d.table else []
+            targets = _related(units, d.table) if d.table else []
             if not targets and d.kind == "data":
-                targets = [u for u in units if solver.at_risk.get(u)]
+                targets = [u for u in units if u.at_risk]
             for u in targets:
-                blocks.setdefault(u, reason)
+                blocks.setdefault(u.key, reason)
         return blocks
 
-    def _in_window(self, solver: Solver, unit: Unit, mig: int) -> bool:
+    def _in_window(self, unit: UnitInfo, mig: int) -> bool:
         history = self.analysis.history
-        if isinstance(unit, Life):
-            start, end = unit.start_pos, unit.end_pos
-        else:
-            pair = next((p for p in solver.plan.superseded if p[0] is unit), None)
-            if pair is None:
-                return False
-            start, end = pair[0].pos, pair[1].pos
-        if history.ancestors[start[0]] >> mig & 1:
+        if history.ancestors[unit.start] >> mig & 1:
             return False
-        return not (end is not None and history.descendants[end[0]] >> mig & 1)
-
-    def _related(self, units: Iterable[Unit], table: str) -> list[Unit]:
-        table = table.lower()
-        related = []
-        for u in units:
-            life = u if isinstance(u, Life) else u.owner
-            if life is None:
-                continue
-            model = life.model
-            tables = {t.lower() for t in model.tables} | {
-                f"{model.app_label}_{n}".lower() for n in model.names
-            }
-            if any(table == t or table.startswith(t + "_") for t in tables):
-                related.append(u)
-        return related
+        return not (unit.end is not None and history.descendants[unit.end] >> mig & 1)
 
     # Result
 
     def _result(
         self,
-        solver: Solver,
-        built: Any,
-        static_units: set[Unit],
-        trial_blocked: Mapping[Unit, str],
+        solution: Solution,
+        built: Built,
+        static_units: set[str],
+        trial_blocked: Mapping[str, str],
         fallback: bool,
         begin: float,
     ) -> Result:
-        result = make_result(self.analysis, solver, built)
-        final_units = _removed_units(solver)
-        unlocked = [u for u in final_units if u not in static_units]
+        result = make_result(self.analysis, solution, built)
+        unlocked = solution.unit_keys() - static_units
         result.verification = {
             "mode": "trial",
             "vendor": self.vendor,
@@ -390,18 +377,18 @@ class Trial:
         return result
 
 
-def _named_in(unit: Unit, message: str) -> bool:
-    life = unit if isinstance(unit, Life) else unit.owner
-    if life is None:
-        return False
+def _related(units: Iterable[UnitInfo], table: str) -> list[UnitInfo]:
+    table = table.lower()
+    return [
+        u
+        for u in units
+        if any(table == t or table.startswith(t + "_") for t in u.tables)
+    ]
+
+
+def _named_in(unit: UnitInfo, message: str) -> bool:
     text = Text(message, match_all=False)
-    return any(text.mentions(name) for name in life.scan_names())
-
-
-def _removed_units(solver: Solver) -> set[Unit]:
-    units: set[Unit] = set(solver.plan.removed)
-    units.update(e for e, _ in solver.plan.superseded)
-    return units
+    return any(text.mentions(name) for name in unit.names)
 
 
 def _trimmed(exc: BaseException) -> str:

@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import ast
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
 from django.db.migrations import operations as m
 from django.db.migrations.operations.base import Operation
+from django.db.migrations.state import ModelState
+from django.db.migrations.writer import OperationWriter
 from tokenize_rt import UNIMPORTANT_WS, Token  # type: ignore[import-untyped]
 
 from django_clean_migrations.history import OpRecord, SourceFile
@@ -35,11 +38,14 @@ class OpEdit:
     constraints: set[int] = field(default_factory=set)
     together: dict[str, set[Entry]] = field(default_factory=dict)
     entries: set[Entry] = field(default_factory=set)
+    replacement: Operation | None = None
+    """Regenerate the operation's source from this object (folds)."""
 
     @property
     def empty(self) -> bool:
         return not (
             self.remove
+            or self.replacement is not None
             or self.fields
             or self.indexes
             or self.constraints
@@ -66,6 +72,8 @@ def edited_operation(edit: OpEdit) -> Operation | None:
     op = edit.rec.op
     if edit.remove:
         return None
+    if edit.replacement is not None:
+        return edit.replacement
     if edit.empty:
         return op
     if type(op) is m.CreateModel:
@@ -206,6 +214,31 @@ class FileEdit:
             start = q + 1
         return start, end
 
+    def regenerate(self, node: ast.Call, op: Operation) -> None:
+        """Replace an operation call with source written by Django's writer."""
+        text, imports = serialize_operation(op)
+        missing = _missing_imports(self.source, imports)
+        if isinstance(missing, str):
+            raise RewriteError(missing)
+        start = self.source.token_index.get((node.lineno, node.col_offset))
+        assert node.end_lineno is not None and node.end_col_offset is not None
+        end = self.source.token_index.get((node.end_lineno, node.end_col_offset - 1))
+        if start is None or end is None:
+            raise RewriteError(f"cannot find the operation at line {node.lineno}")
+        newline = "\r\n" if "\r\n" in self.source.text else "\n"
+        line_start = self.source.char_offset(node.lineno, 0)
+        column = self.source.char_offset(node.lineno, node.col_offset) - line_start
+        lines = text.split("\n")
+        text = newline.join([lines[0], *(" " * column + line for line in lines[1:])])
+        self.deleted.update(range(start + 1, end + 1))
+        self.replace[start] = text
+        if missing:
+            anchor = _import_anchor(self.source)
+            if anchor is None:
+                raise RewriteError("no top-level imports to add imports after")
+            added = "".join(line + newline for line in missing)
+            self.insert_after[anchor] = self.insert_after.get(anchor, "") + added
+
     def render(self) -> str:
         out: list[str] = []
         for i, tok in enumerate(self.tokens):
@@ -231,6 +264,12 @@ def rewrite_source(source: SourceFile, edits: list[OpEdit]) -> str:
             removed_ops.add(rec.index)
             continue
         if edit.empty:
+            continue
+        if edit.replacement is not None:
+            node = rec.node
+            if node is None:
+                raise RewriteError(f"{rec.describe()} was not located")
+            fe.regenerate(node, edit.replacement)
             continue
         if type(rec.op) is m.CreateModel:
             loc = locate_create_model(rec)
@@ -273,3 +312,219 @@ def rewrite_source(source: SourceFile, edits: list[OpEdit]) -> str:
         assert ops_container is not None
         fe.remove(ops_container, removed_ops)
     return fe.render()
+
+
+def serialize_operation(op: Operation) -> tuple[str, set[str]]:
+    """Source for ``op`` as makemigrations writes it, minus the trailing comma."""
+    text, imports = OperationWriter(op, indentation=0).serialize()
+    text = text.rstrip()
+    if text.endswith(","):
+        text = text[:-1]
+    return text, {*imports, "from django.db import migrations"}
+
+
+_IMPORT_RE = re.compile(r"^(?:from ([\w.]+) import ([\w, ]+)|import ([\w.]+))$")
+
+
+def _bindings(tree: ast.Module) -> tuple[dict[str, tuple[str, ...]], set[str]]:
+    """Top-level names and what binds them; and the modules imported whole."""
+    bound: dict[str, tuple[str, ...]] = {}
+    modules: set[str] = set()
+    for stmt in tree.body:
+        if isinstance(stmt, ast.Import):
+            for alias in stmt.names:
+                if alias.asname:
+                    bound[alias.asname] = ("import as", alias.name)
+                else:
+                    bound[alias.name.split(".")[0]] = (
+                        "import",
+                        alias.name.split(".")[0],
+                    )
+                    modules.add(alias.name)
+        elif isinstance(stmt, ast.ImportFrom):
+            for alias in stmt.names:
+                bound[alias.asname or alias.name] = (
+                    "from",
+                    "." * stmt.level + (stmt.module or ""),
+                    alias.name,
+                )
+        elif isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            bound.setdefault(stmt.name, ("other",))
+        else:
+            for node in ast.walk(stmt):
+                if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+                    bound.setdefault(node.id, ("other",))
+    return bound, modules
+
+
+def _missing_imports(source: SourceFile, imports: set[str]) -> list[str] | str:
+    """
+    Import lines to add so ``imports`` (from the migration writer) hold in
+    ``source``, or a reason they can't: an unimportable module path, or a
+    name the file already binds to something else.
+    """
+    tree = source.tree
+    if tree is None:
+        return "the file could not be parsed"
+    bound, modules = _bindings(tree)
+    missing: list[str] = []
+    for line in sorted(imports):
+        match = _IMPORT_RE.match(line.strip())
+        if match is None:
+            return f"unsupported import {line!r}"
+        module = match.group(1) or match.group(3)
+        if not all(part.isidentifier() for part in module.split(".")):
+            return f"{module!r} is not an importable module path"
+        if match.group(1):
+            needed = False
+            for name in (n.strip() for n in match.group(2).split(",")):
+                want = ("from", module, name)
+                have = bound.get(name)
+                if have is None:
+                    needed = True
+                elif have != want:
+                    return f"{name!r} is already bound to something else"
+            if needed:
+                missing.append(line)
+        else:
+            top = module.split(".")[0]
+            have = bound.get(top)
+            if have is not None and have != ("import", top):
+                return f"{top!r} is already bound to something else"
+            if module not in modules:
+                missing.append(line)
+    return missing
+
+
+def _import_anchor(source: SourceFile) -> int | None:
+    """Token after which to add imports: the end of the last top-level one."""
+    tree = source.tree
+    assert tree is not None
+    last = None
+    for stmt in tree.body:
+        if isinstance(stmt, (ast.Import, ast.ImportFrom)):
+            last = stmt
+    if last is None or last.end_lineno is None:
+        return None
+    for i, tok in enumerate(source.tokens):
+        if tok.name == "NEWLINE" and tok.line == last.end_lineno:
+            return i
+    return None
+
+
+def regeneration_problem(source: SourceFile | None, op: Operation) -> str | None:
+    """Why ``op`` can't be written into ``source`` by regeneration, if so."""
+    if source is None:
+        return "the source is not readable"
+    try:
+        text, imports = serialize_operation(op)
+    except Exception as exc:
+        return f"the operation can't be serialized ({exc})"
+    missing = _missing_imports(source, imports)
+    if isinstance(missing, str):
+        return missing
+    try:
+        namespace: dict[str, Any] = {}
+        for line in sorted(imports):
+            exec(line, namespace)
+        rebuilt = eval(text, namespace)
+    except Exception as exc:
+        return f"the regenerated source doesn't load ({exc!r})"
+    if not same_operation(op, rebuilt):
+        return "the regenerated source wouldn't reproduce the operation"
+    return None
+
+
+def same_operation(a: Operation, b: Operation) -> bool:
+    """Whether two operations have the same effect on the project state."""
+    from django_clean_migrations.verify import model_states_equal, same_value
+
+    if type(a) is not type(b):
+        return False
+    if isinstance(a, m.CreateModel):
+        assert isinstance(b, m.CreateModel)
+
+        def state(op: m.CreateModel) -> ModelState:
+            return ModelState(
+                "app",
+                op.name,
+                list(op.fields),
+                dict(op.options),
+                tuple(op.bases or ()),
+                list(op.managers or ()),
+            )
+
+        return model_states_equal(state(a), state(b))
+    return same_value(a.deconstruct()[1:], b.deconstruct()[1:])
+
+
+def _kept(old: list[Any], new: list[Any]) -> set[int] | None:
+    """Indexes of ``old`` missing from ``new`` if new is a subsequence of old
+    (by identity), else None."""
+    removed: set[int] = set()
+    j = 0
+    for i, item in enumerate(old):
+        if j < len(new) and new[j] is item:
+            j += 1
+        else:
+            removed.add(i)
+    return removed if j == len(new) else None
+
+
+def derive_op_edit(rec: OpRecord, new: Operation) -> OpEdit | None:
+    """
+    The token-level edit turning ``rec``'s operation into ``new``, if new only
+    lacks parts of it; None if it must be regenerated.
+    """
+    old = rec.op
+    if type(old) is not type(new):
+        return None
+    if type(old) is m.CreateModel:
+        assert isinstance(new, m.CreateModel)
+        if (
+            new.name != old.name
+            or tuple(new.bases or ()) != tuple(old.bases or ())
+            or list(new.managers or ()) != list(old.managers or ())
+        ):
+            return None
+        removed_fields = _kept([f for _, f in old.fields], [f for _, f in new.fields])
+        if removed_fields is None:
+            return None
+        kept_names = [
+            n for i, (n, _) in enumerate(old.fields) if i not in removed_fields
+        ]
+        if kept_names != [n for n, _ in new.fields]:
+            return None
+        edit = OpEdit(rec, fields={old.fields[i][0] for i in removed_fields})
+        if not set(new.options) <= set(old.options):
+            return None
+        for key, value in old.options.items():
+            if key in ("indexes", "constraints"):
+                gone = _kept(list(value), list(new.options.get(key, [])))
+                if gone is None:
+                    return None
+                if key == "indexes":
+                    edit.indexes = gone
+                else:
+                    edit.constraints = gone
+            elif key in ("unique_together", "index_together"):
+                before = set(normalize_together(value))
+                after = set(normalize_together(new.options.get(key)))
+                if not after <= before:
+                    return None
+                if before - after:
+                    edit.together[key] = before - after
+            elif key not in new.options or new.options[key] is not value:
+                return None
+        return edit
+    if type(old) in (m.AlterUniqueTogether, m.AlterIndexTogether):
+        assert isinstance(old, (m.AlterUniqueTogether, m.AlterIndexTogether))
+        assert isinstance(new, (m.AlterUniqueTogether, m.AlterIndexTogether))
+        if new.name != old.name:
+            return None
+        before = set(normalize_together(old.option_value))
+        after = set(normalize_together(new.option_value))
+        if not after <= before:
+            return None
+        return OpEdit(rec, entries=before - after)
+    return None

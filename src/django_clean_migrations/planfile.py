@@ -56,6 +56,7 @@ def plan_data(result: Result) -> dict[str, Any]:
     for removal in result.removals:
         data = asdict(removal)
         data["elements"] = [_location_dict(loc) for loc in removal.elements]
+        data["targets"] = [_location_dict(loc) for loc in removal.targets]
         removals.append(data)
     return {
         "format": FORMAT,
@@ -66,6 +67,7 @@ def plan_data(result: Result) -> dict[str, Any]:
         "summary": {
             "removed_operations": result.removed_operations,
             "edited_operations": result.edited_operations,
+            "folded_operations": result.folded_operations,
             "empty_migrations": [list(k) for k in result.empty_migrations],
         },
         "warnings": list(result.warnings),
@@ -95,6 +97,16 @@ def save_plan(result: Result, path: Path) -> None:
 def _resolve(path: str) -> Path:
     p = Path(path)
     return p if p.is_absolute() else Path.cwd() / p
+
+
+def _location(loc: dict[str, Any]) -> Location:
+    return Location(
+        migration=(loc["migration"][0], loc["migration"][1]),
+        path=_resolve(loc["path"]) if loc["path"] else None,
+        line=loc["line"],
+        operation=loc["operation"],
+        detail=loc["detail"],
+    )
 
 
 def load_plan(path: Path) -> Result:
@@ -135,16 +147,8 @@ def load_plan(path: Path) -> Result:
             Removal(
                 **{
                     **r,
-                    "elements": tuple(
-                        Location(
-                            migration=(loc["migration"][0], loc["migration"][1]),
-                            path=_resolve(loc["path"]) if loc["path"] else None,
-                            line=loc["line"],
-                            operation=loc["operation"],
-                            detail=loc["detail"],
-                        )
-                        for loc in r["elements"]
-                    ),
+                    "elements": tuple(_location(loc) for loc in r["elements"]),
+                    "targets": tuple(_location(loc) for loc in r.get("targets", [])),
                 }
             )
             for r in data["removals"]
@@ -160,6 +164,7 @@ def load_plan(path: Path) -> Result:
             files=files,
             removed_operations=summary["removed_operations"],
             edited_operations=summary["edited_operations"],
+            folded_operations=summary.get("folded_operations", 0),
             empty_migrations=[(a, n) for a, n in summary["empty_migrations"]],
             options=data["options"],
             verification=data["verification"],

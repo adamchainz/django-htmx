@@ -227,7 +227,8 @@ def _locate_together_op(rec: OpRecord) -> TogetherLoc:
 def check_sub_elements(rec: OpRecord, subs: Iterable[tuple[Any, ...]]) -> str | None:
     """Return a reason if any of the given sub-element keys is not editable."""
     reason = rec.not_editable_reason()
-    if reason is not None:
+    if reason is not None or rec.derived:
+        # A derived (already edited) operation is regenerated as a whole.
         return reason
     for sub in subs:
         kind = sub[0]

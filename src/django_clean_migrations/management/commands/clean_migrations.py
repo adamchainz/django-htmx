@@ -26,6 +26,7 @@ KIND_STYLES = {
     "together": "green",
     "superseded": "yellow",
     "elidable": "bright_magenta",
+    "fold": "bright_cyan",
 }
 
 
@@ -275,6 +276,7 @@ class Command(RichCommand):
             options["targets"],
             exclude=options["exclude"],
             kinds=options["kinds"],
+            skip_kinds=options["skip_kinds"] or (),
             opaque=options["opaque"],
             elidable=options["elidable"],
             trial=options["trial"],
@@ -451,6 +453,13 @@ def _add_selection_arguments(parser: ArgumentParser) -> None:
         help="Only consider these kinds of removal (repeatable).",
     )
     parser.add_argument(
+        "--skip-kind",
+        action="append",
+        choices=KINDS,
+        dest="skip_kinds",
+        help="Don't consider this kind of removal, e.g. fold (repeatable).",
+    )
+    parser.add_argument(
         "--opaque",
         choices=OPAQUE_POLICIES,
         default="scan",
@@ -517,6 +526,7 @@ def _has_selection(options: dict[str, Any]) -> bool:
         options["targets"]
         or options["exclude"]
         or options["kinds"]
+        or options["skip_kinds"]
         or options["opaque"] != "scan"
         or options["elidable"]
         or options["trial"]
@@ -541,7 +551,7 @@ def _locations(removal: Removal, indent: int, verbosity: int) -> list[Text]:
     if verbosity < 2:
         return []
     lines = []
-    for loc in removal.elements:
+    for loc in (*removal.elements, *removal.targets):
         line = Text("  " * (indent + 1))
         where = loc.display_path()
         if loc.line is not None:
@@ -559,17 +569,24 @@ def _count(n: int, noun: str) -> str:
 
 
 def summary(result: Result, write: bool) -> str:
-    """E.g. "Would remove 3 operations and edit 1 in 2 migration files."."""
-    actions = []
-    if result.removed_operations:
-        verb = "Removed" if write else "Would remove"
-        actions.append(f"{verb} {_count(result.removed_operations, 'operation')}")
-    if result.edited_operations:
-        verb = "edited" if write else "edit"
-        if not actions:
-            verb = verb.capitalize() if write else "Would edit"
-        actions.append(f"{verb} {_count(result.edited_operations, 'operation')}")
-    text = " and ".join(actions) + f" in {_count(len(result.files), 'migration file')}."
+    """E.g. "Would remove 3 operations, fold 2 and edit 1 in 2 migration files."."""
+    actions: list[str] = []
+    for count, done, todo in (
+        (result.removed_operations, "removed", "remove"),
+        (result.folded_operations, "folded", "fold"),
+        (result.edited_operations, "edited", "edit"),
+    ):
+        if count:
+            verb = done if write else todo
+            if not actions:
+                verb = verb.capitalize() if write else f"Would {verb}"
+            actions.append(f"{verb} {_count(count, 'operation')}")
+    joined = (
+        actions[0]
+        if len(actions) == 1
+        else ", ".join(actions[:-1]) + " and " + actions[-1]
+    )
+    text = joined + f" in {_count(len(result.files), 'migration file')}."
     empty = len(result.empty_migrations)
     if empty:
         text += f" {_count(empty, 'migration')} "

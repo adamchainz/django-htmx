@@ -386,7 +386,9 @@ class TestSoftReferences:
             migrations.RemoveField("item", "_name"),
             """,
         )
-        assert "shop.Item._name" in blocked(project.clean())
+        assert "shop.Item._name" in blocked(
+            project.clean(skip_kinds=["fold", "superseded"])
+        )
 
     def test_query_through_child_model(self, project: Project) -> None:
         project.migration("shop", "0001_initial", ITEM)
@@ -413,4 +415,6 @@ class TestSoftReferences:
             migrations.RemoveField("item", "_name"),
             """,
         )
-        assert "shop.Item._name" in blocked(project.clean())
+        assert "shop.Item._name" in blocked(
+            project.clean(skip_kinds=["fold", "superseded"])
+        )

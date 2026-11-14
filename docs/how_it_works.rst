@@ -272,6 +272,48 @@ When applying, there is a second round after the files are written.
 The command builds a fresh ``MigrationLoader`` that re-reads the files from disk, and checks that the graph has not changed, that every migration has the operations it expected, and that the final project state is the same as before.
 If anything is off, it puts the original text back in every file it wrote, and fails with an error.
 
+Folding
+-------
+
+Most of a long history is not “create, then delete”, but “create, then alter many times”.
+Folding moves a later operation into the operation that created the thing it changes, and deletes it.
+It is like Django’s squash optimizer, across the whole graph, but without changing migration files, names or dependencies.
+
+Below, *P* is the operation that creates (and keeps carrying) the definition, and *E* the later operation folded into it.
+The window is everything that may run between them, with the same rules as for the name scan.
+
+What can be folded:
+
+1. An ``AlterField`` into the ``AddField``, or ``CreateModel`` field entry, that added the field.
+   If the ``AddField`` had a default and the new definition has none, the default is kept as a one-off (``preserve_default=False``), since the table may already hold rows when the column is added.
+2. An ``AddField`` into the model’s ``CreateModel``, appended to its fields.
+3. An ``AddIndex`` or ``AddConstraint`` (or their PostgreSQL variants) into the ``CreateModel``’s ``indexes`` or ``constraints``.
+4. The model’s first ``AlterUniqueTogether`` or ``AlterIndexTogether`` into the ``CreateModel`` options.
+5. The model’s first ``AlterModelOptions`` (unless it changes ``managed``), ``AlterModelManagers`` or ``AlterModelTableComment`` into the ``CreateModel``.
+
+Conditions for every fold:
+
+* Both operations are in editable migrations, the things involved aren’t poisoned or being removed, and P doesn’t lose anything else in the same step.
+* Everything the folded definition needs exists when P runs: a referenced model or field must be created in a migration P depends on, or earlier in P’s migration, or be in the ``CreateModel`` itself.
+  No dependency is ever added.
+* Nothing is occupied earlier than before in a way that could collide: a field folded into a ``CreateModel`` must not share a name or column with any other field of the model that is kept, an index or constraint name must not be used by anything else, and an ``AlterField`` may not change the column, ``to_field``, ``through``, table or tablespace.
+* Nothing is released later than before: whatever the old definition referred to and the new one doesn’t must not be needed meanwhile.
+  The exception is a foreign key that just points at a different model, when the new model already exists at P; the old one then becomes unreferenced, and may in turn become removable.
+* Nothing that stays between P and E refers to the field being changed.
+* Every field and model the folded definition names has the same name at P as at E: no ``RenameField`` or ``RenameModel`` of them in between.
+* Fields, indexes and constraints keep their order: they are folded in the order they were added, stopping at the first that can’t be.
+  A model with ``order_with_respect_to`` is left alone.
+* The opaque operations in the window pass the name scan (for the field and its model, the model, the index or constraint name and, for anything enforced such as a constraint, the model), or, with ``--trial``, the trial runs.
+* P can be rewritten: Django’s migration writer must be able to serialize it, every import it needs must be a normal module path that doesn’t clash with a name the file already binds to something else, and the written source must load back to an operation with the same effect.
+  For example, an ``AlterModelManagers`` setting just the default manager can’t be folded, since a ``CreateModel`` can’t state that.
+  ``AlterModelTable`` is never folded: tables, sequences and indexes created under the new name from the start would get different names than in the original history.
+
+Folds enable each other, and can make more things removable (a foreign key retargeted at P leaves its old model unreferenced).
+So the command analyses the edited history again, removing, superseding and folding, until nothing changes.
+
+The edited history is replayed in memory and on disk as for any other change.
+Model state replays use copies of the field objects, since Django’s ``RenameField`` rewrites ``to_field`` and similar attributes of fields in the state in place.
+
 Trial mode
 ----------
 

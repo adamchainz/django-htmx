@@ -5,6 +5,7 @@ store and restore a plan, ``Result.write()`` applies it.
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import os
 import shutil
@@ -22,11 +23,20 @@ from django_clean_migrations.history import (
     History,
     Key,
     OpRecord,
+    derive_history,
     invalidate_modules,
     load_history,
 )
 from django_clean_migrations.locate import locate_create_model, locate_together_op
-from django_clean_migrations.rewrite import OpEdit, edited_operation, rewrite_source
+from django_clean_migrations.opaque import TextBuilder
+from django_clean_migrations.rewrite import (
+    OpEdit,
+    RewriteError,
+    derive_op_edit,
+    edited_operation,
+    regeneration_problem,
+    rewrite_source,
+)
 from django_clean_migrations.solver import (
     OPAQUE_POLICIES,
     Scope,
@@ -101,6 +111,8 @@ class Removal:
     """Migration where it was removed or replaced, if any."""
     note: str = ""
     """Extra context, e.g. why an elidable operation is removed."""
+    targets: tuple[Location, ...] = ()
+    """Operations regenerated to absorb the removed ones (folds)."""
 
 
 @dataclass(frozen=True)
@@ -146,6 +158,9 @@ class Result:
     removed_operations: int
     edited_operations: int
     empty_migrations: list[Key]
+    folded_operations: int = 0
+    """Operations deleted by folding them into earlier ones (not counted in
+    removed_operations)."""
     options: dict[str, Any] = field(default_factory=dict)
     """The options the plan was made with, as passed to ``plan()``."""
     verification: dict[str, Any] = field(default_factory=lambda: {"mode": "static"})
@@ -343,6 +358,7 @@ def plan(
     *,
     exclude: Sequence[str] = (),
     kinds: Collection[str] | None = None,
+    skip_kinds: Collection[str] = (),
     opaque: str = "scan",
     elidable: bool = False,
     trial: bool = False,
@@ -360,7 +376,12 @@ def plan(
     ``django_clean_migrations.trial``).
     """
     analysis = analyse(
-        targets, exclude=exclude, kinds=kinds, opaque=opaque, elidable=elidable
+        targets,
+        exclude=exclude,
+        kinds=kinds,
+        skip_kinds=skip_kinds,
+        opaque=opaque,
+        elidable=elidable,
     )
     if trial:
         from django_clean_migrations.trial import run_trial
@@ -369,8 +390,45 @@ def plan(
             analysis, alias=database, max_runs=trial_max_runs, progress=progress
         )
         return result
-    solver = analysis.solve()
-    return make_result(analysis, solver, build(analysis, solver))
+    solution = analysis.solve()
+    return make_result(analysis, solution, build(analysis, solution))
+
+
+MAX_ROUNDS = 10
+
+
+@dataclass(frozen=True)
+class UnitInfo:
+    """A removal unit, as a trial run needs to know it."""
+
+    key: str
+    start: int
+    """Plan index of the migration where its window starts."""
+    end: int | None
+    tables: frozenset[str]
+    """Tables of the model concerned (lower case)."""
+    names: frozenset[str]
+    at_risk: frozenset[tuple[int, int]]
+    """(plan index, index on disk) of opaque operations it relies on."""
+
+
+@dataclass
+class Solution:
+    """The outcome of solving, over as many fold rounds as needed."""
+
+    operations: dict[int, list[Operation]]
+    """Plan index -> final operation list, for changed migrations."""
+    origins: dict[int, tuple[int, bool]]
+    """id(operation) -> (its index on disk, whether it was edited)."""
+    removals: list[Removal]
+    blocked: list[Blocked]
+    units: list[UnitInfo]
+    folded: set[tuple[int, int]]
+    """(plan index, index on disk) of operations deleted by folding."""
+    rounds: int
+
+    def unit_keys(self) -> set[str]:
+        return {u.key for u in self.units}
 
 
 @dataclass
@@ -381,28 +439,93 @@ class Analysis:
     timeline: Timeline
     scope: Scope
     options: dict[str, Any]
+    texts: TextBuilder = field(default_factory=TextBuilder)
 
     def solve(
         self,
         *,
         aggressive: bool = False,
-        trial_blocked: Mapping[Unit, str] | None = None,
-    ) -> Solver:
-        solver = Solver(
-            self.history,
-            self.timeline,
-            self.scope,
-            self.options["opaque"],
-            self.options["elidable"],
-            aggressive=aggressive,
-            trial_blocked=trial_blocked,
+        trial_blocked: Mapping[str, str] | None = None,
+    ) -> Solution:
+        """
+        Solve, then fold, then solve the folded history again (folds can make
+        more things dead, and enable each other) until nothing changes.
+        """
+        history, timeline = self.history, self.timeline
+        operations: dict[int, list[Operation]] = {}
+        origins: dict[int, tuple[int, bool]] = {}
+        removals: list[Removal] = []
+        units: list[UnitInfo] = []
+        folded: set[tuple[int, int]] = set()
+        rounds = 0
+        while True:
+            rounds += 1
+            solver = Solver(
+                history,
+                timeline,
+                self.scope,
+                self.options["opaque"],
+                self.options["elidable"],
+                aggressive=aggressive,
+                trial_blocked=trial_blocked,
+                texts=self.texts,
+            )
+            solver.solve_dead()
+            if self.options["elidable"]:
+                solver.drop_all_elidable()
+            solver.drop_redundant_together()
+            solver.solve_superseded()
+            if solver.fold_kinds:
+                solver.solve_folds(
+                    lambda p, op: regeneration_problem(
+                        p.rec.migration.on_disk.source, op
+                    )
+                )
+            edits = _collect_edits(solver)
+            if not edits or rounds > MAX_ROUNDS:
+                break
+            removals.extend(_removals(solver))
+            units.extend(_units(solver))
+            folded.update(
+                (f.folded.rec.migration.index, f.folded.rec.original_index)
+                for f in solver.plan.folds
+            )
+            by_migration: dict[int, list[OpRecord]] = {}
+            for rec in history.ops:
+                by_migration.setdefault(rec.migration.index, []).append(rec)
+            for index, op_edits in edits.items():
+                new_ops: list[Operation] = []
+                for rec in by_migration[index]:
+                    edit = op_edits.get(rec.index)
+                    if edit is None:
+                        new_ops.append(rec.op)
+                        origins[id(rec.op)] = (rec.original_index, rec.derived)
+                        continue
+                    new_op = edited_operation(edit)
+                    if new_op is not None:
+                        new_ops.append(new_op)
+                        origins[id(new_op)] = (rec.original_index, True)
+                operations[index] = new_ops
+            history = derive_history(self.history, operations, origins)
+            timeline = Timeline(history)
+            try:
+                timeline.replay()
+            except Exception as exc:
+                raise CleanError(
+                    f"Internal error: the folded history doesn't replay ({exc})."
+                    " No files were changed. Please report this as a bug, and use"
+                    " --skip-kind fold to work around it."
+                ) from exc
+        removals.sort(key=lambda r: (r.app_label, (r.model or "").lower()))
+        return Solution(
+            operations,
+            origins,
+            removals,
+            _blocked(solver),
+            units,
+            folded,
+            rounds,
         )
-        solver.solve_dead()
-        if self.options["elidable"]:
-            solver.drop_all_elidable()
-        solver.drop_redundant_together()
-        solver.solve_superseded()
-        return solver
 
 
 def analyse(
@@ -410,13 +533,14 @@ def analyse(
     *,
     exclude: Sequence[str] = (),
     kinds: Collection[str] | None = None,
+    skip_kinds: Collection[str] = (),
     opaque: str = "scan",
     elidable: bool = False,
 ) -> Analysis:
     if opaque not in OPAQUE_POLICIES:
         raise CleanError(f"Unknown opaque policy {opaque!r}.")
     try:
-        kind_set = kinds_from(kinds)
+        kind_set = kinds_from(kinds, skip_kinds)
     except SelectionError as exc:
         raise CleanError(str(exc)) from exc
 
@@ -463,9 +587,8 @@ def analyse(
 
 @dataclass
 class Built:
-    """The edits a solved plan makes, as operation lists and per-op edits."""
+    """A solution's operation lists, verified in memory against the original."""
 
-    edits: dict[int, dict[int, OpEdit]]
     edited_ops: dict[int, list[Operation]]
     """Migration plan index -> its operations after editing."""
     expected: dict[Key, list[str]]
@@ -474,22 +597,13 @@ class Built:
         return {history.migrations[i].key: ops for i, ops in self.edited_ops.items()}
 
 
-def build(analysis: Analysis, solver: Solver) -> Built:
-    """Edited operation lists, verified in memory against the original."""
+def build(analysis: Analysis, solution: Solution) -> Built:
     history, timeline = analysis.history, analysis.timeline
-    edits = _collect_edits(solver)
-    edited_ops: dict[int, list[Operation]] = {}
-    expected: dict[Key, list[str]] = {}
-    for info_index, op_edits in edits.items():
-        info = history.migrations[info_index]
-        new_ops: list[Operation] = []
-        for rec_index, op in enumerate(info.migration.operations):
-            edit = op_edits.get(rec_index)
-            new_op = edited_operation(edit) if edit is not None else op
-            if new_op is not None:
-                new_ops.append(new_op)
-        edited_ops[info_index] = new_ops
-        expected[info.key] = [type(op).__name__ for op in new_ops]
+    edited_ops = solution.operations
+    expected = {
+        history.migrations[i].key: [type(op).__name__ for op in ops]
+        for i, ops in edited_ops.items()
+    }
     try:
         verify_in_memory(history, edited_ops, timeline.dangling, timeline.state)
     except VerificationError as exc:
@@ -497,26 +611,45 @@ def build(analysis: Analysis, solver: Solver) -> Built:
             f"Internal error: {exc}. No files were changed. Please report this as a"
             " bug, and use --exclude to work around it."
         ) from exc
-    return Built(edits, edited_ops, expected)
+    return Built(edited_ops, expected)
 
 
-def make_result(analysis: Analysis, solver: Solver, built: Built) -> Result:
+def make_result(analysis: Analysis, solution: Solution, built: Built) -> Result:
     history, timeline = analysis.history, analysis.timeline
-    edits, edited_ops, expected = built.edits, built.edited_ops, built.expected
     files: list[FileChange] = []
-    removed_count = 0
-    edited_count = 0
+    removed: set[tuple[Key, int]] = set()
+    edited: set[tuple[Key, int]] = set()
     empty: list[Key] = []
-    for info_index, op_edits in sorted(edits.items()):
-        info = history.migrations[info_index]
+    folded_count = 0
+    by_migration: dict[int, list[OpRecord]] = {}
+    for rec in history.ops:
+        by_migration.setdefault(rec.migration.index, []).append(rec)
+    for index, final in sorted(built.edited_ops.items()):
+        info = history.migrations[index]
+        by_origin = {solution.origins[id(op)][0]: op for op in final}
+        op_edits: list[OpEdit] = []
+        for rec in by_migration.get(index, []):
+            new = by_origin.get(rec.index)
+            if new is rec.op:
+                continue
+            if new is None:
+                op_edits.append(OpEdit(rec, remove=True))
+                removed.add((info.key, rec.index))
+                if (index, rec.index) in solution.folded:
+                    folded_count += 1
+                continue
+            op_edits.append(derive_op_edit(rec, new) or OpEdit(rec, replacement=new))
+            edited.add((info.key, rec.index))
+        if not op_edits:
+            continue
         assert info.source is not None and info.path is not None
-        new_text = rewrite_source(info.source, list(op_edits.values()))
         try:
+            new_text = rewrite_source(info.source, op_edits)
             compile(new_text, str(info.path), "exec")
-        except SyntaxError as exc:
+        except (SyntaxError, RewriteError) as exc:
             raise CleanError(
-                f"Internal error: rewriting {info.label} produced invalid Python"
-                f" ({exc}). No files were changed. Please report this as a bug."
+                f"Internal error: rewriting {info.label} failed ({exc}). No files"
+                " were changed. Please report this as a bug."
             ) from exc
         files.append(
             FileChange(
@@ -525,37 +658,24 @@ def make_result(analysis: Analysis, solver: Solver, built: Built) -> Result:
                 type(info.migration).__module__,
                 info.source.text,
                 new_text,
-                tuple(expected[info.key]),
+                tuple(built.expected[info.key]),
             )
         )
-        removed_count += sum(1 for e in op_edits.values() if e.remove)
-        edited_count += sum(
-            1 for e in op_edits.values() if not e.remove and not e.empty
-        )
-        if not edited_ops[info_index]:
+        if not final:
             empty.append(info.key)
 
     return Result(
-        removals=_removals(solver),
-        blocked=_blocked(solver),
+        removals=solution.removals,
+        blocked=solution.blocked,
         warnings=list(history.warnings),
         files=files,
-        removed_operations=removed_count,
-        edited_operations=edited_count,
+        removed_operations=len(removed) - folded_count,
+        edited_operations=len(edited),
         empty_migrations=empty,
+        folded_operations=folded_count,
         options=dict(analysis.options),
-        removed_positions=frozenset(
-            (history.migrations[m].key, i)
-            for m, op_edits in edits.items()
-            for i, e in op_edits.items()
-            if e.remove
-        ),
-        edited_positions=frozenset(
-            (history.migrations[m].key, i)
-            for m, op_edits in edits.items()
-            for i, e in op_edits.items()
-            if not e.remove and not e.empty
-        ),
+        removed_positions=frozenset(removed),
+        edited_positions=frozenset(edited),
         _plan_keys=list(history.plan),
         _final_state=timeline.state,
     )
@@ -597,7 +717,46 @@ def _collect_edits(solver: Solver) -> dict[int, dict[int, OpEdit]]:
             edit.constraints.clear()
             edit.together.clear()
             edit.entries.clear()
+    for seq, op in solver.plan.regenerated.items():
+        rec = solver.history.ops[seq]
+        edits.setdefault(rec.migration.index, {})[rec.index] = OpEdit(
+            rec, replacement=op
+        )
     return edits
+
+
+def _units(solver: Solver) -> list[UnitInfo]:
+    plan = solver.plan
+    units: list[UnitInfo] = []
+
+    def add(unit: Unit, start: int, end: int | None, life: Life) -> None:
+        model = life.model
+        units.append(
+            UnitInfo(
+                key=solver.unit_key(unit),
+                start=start,
+                end=end,
+                tables=frozenset(
+                    {t.lower() for t in model.tables}
+                    | {f"{model.app_label}_{n}".lower() for n in model.names}
+                ),
+                names=frozenset(life.scan_names()),
+                at_risk=frozenset(
+                    (o.rec.migration.index, o.rec.original_index)
+                    for o in solver.at_risk.get(unit, {}).values()
+                ),
+            )
+        )
+
+    for life in plan.removed:
+        end = life.end_pos
+        add(life, life.start_pos[0], end[0] if end else None, life)
+    for e1, e2 in plan.superseded:
+        assert e1.owner is not None
+        add(e1, e1.pos[0], e2.pos[0], e1.owner)
+    for f in plan.folds:
+        add(f.folded, f.target.pos[0], f.folded.pos[0], f.life)
+    return units
 
 
 def _removals(solver: Solver) -> list[Removal]:
@@ -694,6 +853,26 @@ def _removals(solver: Solver) -> list[Removal]:
                 name=e.rec.name,
                 start=e.rec.migration.name,
                 note=why,
+            )
+        )
+    for f in plan.folds:
+        life, e, p = f.life, f.folded, f.target
+        app = life.app_label
+        result.append(
+            Removal(
+                kind="fold",
+                app_label=app,
+                model=life.model.names[-1],
+                label=_life_label(life),
+                description=(
+                    f"{e.rec.name} in {_mig_name(e.rec, app)} folded into"
+                    f" {p.rec.name} in {_mig_name(p.rec, app)}"
+                ),
+                elements=(_location(e),),
+                name=e.rec.name if isinstance(life, ModelLife) else _entity_name(life),
+                start=_mig_name(e.rec, app),
+                end=_mig_name(p.rec, app),
+                targets=(dataclasses.replace(_location(p), detail="regenerated"),),
             )
         )
     result.sort(key=lambda r: (r.app_label, (r.model or "").lower()))

@@ -23,7 +23,7 @@ def test_profile_report(history: Project) -> None:  # noqa: F811
     assert "By operation type" in out
     assert "CreateModel" in out
     assert "By app" in out
-    assert "The default plan removes 4 operations taking" in out
+    assert "The default plan removes 5 operations taking" in out
     assert "post_migrate signals" in out
     assert connections["default"].settings_dict["NAME"] == ":memory:"
     assert settings.DATABASES["default"]["NAME"] == ":memory:"
@@ -34,7 +34,7 @@ def test_profile_json(history: Project) -> None:  # noqa: F811
     data = json.loads(out)
     assert data["vendor"] == "sqlite"
     assert data["migrations"] == 3
-    assert data["removable_operations"] == 4
+    assert data["removable_operations"] == 5
     assert set(data["by_operation_type"]) == {
         "CreateModel",
         "AddField",

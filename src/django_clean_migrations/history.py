@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import ast
+import copy
+import dataclasses
 import importlib.util
 import re
 import sys
@@ -108,6 +110,12 @@ class MigrationInfo:
     op_nodes: list[ast.Call] | None = None
     ops_container: ast.List | ast.Tuple | None = None
     unlocatable_reason: str | None = None
+    original: MigrationInfo | None = None
+    """For a derived history (later fold rounds): the migration as on disk."""
+
+    @property
+    def on_disk(self) -> MigrationInfo:
+        return self.original if self.original is not None else self
 
     @property
     def app_label(self) -> str:
@@ -133,6 +141,15 @@ class OpRecord:
     op: Operation
     seq: int
     _sub_cache: dict[str, Any] = field(default_factory=dict, repr=False)
+    origin: int | None = None
+    """Index of the operation this one derives from in the file on disk."""
+    derived: bool = False
+    """The operation object differs from the one loaded from disk (an
+    earlier round edited it); its parts are edited by regenerating it."""
+
+    @property
+    def original_index(self) -> int:
+        return self.index if self.origin is None else self.origin
 
     @property
     def node(self) -> ast.Call | None:
@@ -157,7 +174,7 @@ class OpRecord:
         return f"{self.name} in {self.migration.label}"
 
     def not_editable_reason(self) -> str | None:
-        mig = self.migration
+        mig = self.migration.on_disk
         if not mig.editable:
             return f"{mig.label} is not editable (installed package)"
         if not mig.locatable:
@@ -357,6 +374,51 @@ def load_history(loader: MigrationLoader | None = None) -> History:
         for i, op in enumerate(migration.operations):
             ops.append(OpRecord(info, i, op, len(ops)))
     return History(loader, plan, migrations, by_key, ops, warnings)
+
+
+def derive_history(
+    original: History,
+    operations: dict[int, list[Operation]],
+    origins: dict[int, tuple[int, bool]],
+) -> History:
+    """
+    A history whose migrations have the given operation lists (by plan
+    index; others unchanged). ``origins`` maps id(op) of each listed
+    operation to (index in the original migration, whether it was edited).
+    Source locations and opaque-operation texts still come from disk.
+    """
+    migrations: list[MigrationInfo] = []
+    by_key: dict[Key, MigrationInfo] = {}
+    ops: list[OpRecord] = []
+    for info in original.migrations:
+        new_ops = operations.get(info.index)
+        if new_ops is None:
+            derived_info = info
+            entries = [(op, i, False) for i, op in enumerate(info.migration.operations)]
+        else:
+            migration = copy.copy(info.migration)
+            vars(migration)["operations"] = list(new_ops)
+            entries = [(op, *origins[id(op)]) for op in new_ops]
+            nodes = (
+                [info.op_nodes[i] for _, i, _ in entries]
+                if info.op_nodes is not None
+                else None
+            )
+            derived_info = dataclasses.replace(
+                info, migration=migration, op_nodes=nodes, original=info.on_disk
+            )
+        migrations.append(derived_info)
+        by_key[derived_info.key] = derived_info
+        for i, (op, origin, edited) in enumerate(entries):
+            ops.append(
+                OpRecord(derived_info, i, op, len(ops), origin=origin, derived=edited)
+            )
+    history = History(
+        original.loader, original.plan, migrations, by_key, ops, original.warnings
+    )
+    history.__dict__["ancestors"] = original.ancestors
+    history.__dict__["descendants"] = original.descendants
+    return history
 
 
 def invalidate_modules(module_names: Iterable[str], paths: Sequence[Path]) -> None:

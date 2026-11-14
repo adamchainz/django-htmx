@@ -28,7 +28,7 @@ from django_clean_migrations.locate import (
     normalize_together,
 )
 from django_clean_migrations.opaque import OpaqueOp, Pos
-from django_clean_migrations.ops import INERT, OPAQUE, classify
+from django_clean_migrations.ops import INERT, OPAQUE, classify, isolated
 from django_clean_migrations.verify import DanglingTracker
 
 _ids = itertools.count()
@@ -456,7 +456,7 @@ class Timeline:
 
     def _state_forwards(self, op: Operation, app_label: str, rec: OpRecord) -> None:
         try:
-            op.state_forwards(app_label, self.state)
+            isolated(op).state_forwards(app_label, self.state)
         except Exception as exc:
             raise HistoryError(
                 f"Could not apply {type(op).__name__} (operation"
