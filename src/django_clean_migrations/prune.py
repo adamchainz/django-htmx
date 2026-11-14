@@ -175,7 +175,7 @@ def _block_unrewritable(
         changed = False
         for key in sorted(pruned, key=lambda k: by_key[k].index):
             reason = None
-            for child in graph.node_map[key].children:
+            for child in sorted(graph.node_map[key].children):
                 if child.key in pruned:
                     continue
                 child_info = by_key[child.key]
@@ -213,45 +213,55 @@ def _rewire(
     ancestors = history.ancestors
     plan.dependants, plan.parents, plan.added, plan.removed = {}, {}, {}, {}
     for key in sorted(pruned, key=lambda k: by_key[k].index):
-        for child in graph.node_map[key].children:
+        for child in sorted(graph.node_map[key].children):
             if child.key not in pruned:
                 plan.dependants.setdefault(key, []).append(child.key)
     for child_key in sorted(
         {c for cs in plan.dependants.values() for c in cs},
         key=lambda k: by_key[k].index,
     ):
-        old_parents = [p.key for p in graph.node_map[child_key].parents]
+        old_parents = sorted(p.key for p in graph.node_map[child_key].parents)
         kept = [p for p in old_parents if p not in pruned]
         covered = 0
         for p in kept:
             index = by_key[p].index
             covered |= ancestors[index] | (1 << index)
         added: list[Key] = []
-        for p in old_parents:
-            if p not in pruned:
+        # Latest first: a dependency on a later migration covers its
+        # ancestors, so as few as possible are added, whatever the order
+        # Django's node sets come in.
+        inherited = sorted(
+            (
+                (q, via, p)
+                for p in old_parents
+                if p in pruned
+                for q, via in _effective_parents(p, graph, pruned)
+            ),
+            key=lambda t: (-by_key[t[0]].index, t[0], t[1]),
+        )
+        for q, via, p in inherited:
+            index = by_key[q].index
+            # Django finds an app's first and latest migrations by same-app
+            # edges only (root_nodes(), leaf_nodes(), conflict detection): a
+            # migration that depended on a pruned one of its app keeps a
+            # dependency on each nearest surviving one, even when it already
+            # runs after it through other apps.
+            same_app = p[0] == child_key[0] == q[0]
+            if q in kept or q in added:
                 continue
-            for q, via in _effective_parents(p, graph, pruned):
-                index = by_key[q].index
-                # Django finds an app's first and latest migrations by
-                # same-app edges only (root_nodes(), leaf_nodes(), conflict
-                # detection): a migration that depended on a pruned one of
-                # its app keeps a dependency on each nearest surviving one,
-                # even when it already runs after it through other apps.
-                same_app = p[0] == child_key[0] == q[0]
-                if q in kept or q in added:
-                    continue
-                if covered >> index & 1 and not same_app:
-                    continue
-                if q not in (literals(via) or {}):
-                    plan.blocked[via] = (
-                        f"{child_key[0]}.{child_key[1]} would need its dependency"
-                        f" on {q[0]}.{q[1]}, which isn't a plain tuple there"
-                        " (swappable_dependency?)"
-                    )
-                    pruned.discard(via)
-                    return True
-                added.append(q)
-                covered |= ancestors[index] | (1 << index)
+            if covered >> index & 1 and not same_app:
+                continue
+            if q not in (literals(via) or {}):
+                plan.blocked[via] = (
+                    f"{child_key[0]}.{child_key[1]} would need its dependency"
+                    f" on {q[0]}.{q[1]}, which isn't a plain tuple there"
+                    " (swappable_dependency?)"
+                )
+                pruned.discard(via)
+                return True
+            added.append(q)
+            covered |= ancestors[index] | (1 << index)
+        added.sort(key=lambda k: by_key[k].index)
         plan.parents[child_key] = kept + added
         plan.added[child_key] = added
         plan.removed[child_key] = [p for p in old_parents if p in pruned]
@@ -292,7 +302,7 @@ def _effective_parents(
     migrations, each with the pruned migration that has it."""
     result: list[tuple[Key, Key]] = []
     seen: set[Key] = set()
-    stack = [(p.key, key) for p in graph.node_map[key].parents]
+    stack = [(p.key, key) for p in sorted(graph.node_map[key].parents)]
     stack.reverse()
     while stack:
         k, via = stack.pop()
@@ -300,7 +310,7 @@ def _effective_parents(
             continue
         seen.add(k)
         if k in pruned:
-            more = [(p.key, k) for p in graph.node_map[k].parents]
+            more = [(p.key, k) for p in sorted(graph.node_map[k].parents)]
             stack.extend(reversed(more))
         else:
             result.append((k, via))
