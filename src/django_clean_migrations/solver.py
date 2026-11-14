@@ -116,6 +116,9 @@ class Plan:
         default_factory=list
     )
     """Removed elidable ops, with the name that matched and the entity."""
+    noop: list[tuple[Element, str]] = field(default_factory=list)
+    """Removed data migrations that do nothing on a fresh database, with
+    what a trial saw them do."""
     folds: list[Fold] = field(default_factory=list)
     regenerated: dict[int, Operation] = field(default_factory=dict)
     """rec.seq -> the operation that replaces it (a fold's target)."""
@@ -133,19 +136,30 @@ class Solver:
         aggressive: bool = False,
         trial_blocked: Mapping[str, str] | None = None,
         texts: TextBuilder | None = None,
+        noop: Mapping[tuple[int, int], str] | None = None,
     ) -> None:
         """
         ``aggressive``: name-scan and soft-reference hits don't block but are
         recorded in ``at_risk``, for a trial run to confirm or refute.
         ``trial_blocked``: keys (see unit_key()) of removal units a trial run
         showed to be unsafe.
+        ``noop``: (plan index, index on disk) of data migrations a trial run
+        showed to do nothing on a fresh database, with what it saw: they
+        are removed (drop_noop()) and don't count for the name scan.
         """
+        self.noop: dict[int, str] = {}
+        for rec in history.ops:
+            note = (noop or {}).get((rec.migration.index, rec.original_index))
+            if note is not None:
+                self.noop[rec.seq] = note
         self.history = history
         self.timeline = timeline
         self.scope = scope
         self.policy = opaque_policy
         self.remove_all_elidable = remove_all_elidable
-        self.opaque = OpaqueIndex(history, timeline.opaque, texts)
+        self.opaque = OpaqueIndex(
+            history, [o for o in timeline.opaque if o.rec.seq not in self.noop], texts
+        )
         self.opaque_elements: dict[int, Element] = {}
         for elements in timeline.elements.values():
             for e in elements:
@@ -496,6 +510,20 @@ class Solver:
             if element not in self.plan.dropped:
                 self.plan.dropped[element] = "elidable"
                 self.plan.elidable.append((element, None, None))
+
+    # No-op data migrations
+
+    def drop_noop(self) -> None:
+        """Remove the data migrations a trial showed to do nothing; the name
+        scan already ignores them (see __init__)."""
+        for o in self.timeline.opaque:
+            note = self.noop.get(o.rec.seq)
+            if note is None:
+                continue
+            element = self.opaque_elements[o.rec.seq]
+            if element not in self.plan.dropped:
+                self.plan.dropped[element] = "noop"
+                self.plan.noop.append((element, note))
 
     # Redundant together operations
 

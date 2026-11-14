@@ -422,6 +422,43 @@ If data from the original history itself differs between runs (random or time-ba
 Removals the default plan makes on its own are never blamed for a failure: they are proven without a trial.
 Only removals that the name scan would have kept, and folds, are tried and blocked on evidence.
 
+No-op data migrations
+---------------------
+
+Many data migrations only do something to rows that already exist: they backfill a new column, fix up old values, or move data from one place to another.
+On a fresh database there are no such rows, so they run a few ``SELECT`` queries and change nothing, yet they keep whatever they mention from being removed (see :ref:`opaque-operations`).
+``--noop-data`` (which implies ``--trial``) removes them:
+
+.. code-block:: console
+
+    $ python manage.py clean_migrations plan --noop-data
+    ...
+    shop
+      RunPython  noop  0042_backfill_x  1 operation  (no writes on a fresh database: 3 queries)
+    ...
+    Would remove 26 operations in 12 migration files. Of the operations removed, 4 are data migrations that did nothing on a fresh database.
+
+While the original history runs on the trial's first scratch database, every statement each candidate executes, on every database connection, is recorded with the number of rows it affected.
+A candidate is an exact ``RunPython`` or ``RunSQL`` operation (not a subclass) that doesn’t change the project state (no ``state_operations``), in an editable migration of a selected app that isn’t excluded.
+It counts as a no-op only if every statement it ran was:
+
+* a read: a ``SELECT`` (or ``WITH`` or ``VALUES``) that calls no function other than the usual aggregates, comparisons and conversions, and contains no ``INSERT``, ``UPDATE``, ``DELETE``, ``MERGE``, ``INTO``, ``nextval`` or ``setval``;
+* transaction control (savepoints, ``BEGIN``, ``COMMIT``...), ``SET CONSTRAINTS`` or ``SET LOCAL``;
+* or an ``UPDATE`` or ``DELETE`` that affected no rows.
+
+Anything else counts as a write and keeps the operation: ``INSERT``, ``COPY``, any schema change, other ``SET`` statements, functions it doesn’t know (which might write), sequence functions, an unknown row count, and any statement on another database alias.
+Each removal is then a trial unit like any other: removed from the start, so the name scan doesn’t see the operation and what it mentioned can go too, and blamed (and put back) if a trial run fails or differs without it.
+The plan file lists them under ``verification.noop``, with what was observed.
+
+.. warning::
+
+    What a data migration does outside the database can’t be observed: files, caches, e-mails, calls to other services, or changes to the process.
+    Nor can a database that isn’t configured in ``DATABASES``.
+    Its reverse code is lost too: migrating backwards past the migration then does nothing instead of running ``reverse_code``/``reverse_sql``, which is usually harmless for a migration that had nothing to do, but not always.
+    And the evidence holds for fresh databases only, as for any trial: a test suite that migrates databases with data through the history will see the difference.
+    So this is opt-in: review the removed operations before applying.
+
+
 Profiling migrations
 --------------------
 

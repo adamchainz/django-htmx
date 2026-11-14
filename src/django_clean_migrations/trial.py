@@ -26,15 +26,17 @@ import re
 import time
 import traceback
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from django.db import transaction
 from django.db.backends.base.base import BaseDatabaseWrapper
+from django.db.migrations.operations import RunPython, RunSQL
 from django.db.migrations.operations.base import Operation
 
 from django_clean_migrations.core import (
     FOLD_PREFIX,
+    NOOP_PREFIX,
     Analysis,
     Built,
     CleanError,
@@ -46,6 +48,7 @@ from django_clean_migrations.core import (
 )
 from django_clean_migrations.history import Key, OpRecord
 from django_clean_migrations.isolate import ChildError, Send, run_isolated
+from django_clean_migrations.noop import Observation, observe
 from django_clean_migrations.opaque import OpaqueOp, Text
 from django_clean_migrations.ops import OPAQUE, classify
 from django_clean_migrations.runner import DatabaseForwards, RunError, run_history
@@ -89,6 +92,8 @@ class PassResult:
     failures: list[TrialFailure]
     snapshot: Snapshot | None
     aborted: bool
+    observations: dict[int, Observation] = field(default_factory=dict)
+    """rec.seq -> what the operation did (--noop-data, baseline only)."""
 
 
 class Trial:
@@ -100,6 +105,7 @@ class Trial:
         progress: Progress | None = None,
         isolate: bool = True,
         single_baseline: bool = False,
+        noop_data: bool = False,
     ) -> None:
         self.analysis = analysis
         self.alias = alias
@@ -121,6 +127,13 @@ class Trial:
         self.mask = Mask()
         """What differs between two runs of the original history."""
         self.single_baseline = single_baseline
+        self.noop_data = noop_data
+        self.noop: dict[tuple[int, int], str] = {}
+        """(plan index, index on disk) of data migrations that did nothing on
+        the baseline run, with what they did."""
+        self.noop_keys: dict[str, tuple[int, int]] = {}
+        self.noop_seen = 0
+        """How many data migrations were observed."""
         self.at_risk_units = 0
         self.passes = 0
         self.static_units: set[str] = set()
@@ -138,7 +151,10 @@ class Trial:
             self.progress(message, note)
 
     def _run(
-        self, label: str, operations: Mapping[Key, Sequence[Operation]] | None
+        self,
+        label: str,
+        operations: Mapping[Key, Sequence[Operation]] | None,
+        observing: bool = False,
     ) -> PassResult:
         """
         Migrate a fresh scratch database, in a forked child process (see
@@ -151,7 +167,11 @@ class Trial:
 
                 def child(send: Send) -> PassResult:
                     return self._migrate(
-                        connection, label, operations, lambda m: send((m, False))
+                        connection,
+                        label,
+                        operations,
+                        lambda m: send((m, False)),
+                        observing,
                     )
 
                 return run_isolated(
@@ -172,8 +192,10 @@ class Trial:
         label: str,
         operations: Mapping[Key, Sequence[Operation]] | None,
         say: Callable[[str], None],
+        observing: bool = False,
     ) -> PassResult:
         failures: list[TrialFailure] = []
+        observations: dict[int, Observation] = {}
         current: list[tuple[Key, Operation] | None] = [None]
         harvest = operations is not None
         begin = time.perf_counter()
@@ -186,7 +208,9 @@ class Trial:
                     f" ({key[0]}.{key[1]}), {elapsed:.0f}s"
                 )
 
-        hook = self._hook(connection, failures, current, harvest)
+        hook = self._hook(
+            connection, failures, current, harvest, observations if observing else None
+        )
         try:
             run_history(
                 connection, operations=operations, hook=hook, progress=on_progress
@@ -205,9 +229,9 @@ class Trial:
                     seq=rec.seq if rec is not None else None,
                 )
             )
-            return PassResult(failures, None, True)
+            return PassResult(failures, None, True, observations)
         say(f"{label}: taking a snapshot")
-        return PassResult(failures, take_snapshot(connection), False)
+        return PassResult(failures, take_snapshot(connection), False, observations)
 
     def _hook(
         self,
@@ -215,6 +239,7 @@ class Trial:
         failures: list[TrialFailure],
         current: list[tuple[Key, Operation] | None],
         harvest: bool,
+        observations: dict[int, Observation] | None = None,
     ) -> Callable[[Key, int, Operation, DatabaseForwards], DatabaseForwards]:
         history = self.analysis.history
 
@@ -234,8 +259,20 @@ class Trial:
                 and bool(connection.features.can_rollback_ddl)
             )
 
+            watched = (
+                observations is not None
+                and rec is not None
+                and opaque is not None
+                and self._noop_candidate(opaque)
+            )
+
             def database_forwards(*args: Any, **kwargs: Any) -> Any:
                 current[0] = (key, op)
+                if watched:
+                    assert observations is not None and rec is not None
+                    observation = observations[rec.seq] = Observation()
+                    with observe(connection.alias, observation):
+                        return forwards(*args, **kwargs)
                 if not harvestable:
                     return forwards(*args, **kwargs)
                 try:
@@ -258,12 +295,45 @@ class Trial:
 
         return hook
 
+    def _noop_candidate(self, opaque: OpaqueOp) -> bool:
+        """
+        Whether a data migration may be removed if it does nothing: an exact
+        RunPython or RunSQL without state changes, in an editable migration
+        of a selected, not excluded app.
+        """
+        op = opaque.rec.op
+        app = opaque.rec.migration.app_label
+        scope = self.analysis.scope
+        return (
+            (type(op) is RunPython or type(op) is RunSQL)
+            and not opaque.state_changed
+            and opaque.rec.not_editable_reason() is None
+            and app in scope.apps
+            and not scope.app_excluded(app)
+        )
+
+    def _learn_noop(self, observations: Mapping[int, Observation]) -> None:
+        by_seq = {rec.seq: rec for rec in self.analysis.history.ops}
+        self.noop_seen = len(observations)
+        for seq, observation in observations.items():
+            if not observation.no_op:
+                continue
+            rec = by_seq[seq]
+            position = (rec.migration.index, rec.original_index)
+            key = f"{NOOP_PREFIX}element:{rec.migration.label}#{rec.original_index}"
+            self.noop_keys[key] = position
+            self.noop[position] = (
+                "no writes on a fresh database: "
+                f"{observation.statements}"
+                f" {'query' if observation.statements == 1 else 'queries'}"
+            )
+
     # The loop
 
     def run(self) -> Result:
         begin = time.perf_counter()
         baseline_begin = time.perf_counter()
-        baseline = self._run("Baseline", None)
+        baseline = self._run("Baseline", None, observing=self.noop_data)
         baseline_seconds = time.perf_counter() - baseline_begin
         if baseline.aborted or baseline.snapshot is None:
             failure = baseline.failures[0] if baseline.failures else None
@@ -280,12 +350,20 @@ class Trial:
                 + ENVIRONMENT_HINT
             )
         reference = baseline.snapshot
+        if self.noop_data:
+            self._learn_noop(baseline.observations)
+            self._say(
+                f"{_count(len(self.noop), 'data migration operation')} of"
+                f" {self.noop_seen} did nothing on a fresh database.",
+                note=True,
+            )
+        # Only what the static analysis alone proves is never blamed: not
+        # folds (a snapshot difference may come from one: database object
+        # names), nor anything the removal of no-op data migrations unlocks.
         static = self.analysis.solve()
-        # Folds can still be blamed: a snapshot difference on a model's table
-        # may come from one (database object names), unlike pass 1/2 removals.
-        self.static_units = {
-            k for k in static.unit_keys() if not k.startswith(FOLD_PREFIX)
-        }
+        self.static_units = _proven(static)
+        if self.noop:
+            static = self.analysis.solve(noop=self.noop)
         static_removed = make_result(
             self.analysis, static, build(self.analysis, static)
         ).removed_positions
@@ -368,6 +446,19 @@ class Trial:
                 fallback = True
                 break
             trial_blocked.update(fresh)
+            if set(fresh) & static.unit_keys():
+                # Part of the plan candidates build on is wrong after all (a
+                # fold, a no-op data migration, or what that one unlocked):
+                # solve it again without.
+                for key in fresh:
+                    if key in self.noop_keys:
+                        self.noop.pop(self.noop_keys[key], None)
+                static = self.analysis.solve(
+                    noop=self.noop, trial_blocked=trial_blocked
+                )
+                static_removed = make_result(
+                    self.analysis, static, build(self.analysis, static)
+                ).removed_positions
         if not candidates:
             self._say("Nothing to unlock: only the static plan is trialled.", note=True)
 
@@ -559,6 +650,16 @@ class Trial:
             "baseline_runs": 1 if self.single_baseline else 2,
             "at_risk": self.at_risk_units,
             "unlocked": len(unlocked),
+            "noop": [
+                {
+                    "migration": list(self.analysis.history.migrations[pos[0]].key),
+                    "index": pos[1],
+                    "note": note,
+                }
+                for pos, note in sorted(self.noop.items())
+            ]
+            if self.noop_data
+            else None,
             "trial_blocked": len(trial_blocked),
             "fallback": fallback,
             "can_rollback_ddl": self.can_rollback_ddl,
@@ -654,8 +755,15 @@ def _count(n: int, noun: str) -> str:
     return f"{n} {noun}{'' if n == 1 else 's'}"
 
 
-def _folds(keys: Iterable[str]) -> set[str]:
-    return {k for k in keys if k.startswith(FOLD_PREFIX)}
+def _proven(solution: Solution) -> set[str]:
+    """
+    The static plan's removals that need no trial, so are never blamed: not
+    folds (a snapshot difference may come from one: database object names),
+    nor no-op data migrations (only shown harmless on the baseline).
+    """
+    return {
+        k for k in solution.unit_keys() if not k.startswith((FOLD_PREFIX, NOOP_PREFIX))
+    }
 
 
 def _duration(seconds: float) -> str:
@@ -684,7 +792,13 @@ def run_trial(
     max_runs: int = 8,
     progress: Progress | None = None,
     single_baseline: bool = False,
+    noop_data: bool = False,
 ) -> Result:
     return Trial(
-        analysis, alias, max_runs, progress, single_baseline=single_baseline
+        analysis,
+        alias,
+        max_runs,
+        progress,
+        single_baseline=single_baseline,
+        noop_data=noop_data,
     ).run()

@@ -32,6 +32,7 @@ KIND_STYLES = {
     "superseded": "yellow",
     "elidable": "bright_magenta",
     "fold": "bright_cyan",
+    "noop": "bright_yellow",
 }
 
 
@@ -331,6 +332,10 @@ class Command(RichCommand):
             self._print(Text(note, style="dim"))
 
     def _analyse(self, options: dict[str, Any], verbosity: int) -> Result:
+        if options["noop_data"] and options["opaque"] != "scan":
+            raise CommandError(
+                "--noop-data implies --trial, which can't be combined with --opaque."
+            )
         if options["trial"] and options["opaque"] != "scan":
             raise CommandError(
                 "--trial replaces the --opaque policy with trial runs; don't"
@@ -366,6 +371,7 @@ class Command(RichCommand):
             database=options["database"],
             trial_max_runs=options["trial_max_runs"],
             trial_single_baseline=options["trial_single_baseline"],
+            noop_data=options["noop_data"],
             progress=progress,
         )
 
@@ -381,6 +387,11 @@ class Command(RichCommand):
         )
         if info["trial_blocked"]:
             line += f", blocked {info['trial_blocked']} on evidence"
+        if info.get("noop") is not None:
+            line += (
+                f"; {_count(len(info['noop']), 'data migration operation')}"
+                " did nothing on a fresh database"
+            )
         self._print(Text(line + ".", style="bold"))
         if info["fallback"]:
             self._print(
@@ -624,6 +635,13 @@ def _add_trial_arguments(parser: ArgumentParser) -> None:
         " static plan (default 8).",
     )
     parser.add_argument(
+        "--noop-data",
+        action="store_true",
+        help="Also remove RunPython/RunSQL operations that write nothing on a"
+        " fresh database, as a trial run observes them (implies --trial)."
+        " Their reverse code and any effect outside the database are lost.",
+    )
+    parser.add_argument(
         "--trial-single-baseline",
         action="store_true",
         help="Migrate the original history once, not twice: saves a run, but"
@@ -649,6 +667,7 @@ def _has_selection(options: dict[str, Any]) -> bool:
         or options["opaque"] != "scan"
         or options["elidable"]
         or options["trial"]
+        or options["noop_data"]
     )
 
 
@@ -706,6 +725,13 @@ def summary(result: Result, write: bool) -> str:
         else ", ".join(actions[:-1]) + " and " + actions[-1]
     )
     text = joined + f" in {_count(len(result.files), 'migration file')}."
+    noop = sum(1 for r in result.removals if r.kind == "noop")
+    if noop:
+        text += (
+            f" Of the operations removed, {noop}"
+            f" {'is a data migration' if noop == 1 else 'are data migrations'}"
+            " that did nothing on a fresh database."
+        )
     empty = len(result.empty_migrations)
     if empty:
         text += f" {_count(empty, 'migration')} "

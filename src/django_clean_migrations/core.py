@@ -366,6 +366,7 @@ def plan(
     database: str = "default",
     trial_max_runs: int = 8,
     trial_single_baseline: bool = False,
+    noop_data: bool = False,
     progress: Any = None,
 ) -> Result:
     """
@@ -375,8 +376,15 @@ def plan(
 
     With ``trial``, removals blocked only by the opaque-operation name scan
     are tried for real on scratch databases of ``database``'s backend (see
-    ``django_clean_migrations.trial``).
+    ``django_clean_migrations.trial``). ``noop_data`` (implies ``trial``)
+    also removes data migrations that do nothing on a fresh database.
     """
+    if noop_data:
+        if opaque != "scan":
+            raise CleanError(
+                "--noop-data implies --trial, which can't be combined with --opaque."
+            )
+        trial = True
     analysis = analyse(
         targets,
         exclude=exclude,
@@ -385,6 +393,7 @@ def plan(
         opaque=opaque,
         elidable=elidable,
     )
+    analysis.options["noop_data"] = noop_data
     if trial:
         from django_clean_migrations.trial import run_trial
 
@@ -394,6 +403,7 @@ def plan(
             max_runs=trial_max_runs,
             progress=progress,
             single_baseline=trial_single_baseline,
+            noop_data=noop_data,
         )
         return result
     solution = analysis.solve()
@@ -404,6 +414,8 @@ MAX_ROUNDS = 10
 FOLD_PREFIX = "fold:"
 """Prefix of fold units' keys: folds are tried in trials like scan-blocked
 removals (their names in the database depend on more than the state)."""
+NOOP_PREFIX = "noop:"
+"""Prefix of the keys of no-op data migration removals (--noop-data)."""
 
 
 @dataclass(frozen=True)
@@ -461,6 +473,7 @@ class Analysis:
         aggressive: bool = False,
         trial_blocked: Mapping[str, str] | None = None,
         base: Solution | None = None,
+        noop: Mapping[tuple[int, int], str] | None = None,
     ) -> Solution:
         """
         Solve, then fold, then solve the folded history again (folds can make
@@ -469,6 +482,8 @@ class Analysis:
         ``base``: a solution to start from (its edits are kept, and solving
         goes on from the history they make), so the result contains all of
         it. Trials start from the static plan, so they never do worse.
+        ``noop``: data migrations a trial showed to do nothing (see
+        Solver), removed in the first round.
         """
         history, timeline = self.history, self.timeline
         operations: dict[int, list[Operation]] = {}
@@ -497,7 +512,10 @@ class Analysis:
                 aggressive=aggressive,
                 trial_blocked=trial_blocked,
                 texts=self.texts,
+                noop=noop if rounds == 1 else None,
             )
+            if solver.noop:
+                solver.drop_noop()
             solver.solve_dead()
             if self.options["elidable"]:
                 solver.drop_all_elidable()
@@ -813,6 +831,18 @@ def _units(solver: Solver) -> list[UnitInfo]:
         add(e1, e1.pos[0], e2.pos[0], e1.owner)
     for f in plan.folds:
         add(f.folded, f.target.pos[0], f.folded.pos[0], f.life, FOLD_PREFIX)
+    for e, _ in plan.noop:
+        units.append(
+            UnitInfo(
+                key=NOOP_PREFIX + solver.unit_key(e),
+                start=e.pos[0],
+                end=e.pos[0],
+                tables=frozenset(),
+                names=frozenset(),
+                at_risk=frozenset(),
+                app=e.rec.migration.app_label,
+            )
+        )
     return units
 
 
@@ -910,6 +940,24 @@ def _removals(solver: Solver) -> list[Removal]:
                 name=e.rec.name,
                 start=e.rec.migration.name,
                 note=why,
+            )
+        )
+    for e, note in plan.noop:
+        app = e.rec.migration.app_label
+        result.append(
+            Removal(
+                kind="noop",
+                app_label=app,
+                model=None,
+                label=app,
+                description=(
+                    f"{e.rec.name} in {e.rec.migration.name} does nothing on a"
+                    f" fresh database ({note})"
+                ),
+                elements=(_location(e),),
+                name=e.rec.name,
+                start=e.rec.migration.name,
+                note=note,
             )
         )
     for f in plan.folds:
