@@ -1,0 +1,263 @@
+from __future__ import annotations
+
+import functools
+import inspect
+import re
+from collections.abc import Iterable, Iterator
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from django.db.migrations.operations import RunPython, RunSQL, SeparateDatabaseAndState
+from django.db.migrations.operations.base import Operation
+
+from django_clean_migrations.history import History, MigrationInfo, OpRecord
+from django_clean_migrations.ops import OPAQUE, classify
+
+Pos = tuple[int, int]
+"""(plan index of migration, operation index)."""
+
+
+@functools.cache
+def _pattern(name: str) -> re.Pattern[str]:
+    return re.compile(rf"(?<![a-z0-9]){re.escape(name)}(?![a-z0-9])")
+
+
+class Text:
+    """Lower-cased text an opaque operation may act on, with cached matching."""
+
+    def __init__(self, text: str, match_all: bool) -> None:
+        self.text = text.lower()
+        self.match_all = match_all
+        self._cache: dict[str, bool] = {}
+
+    def mentions(self, name: str) -> bool:
+        if self.match_all:
+            return True
+        name = name.lower()
+        if not name:
+            return False
+        hit = self._cache.get(name)
+        if hit is None:
+            hit = name in self.text and _pattern(name).search(self.text) is not None
+            self._cache[name] = hit
+        return hit
+
+
+@dataclass(eq=False)
+class OpaqueOp:
+    rec: OpRecord
+    state_changed: bool
+    _text: Text | None = field(default=None, repr=False)
+
+    @property
+    def pos(self) -> Pos:
+        return (self.rec.migration.index, self.rec.index)
+
+    @property
+    def elidable(self) -> bool:
+        """
+        Exact RunPython/RunSQL declared elidable that changes no state: never
+        blocks, and is removed instead when it mentions a removed entity.
+        """
+        op = self.rec.op
+        return (
+            (type(op) is RunPython or type(op) is RunSQL)
+            and bool(op.elidable)
+            and not self.state_changed
+        )
+
+
+class TextBuilder:
+    def __init__(self) -> None:
+        self._base: dict[int, tuple[str, bool]] = {}
+
+    def text(self, opaque: OpaqueOp) -> Text:
+        if opaque._text is None:
+            base, match_all = self._migration_text(opaque.rec.migration)
+            extra, extra_all = _extra_text(opaque.rec.op, opaque.rec.migration.path)
+            opaque._text = Text(base + "\n" + extra, match_all or extra_all)
+        return opaque._text
+
+    def _migration_text(self, info: MigrationInfo) -> tuple[str, bool]:
+        cached = self._base.get(info.index)
+        if cached is None:
+            cached = _migration_text(info)
+            self._base[info.index] = cached
+        return cached
+
+
+def _migration_text(info: MigrationInfo) -> tuple[str, bool]:
+    source = info.source
+    if source is None:
+        if info.path is not None:
+            try:
+                return info.path.read_text(encoding="utf-8", errors="replace"), False
+            except OSError:
+                pass
+        return "", True
+    if info.op_nodes is None:
+        return source.text, False
+    spans = sorted(
+        source.node_span(node)
+        for node, op in zip(info.op_nodes, info.migration.operations, strict=True)
+        if classify(op) != OPAQUE
+    )
+    parts: list[str] = []
+    last = 0
+    for start, end in spans:
+        parts.append(source.text[last:start])
+        last = end
+    parts.append(source.text[last:])
+    return "".join(parts), False
+
+
+def _callable_source(func: Any, migration_path: Path | None) -> tuple[str, bool]:
+    while isinstance(func, functools.partial):
+        func = func.func
+    if func is None or func is RunPython.noop:
+        return "", False
+    try:
+        source_file = inspect.getsourcefile(func)
+    except TypeError:
+        source_file = None
+    if (
+        source_file is not None
+        and migration_path is not None
+        and Path(source_file).resolve() == migration_path.resolve()
+    ):
+        return "", False
+    try:
+        return inspect.getsource(func), False
+    except (OSError, TypeError):
+        return "", True
+
+
+def _nested_ops(op: Operation) -> Iterator[Operation]:
+    yield op
+    if type(op) is SeparateDatabaseAndState:
+        for inner in [*op.database_operations, *op.state_operations]:
+            yield from _nested_ops(inner)
+    elif type(op) is RunSQL:
+        for inner in op.state_operations:
+            yield from _nested_ops(inner)
+
+
+def _extra_text(op: Operation, migration_path: Path | None) -> tuple[str, bool]:
+    parts: list[str] = []
+    match_all = False
+    for inner in _nested_ops(op):
+        if type(inner) is RunPython:
+            for func in (inner.code, inner.reverse_code):
+                text, unknown = _callable_source(func, migration_path)
+                parts.append(text)
+                match_all |= unknown
+        elif type(inner) is RunSQL:
+            parts.append(str(inner.sql))
+            parts.append(str(inner.reverse_sql))
+        elif classify(inner) == OPAQUE and type(inner) is not SeparateDatabaseAndState:
+            # Custom operation: its class may hard-code what it touches.
+            for cls in type(inner).__mro__:
+                if cls.__module__.startswith("django.") or cls is object:
+                    continue
+                text, unknown = _callable_source(cls, migration_path)
+                parts.append(text)
+                match_all |= unknown
+    return "\n".join(parts), match_all
+
+
+_WORD = re.compile(r"[a-z0-9]+")
+
+
+class OpaqueIndex:
+    """
+    Opaque operations with an inverted word index over their texts, so that
+    "which opaque ops in this window mention one of these names" stays cheap
+    when windows are wide (independent apps are unordered relative to each
+    other, so their migrations fall into each other's windows).
+    """
+
+    def __init__(self, history: History, ops: list[OpaqueOp]) -> None:
+        self.history = history
+        self.ops = ops
+        self.texts = TextBuilder()
+        self.word_masks: dict[str, int] = {}
+        self.match_all = 0
+        self.blocking_migrations = 0
+        self.by_migration: dict[int, list[OpaqueOp]] = {}
+        for i, o in enumerate(ops):
+            self.by_migration.setdefault(o.rec.migration.index, []).append(o)
+            bit = 1 << i
+            if not o.elidable:
+                self.blocking_migrations |= 1 << o.rec.migration.index
+            text = self.texts.text(o)
+            if text.match_all:
+                self.match_all |= bit
+                continue
+            for word in set(_WORD.findall(text.text)):
+                self.word_masks[word] = self.word_masks.get(word, 0) | bit
+        self._name_masks: dict[str, int] = {}
+
+    def text(self, opaque: OpaqueOp) -> Text:
+        return self.texts.text(opaque)
+
+    def _candidates(self, name: str) -> int:
+        mask = self._name_masks.get(name)
+        if mask is None:
+            words = _WORD.findall(name)
+            if not words:
+                mask = 0
+            else:
+                mask = -1
+                for word in words:
+                    mask &= self.word_masks.get(word, 0)
+            self._name_masks[name] = mask
+        return mask | self.match_all
+
+    def _outside(self, start: Pos, end: Pos | None) -> int:
+        outside = self.history.ancestors[start[0]]
+        if end is not None:
+            outside |= self.history.descendants[end[0]]
+        return outside
+
+    def contains(self, o: OpaqueOp, start: Pos, end: Pos | None) -> bool:
+        """
+        Whether ``o`` may run while an entity created at ``start`` and ended
+        at ``end`` exists. Migrations unordered relative to either bound count
+        as inside. ``end=None`` means never ended.
+        """
+        mig, idx = o.pos
+        if self._outside(start, end) >> mig & 1:
+            return False
+        if mig == start[0] and idx < start[1]:
+            return False
+        return not (end is not None and mig == end[0] and idx > end[1])
+
+    def mentioning(
+        self, names: Iterable[str], start: Pos, end: Pos | None
+    ) -> list[tuple[OpaqueOp, str]]:
+        """Opaque ops in the window mentioning any name, in plan order."""
+        found: dict[int, str] = {}
+        for name in sorted(names):
+            mask = self._candidates(name)
+            while mask:
+                low = mask & -mask
+                i = low.bit_length() - 1
+                mask ^= low
+                if i in found:
+                    continue
+                o = self.ops[i]
+                if self.contains(o, start, end) and self.text(o).mentions(name):
+                    found[i] = name
+        return [(self.ops[i], found[i]) for i in sorted(found)]
+
+    def first_blocking(self, start: Pos, end: Pos | None) -> OpaqueOp | None:
+        """First non-elidable opaque op in the window, if any."""
+        mask = self.blocking_migrations & ~self._outside(start, end)
+        while mask:
+            low = mask & -mask
+            mask ^= low
+            for o in self.by_migration[low.bit_length() - 1]:
+                if not o.elidable and self.contains(o, start, end):
+                    return o
+        return None

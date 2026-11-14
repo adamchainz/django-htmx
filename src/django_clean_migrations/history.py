@@ -1,0 +1,361 @@
+from __future__ import annotations
+
+import ast
+import importlib.util
+import sys
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass, field
+from functools import cached_property
+from pathlib import Path
+from typing import Any
+
+from django.db.migrations.graph import MigrationGraph
+from django.db.migrations.loader import MigrationLoader
+from django.db.migrations.migration import Migration
+from django.db.migrations.operations.base import Operation
+from tokenize_rt import Token, src_to_tokens  # type: ignore[import-untyped]
+
+from django_clean_migrations import tokens as tk
+
+Key = tuple[str, str]
+
+
+class HistoryError(Exception):
+    pass
+
+
+class SourceFile:
+    def __init__(self, path: Path, text: str) -> None:
+        self.path = path
+        self.text = text
+
+    @cached_property
+    def tree(self) -> ast.Module | None:
+        if self.text.startswith("﻿"):
+            return None
+        try:
+            return ast.parse(self.text)
+        except (SyntaxError, ValueError):
+            return None
+
+    @cached_property
+    def tokens(self) -> list[Token]:
+        return list(src_to_tokens(self.text))
+
+    @cached_property
+    def token_index(self) -> dict[tuple[int, int], int]:
+        return {
+            (t.line, t.utf8_byte_offset): i
+            for i, t in enumerate(self.tokens)
+            if t.line is not None and t.utf8_byte_offset is not None
+        }
+
+    @cached_property
+    def _line_starts(self) -> list[int]:
+        starts = [0, 0]
+        for line in self.text.splitlines(keepends=True):
+            starts.append(starts[-1] + len(line))
+        return starts
+
+    def char_offset(self, line: int, utf8_col: int) -> int:
+        start = self._line_starts[line]
+        line_text = self.text[start : self._line_starts[line + 1]]
+        return start + len(line_text.encode()[:utf8_col].decode())
+
+    def node_span(self, node: ast.expr) -> tuple[int, int]:
+        assert node.end_lineno is not None and node.end_col_offset is not None
+        return (
+            self.char_offset(node.lineno, node.col_offset),
+            self.char_offset(node.end_lineno, node.end_col_offset),
+        )
+
+    def container(self, node: ast.expr) -> tk.Container | None:
+        """
+        Token-level view of a literal container node, or None if its tokens
+        don't line up with the AST (in which case it must not be edited).
+        """
+        cache: dict[int, tk.Container | None] = self.__dict__.setdefault(
+            "_containers", {}
+        )
+        if id(node) not in cache:
+            cache[id(node)] = tk.container_for_node(self.tokens, self.token_index, node)
+        return cache[id(node)]
+
+
+def _read_source(path: Path) -> SourceFile | None:
+    try:
+        with open(path, encoding="utf-8", newline="") as f:
+            return SourceFile(path, f.read())
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+@dataclass(eq=False)
+class MigrationInfo:
+    key: Key
+    migration: Migration
+    index: int
+    path: Path | None
+    editable: bool
+    source: SourceFile | None
+    op_nodes: list[ast.Call] | None = None
+    ops_container: ast.List | ast.Tuple | None = None
+    unlocatable_reason: str | None = None
+
+    @property
+    def app_label(self) -> str:
+        return self.key[0]
+
+    @property
+    def name(self) -> str:
+        return self.key[1]
+
+    @property
+    def label(self) -> str:
+        return f"{self.key[0]}.{self.key[1]}"
+
+    @property
+    def locatable(self) -> bool:
+        return self.op_nodes is not None
+
+
+@dataclass(eq=False)
+class OpRecord:
+    migration: MigrationInfo
+    index: int
+    op: Operation
+    seq: int
+    _sub_cache: dict[str, Any] = field(default_factory=dict, repr=False)
+
+    @property
+    def node(self) -> ast.Call | None:
+        if self.migration.op_nodes is None:
+            return None
+        return self.migration.op_nodes[self.index]
+
+    @property
+    def editable(self) -> bool:
+        return self.migration.editable and self.migration.locatable
+
+    @property
+    def name(self) -> str:
+        return type(self.op).__name__
+
+    @property
+    def line(self) -> int | None:
+        node = self.node
+        return node.lineno if node is not None else None
+
+    def describe(self) -> str:
+        return f"{self.name} in {self.migration.label}"
+
+    def not_editable_reason(self) -> str | None:
+        mig = self.migration
+        if not mig.editable:
+            return f"{mig.label} is not editable (installed package)"
+        if not mig.locatable:
+            return (
+                f"operations list in {mig.label} could not be parsed"
+                f" ({mig.unlocatable_reason})"
+            )
+        return None
+
+
+@dataclass(eq=False)
+class History:
+    loader: MigrationLoader
+    plan: list[Key]
+    migrations: list[MigrationInfo]
+    by_key: dict[Key, MigrationInfo]
+    ops: list[OpRecord]
+    warnings: list[str]
+
+    @cached_property
+    def ancestors(self) -> list[int]:
+        """Bitmask (over plan indexes) of strict graph ancestors per migration."""
+        graph = self.loader.graph
+        result = [0] * len(self.plan)
+        for i, key in enumerate(self.plan):
+            mask = 0
+            for parent in graph.node_map[key].parents:
+                p = self.by_key[parent.key].index
+                mask |= result[p] | (1 << p)
+            result[i] = mask
+        return result
+
+    @cached_property
+    def descendants(self) -> list[int]:
+        graph = self.loader.graph
+        result = [0] * len(self.plan)
+        for i in range(len(self.plan) - 1, -1, -1):
+            mask = 0
+            for child in graph.node_map[self.plan[i]].children:
+                c = self.by_key[child.key].index
+                mask |= result[c] | (1 << c)
+            result[i] = mask
+        return result
+
+    def ordered(self, a: int, b: int) -> bool:
+        """Whether migrations a and b (plan indexes) are ordered in every plan."""
+        return (
+            a == b
+            or bool(self.ancestors[a] >> b & 1)
+            or bool(self.descendants[a] >> b & 1)
+        )
+
+
+def generate_plan(graph: MigrationGraph) -> list[Key]:
+    """
+    Same order as MigrationGraph._generate_plan(leaf_nodes(), at_end=True),
+    i.e. what ``migrate`` and ``loader.project_state()`` use, without its
+    quadratic list membership test.
+    """
+    plan: list[Key] = []
+    seen: set[Key] = set()
+    for leaf in graph.leaf_nodes():
+        for key in graph.forwards_plan(leaf):
+            if key not in seen:
+                seen.add(key)
+                plan.append(key)
+    return plan
+
+
+def migration_path(migration: Migration) -> Path | None:
+    module = sys.modules.get(type(migration).__module__)
+    filename = getattr(module, "__file__", None)
+    if not filename or not filename.endswith(".py"):
+        return None
+    return Path(filename)
+
+
+def is_editable_path(path: Path) -> bool:
+    return not any(part in ("site-packages", "dist-packages") for part in path.parts)
+
+
+def callee_name(node: ast.expr) -> str | None:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return None
+
+
+def _find_operations(
+    tree: ast.Module,
+) -> tuple[ast.expr | None, str | None]:
+    classes = [
+        n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "Migration"
+    ]
+    if len(classes) != 1:
+        return None, "no unique top-level class Migration"
+    values: list[ast.expr] = []
+    for stmt in classes[0].body:
+        if isinstance(stmt, ast.Assign):
+            if any(
+                isinstance(t, ast.Name) and t.id == "operations" for t in stmt.targets
+            ):
+                if len(stmt.targets) != 1:
+                    return None, "chained assignment to operations"
+                values.append(stmt.value)
+        elif (
+            isinstance(stmt, ast.AnnAssign)
+            and isinstance(stmt.target, ast.Name)
+            and stmt.target.id == "operations"
+        ):
+            if stmt.value is None:
+                return None, "annotation without value"
+            values.append(stmt.value)
+        elif isinstance(stmt, ast.AugAssign) and (
+            isinstance(stmt.target, ast.Name) and stmt.target.id == "operations"
+        ):
+            return None, "augmented assignment to operations"
+    if len(values) != 1:
+        return None, "no unique operations assignment"
+    return values[0], None
+
+
+def locate_operations(info: MigrationInfo) -> None:
+    source = info.source
+    if source is None:
+        info.unlocatable_reason = "source not readable"
+        return
+    tree = source.tree
+    if tree is None:
+        info.unlocatable_reason = "file could not be parsed"
+        return
+    value, reason = _find_operations(tree)
+    if value is None:
+        info.unlocatable_reason = reason
+        return
+    if not isinstance(value, (ast.List, ast.Tuple)):
+        info.unlocatable_reason = "operations is not a list or tuple literal"
+        return
+    ops = info.migration.operations
+    if any(isinstance(e, ast.Starred) for e in value.elts):
+        info.unlocatable_reason = "operations contains starred expressions"
+        return
+    if len(value.elts) != len(ops):
+        info.unlocatable_reason = "operations count does not match"
+        return
+    nodes: list[ast.Call] = []
+    for elt, op in zip(value.elts, ops, strict=True):
+        if not isinstance(elt, ast.Call) or callee_name(elt.func) != type(op).__name__:
+            info.unlocatable_reason = f"cannot match {type(op).__name__} in source"
+            return
+        nodes.append(elt)
+    if source.container(value) is None:
+        info.unlocatable_reason = "unexpected token layout"
+        return
+    info.ops_container = value
+    info.op_nodes = nodes
+
+
+def load_history(loader: MigrationLoader | None = None) -> History:
+    if loader is None:
+        loader = MigrationLoader(None, ignore_no_migrations=True)
+    graph = loader.graph
+    plan = generate_plan(graph)
+    warnings: list[str] = []
+    in_graph = set(plan)
+    skipped = sorted(k for k in loader.disk_migrations if k not in in_graph)
+    if skipped:
+        warnings.append(
+            f"{len(skipped)} migration(s) replaced by squashed migrations were"
+            " skipped: "
+            + ", ".join(f"{a}.{n}" for a, n in skipped[:10])
+            + (", ..." if len(skipped) > 10 else "")
+        )
+    migrations: list[MigrationInfo] = []
+    by_key: dict[Key, MigrationInfo] = {}
+    ops: list[OpRecord] = []
+    for index, key in enumerate(plan):
+        migration = graph.nodes[key]
+        path = migration_path(migration)
+        source = _read_source(path) if path is not None else None
+        editable = path is not None and is_editable_path(path) and source is not None
+        info = MigrationInfo(
+            key=key,
+            migration=migration,
+            index=index,
+            path=path,
+            editable=editable,
+            source=source,
+        )
+        locate_operations(info)
+        migrations.append(info)
+        by_key[key] = info
+        for i, op in enumerate(migration.operations):
+            ops.append(OpRecord(info, i, op, len(ops)))
+    return History(loader, plan, migrations, by_key, ops, warnings)
+
+
+def invalidate_modules(module_names: Iterable[str], paths: Sequence[Path]) -> None:
+    """Forget imported migration modules and their bytecode so they reload."""
+    importlib.invalidate_caches()
+    for name in module_names:
+        sys.modules.pop(name, None)
+    for path in paths:
+        try:
+            Path(importlib.util.cache_from_source(str(path))).unlink(missing_ok=True)
+        except (OSError, ValueError, NotImplementedError):
+            pass
