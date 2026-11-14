@@ -49,7 +49,7 @@ from django_clean_migrations.core import (
 )
 from django_clean_migrations.history import Key, OpRecord
 from django_clean_migrations.isolate import ChildError, Send, run_isolated
-from django_clean_migrations.noop import Observation, observe
+from django_clean_migrations.noop import Observation, observe, source_concern
 from django_clean_migrations.opaque import OpaqueOp, Text
 from django_clean_migrations.ops import OPAQUE, classify
 from django_clean_migrations.prune import PrunePlan
@@ -144,8 +144,13 @@ class Trial:
         the baseline run, with what they did."""
         self.noop_keys: dict[str, tuple[int, int]] = {}
         self.noop_seen = 0
+        self.noop_suspect: dict[str, str] = {}
+        """Data migrations that wrote nothing but whose source suggests
+        effects queries don't show, with why."""
         """How many data migrations were observed."""
         self.at_risk_units = 0
+        self.first_static: set[str] = set()
+        self.candidate_keys: set[str] = set()
         self.passes = 0
         self.static_units: set[str] = set()
         self.isolate = isolate
@@ -337,11 +342,21 @@ class Trial:
             if not observation.no_op:
                 continue
             rec = by_seq[seq]
+            op = rec.op
+            if isinstance(op, RunPython):
+                # What doesn't show in queries: signal handlers, backend
+                # branches, files, the network...
+                concern = source_concern(op.code, observation.statements)
+                if concern is not None:
+                    self.noop_suspect[f"{rec.migration.label} #{rec.index + 1}"] = (
+                        concern
+                    )
+                    continue
             position = (rec.migration.index, rec.original_index)
             key = f"{NOOP_PREFIX}element:{rec.migration.label}#{rec.original_index}"
             self.noop_keys[key] = position
             self.noop[position] = (
-                "no writes on a fresh database: "
+                f"no writes on a fresh {self.vendor} database: "
                 f"{observation.statements}"
                 f" {'query' if observation.statements == 1 else 'queries'}"
             )
@@ -374,7 +389,19 @@ class Trial:
             self._learn_noop(baseline.observations)
             self._say(
                 f"{_count(len(self.noop), 'data migration operation')} of"
-                f" {self.noop_seen} did nothing on a fresh database.",
+                f" {self.noop_seen} did nothing on a fresh {self.vendor} database"
+                + (
+                    f"; {len(self.noop_suspect)} more wrote nothing but are kept"
+                    " for what their source does ("
+                    + ", ".join(
+                        f"{k}: {v}" for k, v in sorted(self.noop_suspect.items())[:3]
+                    )
+                    + (", ..." if len(self.noop_suspect) > 3 else "")
+                    + ")"
+                    if self.noop_suspect
+                    else ""
+                )
+                + ".",
                 note=True,
             )
         # Only what the static analysis alone proves is never blamed: not
@@ -390,6 +417,10 @@ class Trial:
         first = self.analysis.solve(aggressive=True, base=static)
         candidates = first.unit_keys() - static.unit_keys()
         self.at_risk_units = len(candidates)
+        # Counted against the plan as first solved: the static base can
+        # shrink later (blamed folds, no-ops, SQLite column order).
+        self.first_static = static.unit_keys()
+        self.candidate_keys = set(candidates)
         # The second baseline, the candidates, and the static plan.
         more = (0 if self.single_baseline else 1) + (
             self.max_runs + 1 if candidates else 1
@@ -715,14 +746,15 @@ class Trial:
         fallback: bool,
         begin: float,
     ) -> Result:
-        unlocked = solution.unit_keys() - static.unit_keys()
+        unlocked = solution.unit_keys() - self.first_static
+        self.candidate_keys |= unlocked
         result.verification = {
             "mode": "trial",
             "vendor": self.vendor,
             "database": self.alias,
             "runs": self.passes + (1 if self.single_baseline else 2),
             "baseline_runs": 1 if self.single_baseline else 2,
-            "at_risk": self.at_risk_units,
+            "at_risk": len(self.candidate_keys),
             "unlocked": len(unlocked),
             "noop": [
                 {
@@ -732,6 +764,9 @@ class Trial:
                 }
                 for pos, note in sorted(self.noop.items())
             ]
+            if self.noop_data
+            else None,
+            "noop_kept": dict(sorted(self.noop_suspect.items()))
             if self.noop_data
             else None,
             "trial_blocked": len(trial_blocked),

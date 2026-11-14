@@ -343,6 +343,22 @@ class Command(RichCommand):
                 " combine them."
             )
         try:
+            if verbosity > 0 and not self.console.is_terminal:
+                # No live status line: one plain line per run on stderr, so
+                # logs show progress.
+                err = self._stderr_console(options)
+                last = [""]
+
+                def plain(message: str, note: bool = False) -> None:
+                    if note:
+                        self._print(Text(message, style="dim"))
+                        return
+                    label = message.split(":", 1)[0]
+                    if label != last[0]:
+                        last[0] = label
+                        err.print(message, soft_wrap=True, highlight=False)
+
+                return self._plan(options, plain)
             if verbosity > 0:
                 with self.console.status(
                     "Analysing migrations...", spinner="dots"
@@ -393,7 +409,7 @@ class Command(RichCommand):
         if info.get("noop") is not None:
             line += (
                 f"; {_count(len(info['noop']), 'data migration operation')}"
-                " did nothing on a fresh database"
+                f" did nothing on a fresh {info['vendor']} database"
             )
         self._print(Text(line + ".", style="bold"))
         if info["fallback"]:

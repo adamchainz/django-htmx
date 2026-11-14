@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from django.core.management import CommandError
 
-from django_clean_migrations.noop import classify
+from django_clean_migrations.noop import classify, source_concern
 from tests.project import Project, temp_database
 from tests.test_clean import ITEM, kinds
 
@@ -56,7 +56,7 @@ def test_loop_over_empty_table(project: Project) -> None:
     assert ("field", "shop.Item.legacy") in kinds(result)
     (noop,) = result.verification["noop"]
     assert noop["migration"] == ["shop", "0003_data"]
-    assert noop["note"] == "no writes on a fresh database: 1 query"
+    assert noop["note"] == "no writes on a fresh sqlite database: 1 query"
     assert result.removals[0].kind in ("noop", "field")
 
 
@@ -180,3 +180,104 @@ def test_needs_trial_backend(project: Project) -> None:
 )
 def test_classify(sql: str, rowcount: int | None, write: bool) -> None:
     assert (classify(sql, rowcount) is not None) is write
+
+
+def _registers(apps: Any, schema_editor: Any) -> None:
+    from django.db.models.signals import post_migrate
+
+    post_migrate.connect(lambda **kwargs: None)
+
+
+def _vendor(apps: Any, schema_editor: Any) -> None:
+    if schema_editor.connection.vendor == "postgresql":
+        pass
+
+
+def _sequences(apps: Any, schema_editor: Any) -> None:
+    schema_editor.connection.ops.sequence_reset_sql(None, [])
+
+
+def _files(apps: Any, schema_editor: Any) -> None:
+    open("/dev/null").close()
+
+
+def _helper() -> None:
+    helper_called()
+
+
+def helper_called() -> None:
+    pass
+
+
+def _local_cache(apps: Any, schema_editor: Any) -> None:
+    cache = {}
+    for item in apps.get_model("shop", "Item").objects.all():
+        cache[item.pk] = item
+
+
+def _quiet(apps: Any, schema_editor: Any) -> None:
+    apps.get_model("shop", "Item")
+
+
+def _calls_something(apps: Any, schema_editor: Any) -> None:
+    _helper()
+
+
+def _loop(apps: Any, schema_editor: Any) -> None:
+    for item in apps.get_model("shop", "Item").objects.all():
+        item.save()
+
+
+@pytest.mark.parametrize(
+    ("func", "statements", "concern"),
+    [
+        (_registers, 0, "signals"),
+        (_vendor, 1, ".vendor"),
+        (_sequences, 1, "sequence_reset"),
+        (_files, 1, "open"),
+        (_quiet, 0, None),
+        (_local_cache, 1, None),
+        (_calls_something, 0, "helper_called"),
+        (_loop, 1, None),
+        (_loop, 0, "calls all()"),
+        (print, 0, "can't be read"),
+    ],
+)
+def test_source_concern(func: Any, statements: int, concern: str | None) -> None:
+    found = source_concern(func, statements)
+    if concern is None:
+        assert found is None
+    else:
+        assert found is not None and concern in found
+
+
+def test_signal_registration_kept(project: Project) -> None:
+    data_migration(
+        project,
+        """
+        from django.db.models.signals import post_migrate
+        post_migrate.connect(lambda **kwargs: None, weak=False)
+        """,
+    )
+    result = project.check_equivalence(**NOOP)
+    assert noops(result) == []
+    (reason,) = result.verification["noop_kept"].values()
+    assert "signals" in reason
+
+
+def test_vendor_branch_kept(project: Project) -> None:
+    data_migration(
+        project,
+        """
+        if schema_editor.connection.vendor == "postgresql":
+            schema_editor.execute("SELECT setval('x', 1)")
+        """,
+    )
+    assert noops(project.check_equivalence(**NOOP)) == []
+
+
+def test_plain_progress_without_terminal(project: Project) -> None:
+    data_migration(project, "Item.objects.using(alias).update(legacy=2)")
+    _, err = project.command("plan", "--noop-data")
+    assert "Baseline: migration 1/" in err
+    assert "Trial run 1: migration 1/" in err

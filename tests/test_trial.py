@@ -388,6 +388,7 @@ def test_sqlite_column_order(project: Project) -> None:
     result = project.clean(trial=True, skip_kinds=[])
     assert result.removals == []
     assert result.verification["trial_blocked"] == 1
+    assert result.verification["unlocked"] <= result.verification["at_risk"]
     loose = project.clean(trial=True, skip_kinds=[], trial_ignore_column_order=True)
     assert len(loose.removals) == 1
     out, _ = project.command("plan", "--kind", "fold")

@@ -11,7 +11,10 @@ write. What it does outside the database is invisible: hence opt-in.
 
 from __future__ import annotations
 
+import ast
+import inspect
 import re
+import textwrap
 from collections.abc import Callable, Iterator
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
@@ -194,3 +197,190 @@ def observe(alias: str, observation: Observation) -> Iterator[None]:
         for name in connections:
             stack.enter_context(connections[name].execute_wrapper(wrapper_for(name)))
         yield
+
+
+# What a RunPython function may do that no query shows: register signal
+# handlers, branch on the backend (and so do something else elsewhere),
+# reset sequences, touch files, the network, caches or other processes.
+_SUSPECT_NAMES = frozenset(
+    {
+        "post_migrate",
+        "pre_migrate",
+        "receiver",
+        "call_command",
+        "open",
+        "subprocess",
+        "os",
+        "shutil",
+        "Path",
+        "requests",
+        "httpx",
+        "urllib",
+        "socket",
+        "cache",
+        "caches",
+        "send_mail",
+        "send_mass_mail",
+        "management",
+        "signals",
+    }
+)
+_SUSPECT_ATTRIBUTES = frozenset(
+    {
+        "connect",
+        "vendor",
+        "ops",
+        "features",
+        "sequence_reset_sql",
+        "sequence_reset_by_name_sql",
+        "call_command",
+        "send",
+        "send_robust",
+    }
+)
+_SUSPECT_MODULES = frozenset(
+    {
+        "os",
+        "subprocess",
+        "shutil",
+        "socket",
+        "requests",
+        "httpx",
+        "urllib",
+        "pathlib",
+        "django.core.management",
+        "django.core.cache",
+        "django.core.mail",
+        "django.db.models.signals",
+        "django.dispatch",
+    }
+)
+# Calls a function that ran no query at all may make: anything else did
+# something that isn't in the database, or nothing observable.
+_QUIET_CALLS = frozenset(
+    {
+        "get_model",
+        "get_models",
+        "get_app_config",
+        "len",
+        "print",
+        "range",
+        "list",
+        "dict",
+        "set",
+        "tuple",
+        "str",
+        "int",
+        "bool",
+        "isinstance",
+        "getattr",
+        "hasattr",
+        "enumerate",
+        "zip",
+        "sorted",
+        "format",
+        "join",
+        "using",
+        "info",
+        "debug",
+        "warning",
+        "getLogger",
+    }
+)
+
+
+def _functions(func: Any) -> list[ast.AST] | None:
+    """The AST of ``func`` and of the module-level functions it calls by
+    name (one level), or None if its source can't be read."""
+    func = inspect.unwrap(func)
+    try:
+        source = textwrap.dedent(inspect.getsource(func))
+        tree = ast.parse(source)
+    except (OSError, TypeError, SyntaxError, IndentationError):
+        return None
+    trees: list[ast.AST] = [tree]
+    module_globals = getattr(func, "__globals__", {})
+    module = module_globals.get("__name__")
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            helper = module_globals.get(node.func.id)
+            if (
+                inspect.isfunction(helper)
+                and helper is not func
+                and helper.__module__ == module
+            ):
+                try:
+                    trees.append(ast.parse(textwrap.dedent(inspect.getsource(helper))))
+                except (OSError, TypeError, SyntaxError, IndentationError):
+                    return None
+    return trees
+
+
+def _call_name(node: ast.Call) -> str:
+    target = node.func
+    if isinstance(target, ast.Name):
+        return target.id
+    if isinstance(target, ast.Attribute):
+        return target.attr
+    return ""
+
+
+def source_concern(func: Any, statements: int) -> str | None:
+    """
+    Why a RunPython function that wrote nothing on the trial database may
+    still matter, from its source; None if nothing is suspect.
+    """
+    trees = _functions(func)
+    if trees is None:
+        return "its source can't be read"
+    for tree in trees:
+        local = _bound_names(tree)
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Name)
+                and node.id in _SUSPECT_NAMES
+                and node.id not in local
+            ):
+                return f"it uses {node.id}"
+            if isinstance(node, ast.Attribute) and node.attr in _SUSPECT_ATTRIBUTES:
+                return f"it uses .{node.attr}"
+            if isinstance(node, ast.Import | ast.ImportFrom):
+                modules = (
+                    [node.module or ""]
+                    if isinstance(node, ast.ImportFrom)
+                    else [a.name for a in node.names]
+                )
+                for module in modules:
+                    if module.split(".")[0] in _SUSPECT_MODULES or module in (
+                        _SUSPECT_MODULES
+                    ):
+                        return f"it imports {module}"
+    if statements == 0:
+        for tree in trees:
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Call):
+                    name = _call_name(node)
+                    if name in _QUIET_CALLS or name in _local_functions(trees):
+                        continue
+                    return f"it ran no query, yet calls {name or 'something'}()"
+    return None
+
+
+def _local_functions(trees: list[ast.AST]) -> set[str]:
+    return {
+        node.name
+        for tree in trees
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef)
+    }
+
+
+def _bound_names(tree: ast.AST) -> set[str]:
+    """Names the function binds itself (a local ``cache = {}`` is fine)."""
+    bound: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store | ast.Del):
+            bound.add(node.id)
+        elif isinstance(node, ast.arg):
+            bound.add(node.arg)
+    return bound

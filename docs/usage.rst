@@ -482,7 +482,7 @@ On a fresh database there are no such rows, so they run a few ``SELECT`` queries
     $ python manage.py clean_migrations plan --noop-data
     ...
     shop
-      RunPython  noop  0042_backfill_x  1 operation  (no writes on a fresh database: 3 queries)
+      RunPython  noop  0042_backfill_x  1 operation  (no writes on a fresh postgresql database: 3 queries)
     ...
     Would remove 26 operations in 12 migration files. Of the operations removed, 4 are data migrations that did nothing on a fresh database.
 
@@ -495,12 +495,18 @@ It counts as a no-op only if every statement it ran was:
 * or an ``UPDATE`` or ``DELETE`` that affected no rows.
 
 Anything else counts as a write and keeps the operation: ``INSERT``, ``COPY``, any schema change, other ``SET`` statements, functions it doesn’t know (which might write), sequence functions, an unknown row count, and any statement on another database alias.
+
+A ``RunPython`` operation is also kept when its function’s source (and that of the functions of the same module it calls) shows effects that queries don’t: connecting signal handlers (``.connect()``, ``receiver``, ``pre_migrate``/``post_migrate``), looking at the backend (``.vendor``, ``.features``, ``connection.ops``, sequence resets), files, the network, caches, e-mail, ``call_command`` or other processes; when its source can’t be read; and when it ran no query at all yet calls anything other than ``apps.get_model()`` and the like (it did something, just not in the database).
+These are listed as kept, in the trial’s output and under ``verification.noop_kept`` in the plan file.
 Each removal is then a trial unit like any other: removed from the start, so the name scan doesn’t see the operation and what it mentioned can go too, and blamed (and put back) if a trial run fails or differs without it.
 The plan file lists them under ``verification.noop``, with what was observed.
 
 .. warning::
 
-    What a data migration does outside the database can’t be observed: files, caches, e-mails, calls to other services, or changes to the process.
+    The evidence comes from one backend: the one the trial runs on, which the plan names (“no writes on a fresh sqlite database”).
+    A data migration that branches on the backend, such as a ``RunSQL`` built per vendor or a sequence reset that is empty on SQLite, may do nothing there and something elsewhere; the source scan catches common forms in ``RunPython``, not all.
+    Libraries and other projects that support several database backends should not use ``--noop-data``; projects should run it against their production backend (``--database``).
+    What a data migration does outside the database can’t be observed: files, caches, e-mails, calls to other services, or changes to the process, beyond what the source scan recognises.
     Nor can a database that isn’t configured in ``DATABASES``.
     Its reverse code is lost too: migrating backwards past the migration then does nothing instead of running ``reverse_code``/``reverse_sql``, which is usually harmless for a migration that had nothing to do, but not always.
     And the evidence holds for fresh databases only, as for any trial: a test suite that migrates databases with data through the history will see the difference.
