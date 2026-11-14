@@ -1,13 +1,11 @@
 """Snapshots on every backend, and scratch databases on PostgreSQL.
 
-The PostgreSQL tests use the server given by CLEANMIG_TEST_POSTGRES_HOST
-(default 127.0.0.1), _PORT (5432), _USER and _PASSWORD (rw), and skip when
-it can't be reached.
+The PostgreSQL tests use the server from compose.yaml, so start it with:
+docker compose up -d --wait
 """
 
 from __future__ import annotations
 
-import os
 import threading
 from collections import Counter
 from collections.abc import Iterator
@@ -284,30 +282,18 @@ def _postgres() -> dict[str, Any]:
     return {
         "ENGINE": "django.db.backends.postgresql",
         "NAME": "cm_dev_tests",
-        "HOST": os.environ.get("CLEANMIG_TEST_POSTGRES_HOST", "127.0.0.1"),
-        "PORT": os.environ.get("CLEANMIG_TEST_POSTGRES_PORT", "5432"),
-        "USER": os.environ.get("CLEANMIG_TEST_POSTGRES_USER", "rw"),
-        "PASSWORD": os.environ.get("CLEANMIG_TEST_POSTGRES_PASSWORD", "rw"),
+        # These match compose.yaml.
+        "HOST": "localhost",
+        "PORT": "55432",
+        "USER": "postgres",
+        "PASSWORD": "postgres",
     }
 
 
 @pytest.fixture
 def pg(django_db_blocker: Any) -> Iterator[str]:
-    """An alias "pg" for the PostgreSQL server, or skip."""
-    import psycopg
-
+    """An alias "pg" for the PostgreSQL server from compose.yaml."""
     config = _postgres()
-    try:
-        psycopg.connect(
-            host=config["HOST"],
-            port=config["PORT"],
-            user=config["USER"],
-            password=config["PASSWORD"],
-            dbname="postgres",
-            connect_timeout=3,
-        ).close()
-    except psycopg.Error:  # pragma: no cover - CI has a server
-        pytest.skip("no PostgreSQL server")
     connections.settings["pg"] = connections.configure_settings(
         {"default": {"ENGINE": "django.db.backends.sqlite3"}, "pg": config}
     )["pg"]
