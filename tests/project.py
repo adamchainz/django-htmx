@@ -21,7 +21,7 @@ from django.db import connections
 from django.db.migrations.executor import MigrationExecutor
 from django.test import override_settings
 
-from django_clean_migrations.core import Result, clean
+from django_clean_migrations.core import Result, plan
 
 IMPORTS = """\
 import django.db.models.deletion
@@ -155,7 +155,7 @@ class Project:
     def clean(self, *targets: str, **options: Any) -> Result:
         self.activate()
         self.purge()
-        return clean(targets, **options)
+        return plan(targets, **options)
 
     def command(self, *args: str, **options: Any) -> tuple[str, str]:
         self.activate()

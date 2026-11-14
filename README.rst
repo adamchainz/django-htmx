@@ -34,12 +34,19 @@ Clean up your Django migration history by removing operations that cancel out.
 Over time, migration histories accumulate operations that undo each other: models created then deleted, fields added then removed, indexes and constraints added then dropped, and ``Alter*`` operations that later ones supersede.
 django-clean-migrations scans your project’s migrations and removes such operations, to speed up running migrations from scratch.
 
-Run the management command to preview the changes, then again with ``--write`` to apply them:
+Preview the changes with ``plan``, then apply them with ``apply``:
 
 .. code-block:: console
 
-    $ python manage.py clean_migrations
-    $ python manage.py clean_migrations --write
+    $ python manage.py clean_migrations plan
+    $ python manage.py clean_migrations apply
+
+Or save the plan to a file, review it, and apply exactly that:
+
+.. code-block:: console
+
+    $ python manage.py clean_migrations plan --output plan.json
+    $ python manage.py clean_migrations apply --plan plan.json
 
 Documentation
 -------------

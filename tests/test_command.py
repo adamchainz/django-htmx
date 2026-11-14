@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import dataclasses
+import json
+from pathlib import Path
+
 import pytest
 from django.core.management import CommandError
 
+from django_clean_migrations.core import load_plan
 from tests.project import Project
 from tests.test_clean import ITEM
 
@@ -41,7 +46,7 @@ def history(project: Project) -> Project:
 
 def test_dry_run(history: Project) -> None:
     before = history.files()
-    out, err = history.command()
+    out, err = history.command("plan")
     lines = out.splitlines()
     assert lines[0] == "shop"
     assert lines[1].split() == ["Coupon", "model", "0002_coupon", "->", "0003_drop"] + [
@@ -56,14 +61,14 @@ def test_dry_run(history: Project) -> None:
     assert lines[3].startswith("    legacy")
     assert lines[4:] == [
         "Would remove 4 operations in 2 migration files.",
-        "Run with --write to apply.",
+        "Run 'clean_migrations apply' to apply.",
     ]
     assert err == ""
     assert history.files() == before
 
 
 def test_verbose(history: Project) -> None:
-    out, _ = history.command(verbosity=2)
+    out, _ = history.command("plan", verbosity=2)
     lines = out.splitlines()
     assert lines[2].strip().endswith("0002_coupon.py:14  CreateModel")
     assert lines[3].strip().endswith("0003_drop.py:11  DeleteModel")
@@ -77,45 +82,45 @@ def test_verbose(history: Project) -> None:
 
 
 def test_show_blocked(history: Project) -> None:
-    out, _ = history.command("--show-blocked")
+    out, _ = history.command("plan", "--show-blocked")
     assert "    RunPython in shop.0002_coupon mentions 'rank'" in out.splitlines()
     assert "0002_coupon.py:14" not in out
 
 
 def test_plain_output(history: Project) -> None:
-    out, _ = history.command(verbosity=2)
+    out, _ = history.command("plan", verbosity=2)
     assert "\x1b" not in out
 
 
 def test_force_color(history: Project) -> None:
-    out, _ = history.command("--force-color")
+    out, _ = history.command("plan", "--force-color")
     assert "\x1b[" in out
-    out, _ = history.command("--no-color")
+    out, _ = history.command("plan", "--no-color")
     assert "\x1b" not in out
 
 
 def test_quiet(history: Project) -> None:
-    out, err = history.command(verbosity=0)
+    out, err = history.command("plan", verbosity=0)
     assert out == err == ""
 
 
 def test_check(history: Project) -> None:
     with pytest.raises(SystemExit) as exc_info:
-        history.command("--check")
+        history.command("plan", "--check")
     assert exc_info.value.code == 1
-    history.command("--write")
-    out, _ = history.command("--check")
+    history.command("apply")
+    out, _ = history.command("plan", "--check")
     assert out == "No operations to remove.\n"
 
 
 def test_write(history: Project) -> None:
-    out, _ = history.command("--write")
+    out, _ = history.command("apply")
     assert out.endswith("Removed 4 operations in 2 migration files.\n")
-    assert "--write" not in out
+    assert "apply" not in out
     source = history.read("shop", "0003_drop")
     assert "Coupon" not in source
     assert 'migrations.RemoveField("item", "rank"),' in source
-    out, _ = history.command()
+    out, _ = history.command("plan")
     assert out == "No operations to remove.\n"
 
 
@@ -127,30 +132,32 @@ def test_empty_migrations_summary(project: Project) -> None:
         'migrations.AddField("item", "x", models.IntegerField(default=0)),',
     )
     project.migration("shop", "0003_remove", 'migrations.RemoveField("item", "x"),')
-    out, _ = project.command()
+    out, _ = project.command("plan")
     assert out.splitlines()[-2] == (
         "Would remove 2 operations in 2 migration files."
         " 2 migrations would be left with no operations."
     )
 
 
-def test_write_and_check(history: Project) -> None:
-    with pytest.raises(CommandError, match="mutually exclusive"):
-        history.command("--write", "--check")
+def test_apply_check_rejected(history: Project) -> None:
+    with pytest.raises(CommandError, match="unrecognized arguments: --check"):
+        history.command("apply", "--check")
 
 
 def test_unknown_app(history: Project) -> None:
     with pytest.raises(CommandError, match="No installed app with label 'nope'"):
-        history.command("nope")
+        history.command("plan", "nope")
 
 
 def test_kind_and_exclude(history: Project) -> None:
-    out, _ = history.command("--kind", "field")
+    out, _ = history.command("plan", "--kind", "field")
     assert "legacy" in out
     assert "Coupon" not in out
-    out, _ = history.command("--exclude", "shop.Coupon", "--exclude", "shop.Item")
+    out, _ = history.command(
+        "plan", "--exclude", "shop.Coupon", "--exclude", "shop.Item"
+    )
     assert out == "No operations to remove.\n"
-    out, _ = history.command("--opaque", "ignore", "shop.Item")
+    out, _ = history.command("plan", "--opaque", "ignore", "shop.Item")
     assert "rank" in out
     assert "Coupon" not in out
 
@@ -167,7 +174,7 @@ def test_warning(project: Project) -> None:
             replaces = [("shop", "0001_initial")]
         """,
     )
-    _, err = project.command()
+    _, err = project.command("plan")
     assert err.startswith("Warning: 1 migration(s) replaced")
 
 
@@ -182,9 +189,106 @@ def test_elidable(project: Project) -> None:
             pass
         """,
     )
-    out, _ = project.command("--elidable", verbosity=2)
+    out, _ = project.command("plan", "--elidable", verbosity=2)
     lines = out.splitlines()
     assert lines[0] == "shop"
     assert lines[1].split()[:3] == ["RunPython", "elidable", "0002_data"]
     assert "--elidable" in lines[1]
     assert lines[2].strip().endswith("0002_data.py:14  RunPython")
+
+
+def test_no_subcommand_prints_help(
+    history: Project, capsys: pytest.CaptureFixture[str]
+) -> None:
+    before = history.files()
+    history.command()
+    out = capsys.readouterr().out
+    assert "{plan,apply}" in out
+    assert history.files() == before
+
+
+def test_options_after_subcommand(history: Project) -> None:
+    out, _ = history.command("plan", "-v", "0")
+    assert out == ""
+    out, _ = history.command("plan", "--no-color", "-v", "2")
+    assert "0002_coupon.py:14" in out
+
+
+def test_plan_file_round_trip(history: Project, tmp_path: Path) -> None:
+    plan_path = tmp_path / "plan.json"
+    before = history.files()
+    out, _ = history.command("plan", "-o", str(plan_path))
+    assert f"Saved the plan to {plan_path}" in out
+    assert history.files() == before
+    data = json.loads(plan_path.read_text())
+    assert data["format"] == "django-clean-migrations-plan"
+    assert data["version"] == 1
+    assert data["verification"] == {"mode": "static"}
+    assert data["options"]["opaque"] == "scan"
+    assert [f["migration"] for f in data["files"]] == [
+        ["shop", "0002_coupon"],
+        ["shop", "0003_drop"],
+    ]
+    assert data["removals"][0]["elements"][0]["operation"] == "CreateModel"
+    out, _ = history.command("apply", "--plan", str(plan_path))
+    assert out.endswith("Removed 4 operations in 2 migration files.\n")
+    assert "Coupon" not in history.read("shop", "0003_drop")
+    out, _ = history.command("plan")
+    assert out == "No operations to remove.\n"
+
+
+def test_plan_file_stale(history: Project, tmp_path: Path) -> None:
+    plan_path = tmp_path / "plan.json"
+    history.command("plan", "-o", str(plan_path))
+    path = history.path("shop", "0003_drop")
+    path.write_text(path.read_text() + "# edited\n")
+    before = history.files()
+    with pytest.raises(CommandError, match="changed since the plan was made"):
+        history.command("apply", "--plan", str(plan_path))
+    assert history.files() == before
+
+
+def test_plan_file_with_targets(history: Project, tmp_path: Path) -> None:
+    plan_path = tmp_path / "plan.json"
+    history.command("plan", "-o", str(plan_path))
+    with pytest.raises(CommandError, match="--plan can't be combined"):
+        history.command("apply", "--plan", str(plan_path), "shop")
+
+
+def test_plan_file_invalid(history: Project, tmp_path: Path) -> None:
+    bad = tmp_path / "bad.json"
+    bad.write_text("{}")
+    with pytest.raises(CommandError, match="is not a django-clean-migrations plan"):
+        history.command("apply", "--plan", str(bad))
+    bad.write_text(
+        json.dumps({"format": "django-clean-migrations-plan", "version": 99})
+    )
+    with pytest.raises(CommandError, match="plan format version 99"):
+        history.command("apply", "--plan", str(bad))
+    bad.write_text(json.dumps({"format": "django-clean-migrations-plan", "version": 1}))
+    with pytest.raises(CommandError, match="Malformed plan file"):
+        history.command("apply", "--plan", str(bad))
+    with pytest.raises(CommandError, match="Could not read plan file"):
+        history.command("apply", "--plan", str(tmp_path / "missing.json"))
+
+
+def test_library_round_trip(history: Project, tmp_path: Path) -> None:
+    result = history.clean()
+    result.save(tmp_path / "plan.json")
+    history.activate()
+    loaded = load_plan(tmp_path / "plan.json")
+    assert loaded.removals == [
+        dataclasses.replace(
+            r,
+            elements=tuple(
+                dataclasses.replace(loc, path=loc.path.resolve() if loc.path else None)
+                for loc in r.elements
+            ),
+        )
+        for r in result.removals
+    ]
+    assert loaded.blocked == result.blocked
+    assert [f.new for f in loaded.files] == [f.new for f in result.files]
+    history.purge()
+    loaded.write()
+    assert "Coupon" not in history.read("shop", "0003_drop")

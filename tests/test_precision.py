@@ -246,7 +246,7 @@ def test_blocked_lines_name_their_migrations(project: Project) -> None:
         """,
     )
     project.migration("shop", "0005_remove", 'migrations.RemoveField("item", "body"),')
-    out, _ = project.command("--show-blocked")
+    out, _ = project.command("plan", "--show-blocked")
     lines = out.splitlines()
     assert lines[2].split() == [
         "body",

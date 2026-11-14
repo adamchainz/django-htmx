@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import itertools
 import sys
 from argparse import ArgumentParser
@@ -11,7 +12,7 @@ from django_rich.management import RichCommand
 from rich.console import Console
 from rich.text import Text
 
-from django_clean_migrations.core import CleanError, Removal, Result, clean
+from django_clean_migrations.core import CleanError, Removal, Result, load_plan, plan
 from django_clean_migrations.solver import KINDS, OPAQUE_POLICIES
 
 KIND_STYLES = {
@@ -42,82 +43,103 @@ class Command(RichCommand):
     )
 
     def add_arguments(self, parser: ArgumentParser) -> None:
-        parser.add_argument(
-            "targets",
-            nargs="*",
-            metavar="target",
-            help="app_label, app_label.Model or app_label.Model.field to clean.",
+        subparsers = parser.add_subparsers(
+            dest="subcommand", metavar="{plan,apply}", title="subcommands"
         )
-        parser.add_argument(
-            "--write", action="store_true", help="Edit the migration files."
+        plan_parser = subparsers.add_parser(
+            "plan",
+            help="Report what can be removed, optionally saving a plan file.",
+            description="Analyse the migration history and report what can be"
+            " removed. Nothing is written, except the plan file with --output.",
         )
-        parser.add_argument(
+        _add_selection_arguments(plan_parser)
+        plan_parser.add_argument(
+            "-o",
+            "--output",
+            metavar="FILE",
+            help="Save the plan as a JSON file, to review and then apply.",
+        )
+        plan_parser.add_argument(
             "--check",
             action="store_true",
-            help="Exit with status 1 if anything is removable. Never writes.",
+            help="Exit with status 1 if anything is removable.",
         )
-        parser.add_argument(
-            "--exclude",
-            action="append",
-            default=[],
-            metavar="TARGET",
-            help="Never remove anything matching this target (repeatable).",
+        _add_show_blocked(plan_parser)
+        _add_common_arguments(plan_parser)
+        apply_parser = subparsers.add_parser(
+            "apply",
+            help="Edit the migration files, from a plan file or a fresh analysis.",
+            description="Apply a saved plan (--plan FILE), or analyse and apply"
+            " in one go. The result is verified on disk and rolled back on"
+            " failure.",
         )
-        parser.add_argument(
-            "--kind",
-            action="append",
-            choices=KINDS,
-            dest="kinds",
-            help="Only consider these kinds of removal (repeatable).",
+        apply_parser.add_argument(
+            "--plan",
+            metavar="FILE",
+            dest="plan_file",
+            help="A plan file saved by 'plan --output'. Refused if any"
+            " migration file changed since.",
         )
-        parser.add_argument(
-            "--opaque",
-            choices=OPAQUE_POLICIES,
-            default="scan",
-            help="How RunPython/RunSQL/custom operations block removals.",
-        )
-        parser.add_argument(
-            "--elidable",
-            action="store_true",
-            help="Also remove every elidable RunPython/RunSQL operation.",
-        )
-        parser.add_argument(
-            "--show-blocked",
-            action="store_true",
-            help="List removable-looking entities that are blocked, with reasons.",
-        )
+        _add_selection_arguments(apply_parser)
+        _add_show_blocked(apply_parser)
+        _add_common_arguments(apply_parser)
 
     def handle(self, *args: Any, **options: Any) -> None:
-        if options["write"] and options["check"]:
-            raise CommandError("--write and --check are mutually exclusive.")
+        subcommand = options.get("subcommand")
+        if subcommand is None:
+            self.print_help("manage.py", "clean_migrations")
+            return
         verbosity: int = options["verbosity"]
-        try:
-            if verbosity > 0:
-                with self.console.status("Analysing migrations...", spinner="dots"):
-                    result = self._clean(options)
-            else:
-                result = self._clean(options)
-        except CleanError as exc:
-            raise CommandError(str(exc)) from exc
-        write: bool = options["write"]
-        self._report(
-            result,
-            verbosity,
-            options["show_blocked"] or verbosity >= 2,
-            write,
-            options,
-        )
-        if write and result.changed:
+        show_blocked = options["show_blocked"] or verbosity >= 2
+        if subcommand == "apply" and options["plan_file"]:
+            if _has_selection(options):
+                raise CommandError(
+                    "--plan can't be combined with targets or analysis options:"
+                    " the plan file already fixes them."
+                )
+            try:
+                result = load_plan(options["plan_file"])
+            except CleanError as exc:
+                raise CommandError(str(exc)) from exc
+        else:
+            result = self._analyse(options, verbosity)
+        if subcommand == "plan":
+            self._report(result, verbosity, show_blocked, False, options)
+            if options["output"]:
+                result.save(options["output"])
+                if verbosity > 0:
+                    self._print(
+                        Text(
+                            f"Saved the plan to {options['output']}. Apply it with:"
+                            f" manage.py clean_migrations apply --plan"
+                            f" {options['output']}",
+                            style="dim",
+                        )
+                    )
+            elif verbosity > 0 and result.changed:
+                self._print(Text("Run 'clean_migrations apply' to apply.", style="dim"))
+            if options["check"] and result.changed:
+                raise SystemExit(1)
+            return
+        self._report(result, verbosity, show_blocked, True, options)
+        if result.changed:
             try:
                 result.write()
             except CleanError as exc:
                 raise CommandError(str(exc)) from exc
-        if options["check"] and result.changed:
-            raise SystemExit(1)
+
+    def _analyse(self, options: dict[str, Any], verbosity: int) -> Result:
+        try:
+            if verbosity > 0:
+                with self.console.status("Analysing migrations...", spinner="dots"):
+                    return self._plan(options)
+            return self._plan(options)
+        except CleanError as exc:
+            raise CommandError(str(exc)) from exc
 
     @staticmethod
-    def _clean(options: dict[str, Any]) -> Result:
-        return clean(
+    def _plan(options: dict[str, Any]) -> Result:
+        return plan(
             options["targets"],
             exclude=options["exclude"],
             kinds=options["kinds"],
@@ -163,8 +185,6 @@ class Command(RichCommand):
             self._print("No operations to remove.")
             return
         self._print(Text(summary(result, write), style="bold green"))
-        if not write:
-            self._print(Text("Run with --write to apply.", style="dim"))
 
     def _report_removals(self, removals: list[Removal], verbosity: int) -> None:
         rows: list[tuple[Row, list[Text]]] = []
@@ -230,6 +250,76 @@ class Command(RichCommand):
             self._print(line)
             for reason in blocked.reasons:
                 self._print(Text(f"    {reason}", style="yellow"))
+
+
+def _add_selection_arguments(parser: ArgumentParser) -> None:
+    parser.add_argument(
+        "targets",
+        nargs="*",
+        metavar="target",
+        help="app_label, app_label.Model or app_label.Model.field to clean.",
+    )
+    parser.add_argument(
+        "--exclude",
+        action="append",
+        default=[],
+        metavar="TARGET",
+        help="Never remove anything matching this target (repeatable).",
+    )
+    parser.add_argument(
+        "--kind",
+        action="append",
+        choices=KINDS,
+        dest="kinds",
+        help="Only consider these kinds of removal (repeatable).",
+    )
+    parser.add_argument(
+        "--opaque",
+        choices=OPAQUE_POLICIES,
+        default="scan",
+        help="How RunPython/RunSQL/custom operations block removals.",
+    )
+    parser.add_argument(
+        "--elidable",
+        action="store_true",
+        help="Also remove every elidable RunPython/RunSQL operation.",
+    )
+
+
+def _add_common_arguments(parser: ArgumentParser) -> None:
+    """
+    Accept Django's display options after the subcommand too
+    (``clean_migrations plan -v 2``); SUPPRESS keeps the values given before
+    it when they aren't repeated.
+    """
+    parser.add_argument(
+        "-v",
+        "--verbosity",
+        type=int,
+        choices=[0, 1, 2, 3],
+        default=argparse.SUPPRESS,
+        help="Verbosity level; 0=minimal output, 1=normal output, 2=verbose output.",
+    )
+    for flag in ("--traceback", "--no-color", "--force-color"):
+        parser.add_argument(flag, action="store_true", default=argparse.SUPPRESS)
+
+
+def _add_show_blocked(parser: ArgumentParser) -> None:
+    parser.add_argument(
+        "--show-blocked",
+        action="store_true",
+        help="List removable-looking entities that are blocked, with reasons.",
+    )
+
+
+def _has_selection(options: dict[str, Any]) -> bool:
+    return bool(
+        options["targets"]
+        or options["exclude"]
+        or options["kinds"]
+        or options["opaque"] != "scan"
+        or options["elidable"]
+    )
 
 
 def _ops(count: int) -> str:

@@ -1,7 +1,12 @@
 Usage
 =====
 
-django-clean-migrations adds one management command, ``clean_migrations``.
+django-clean-migrations adds one management command, ``clean_migrations``, with subcommands:
+
+* ``clean_migrations plan`` analyses the history and reports what can be removed, optionally saving a plan file.
+* ``clean_migrations apply`` edits the migration files, either from a saved plan file or after analysing in one go.
+
+Running ``clean_migrations`` without a subcommand prints the help.
 It reads your whole migration history and removes operations that cancel each other out, such as a model that is created and later deleted, or a field that is added and later removed.
 The migration files are edited in place: same files, same names, same dependencies, fewer operations.
 
@@ -13,7 +18,7 @@ This is the same caveat as when squashing migrations.
 The command edits migrations that other databases have already recorded as applied.
 If a database is only partway through the history, removing operations from the middle can leave it with a schema that doesn’t match what the later migrations expect.
 
-So, before running the command with ``--write``:
+So, before running ``clean_migrations apply``:
 
 * Make sure production, staging, and any shared databases are up to date.
 * Commit your work, so you can review and revert the changes with Git.
@@ -31,12 +36,12 @@ They can’t see your real database, so they are a safety net rather than a repl
 Basic workflow
 --------------
 
-Run the command with no arguments to see what would change.
-This is a dry run, and doesn’t touch any files:
+Run ``plan`` to see what would change.
+It doesn’t touch any files:
 
 .. code-block:: console
 
-    $ python manage.py clean_migrations
+    $ python manage.py clean_migrations plan
     blog
       Post
         spam_score      field       0001_initial -> 0002_tidy               2 operations
@@ -49,7 +54,7 @@ This is a dry run, and doesn’t touch any files:
         legacy_ref      field       0002_coupon_legacy_ref -> 0004_cleanup  2 operations
         sku             superseded  0003_widen_sku -> 0004_cleanup           1 operation
     Would remove 11 operations and edit 1 operation in 5 migration files. 2 migrations would be left with no operations.
-    Run with --write to apply.
+    Run 'clean_migrations apply' to apply.
 
 Removals are grouped by app, then by model.
 Each line names the thing that would be removed, its kind, the migrations where it appeared and disappeared, and how many operations are involved.
@@ -58,20 +63,38 @@ The kind column is one of the kinds listed below.
 The summary counts operations removed outright, operations edited (for example a single field taken out of a ``CreateModel``), and migration files that end up with no operations at all.
 Counts that are zero are left out.
 
-When you are happy with the plan, apply it with ``--write``:
+When you are happy with the plan, apply it with ``apply``, which takes the same targets and options as ``plan``:
 
 .. code-block:: console
 
-    $ python manage.py clean_migrations --write
+    $ python manage.py clean_migrations apply
     ...
     Removed 11 operations and edited 1 operation in 5 migration files. 2 migrations now have no operations.
 
-Running the command again then reports that there’s nothing left to do:
+Running ``plan`` again then reports that there’s nothing left to do:
 
 .. code-block:: console
 
-    $ python manage.py clean_migrations
+    $ python manage.py clean_migrations plan
     No operations to remove.
+
+Plan files
+~~~~~~~~~~
+
+``plan --output FILE`` saves the plan as a JSON file, and ``apply --plan FILE`` applies exactly that plan, without analysing the history again:
+
+.. code-block:: console
+
+    $ python manage.py clean_migrations plan --output plan.json
+    $ python manage.py clean_migrations apply --plan plan.json
+
+That lets you review the plan, or make it in CI and apply it elsewhere.
+The file records the tool version, the options used, how the plan was verified, the full report (removals with their locations, blocked things with reasons, warnings), and, for each migration file to edit, its path (relative to the current directory), a SHA-256 hash of its current content, and its new content.
+``apply`` refuses to write anything if any of those files changed since the plan was made, so run it from the same directory, on the same checkout.
+It then writes the files and verifies them exactly as ``apply`` without a plan does.
+A plan file can’t be combined with targets or other analysis options.
+
+Options such as ``-v``, ``--no-color`` and ``--traceback`` can go before or after the subcommand.
 
 By default the command considers every app that has at least one migration file inside your project.
 Migrations installed from third-party packages are read, because their operations matter for working out what is safe, but they are never edited.
@@ -84,9 +107,9 @@ Targets are case-insensitive and can be an app label, a model, or a field:
 
 .. code-block:: console
 
-    $ python manage.py clean_migrations shop
-    $ python manage.py clean_migrations shop.Coupon
-    $ python manage.py clean_migrations shop.Product.legacy_ref
+    $ python manage.py clean_migrations plan shop
+    $ python manage.py clean_migrations plan shop.Coupon
+    $ python manage.py clean_migrations plan shop.Product.legacy_ref
 
 * ``app`` selects everything in that app.
 * ``app.Model`` selects the model and everything belonging to it: its fields, indexes, constraints, ``unique_together`` and ``index_together`` entries, and superseded operations.
@@ -109,7 +132,7 @@ Excluding a field, for example ``shop.Coupon.code``, also keeps its model, since
 
 .. code-block:: console
 
-    $ python manage.py clean_migrations --exclude shop.Coupon --exclude blog
+    $ python manage.py clean_migrations plan --exclude shop.Coupon --exclude blog
 
 A target or exclusion naming a model or field that never existed in the migration history is an error, so typos don’t silently select nothing.
 Old names count: a model or field matches any name it had.
@@ -126,7 +149,7 @@ Use ``--kind``, repeated as needed, to only consider some of them:
 
 .. code-block:: console
 
-    $ python manage.py clean_migrations --kind field --kind index
+    $ python manage.py clean_migrations plan --kind field --kind index
 
 The default is all kinds.
 
@@ -201,7 +224,7 @@ In this example, the data fix in ``0003_widen_sku`` mentions ``Coupon``, so it i
 
 .. code-block:: console
 
-    $ python manage.py clean_migrations
+    $ python manage.py clean_migrations plan
     ...
     shop
       RunPython         elidable    0003_widen_sku                           1 operation  (mentions 'coupon', removed with shop.Coupon)
@@ -212,7 +235,7 @@ Second, with ``--elidable``, *every* elidable ``RunPython`` and ``RunSQL`` opera
 
 .. code-block:: console
 
-    $ python manage.py clean_migrations --elidable
+    $ python manage.py clean_migrations plan --elidable
 
 This is the same as dropping them while squashing.
 Only operations that don’t change the project state are removed.
@@ -221,17 +244,16 @@ Only operations that don’t change the project state are removed.
 Using it in CI
 --------------
 
-``--check`` makes the command exit with status 1 if anything is removable, and never writes any files.
+``plan --check`` exits with status 1 if anything is removable.
 This lets you fail a CI job when new redundant operations creep in:
 
 .. code-block:: console
 
-    $ python manage.py clean_migrations --check
+    $ python manage.py clean_migrations plan --check
     $ echo $?
     1
 
-It takes the same targets and options as a dry run.
-``--check`` can’t be combined with ``--write``.
+It takes the same targets and options as ``plan``.
 
 Seeing why things are kept
 --------------------------
@@ -241,7 +263,7 @@ Add ``--show-blocked`` to also list things that cancel out in the history but we
 
 .. code-block:: console
 
-    $ python manage.py clean_migrations --show-blocked
+    $ python manage.py clean_migrations plan --show-blocked
     ...
     Blocked
       shop.Product.rank  field added in 0002_coupon_legacy_ref, removed in 0004_cleanup
@@ -261,14 +283,14 @@ The output also depends on the verbosity (``-v``):
 
   .. code-block:: console
 
-      $ python manage.py clean_migrations -v 2 blog.Post.spam_score
+      $ python manage.py clean_migrations plan -v 2 blog.Post.spam_score
       blog
         Post
           spam_score  field  0001_initial -> 0002_tidy  2 operations
             blog/migrations/0001_initial.py:15  CreateModel (field 'spam_score')
             blog/migrations/0002_tidy.py:10  RemoveField
       Would remove 1 operation and edit 1 operation in 2 migration files.
-      Run with --write to apply.
+      Run 'clean_migrations apply' to apply.
 
 Warnings, such as migrations skipped because a squashed migration replaces them, go to stderr.
 
@@ -316,7 +338,7 @@ Verifying your schema
 The command’s own checks work on Django’s in-memory model of your project, rather than a real database.
 For extra confidence, compare the schema that migrations create before and after, on a fresh database of the same type you use in production.
 
-For example, with PostgreSQL, before running ``--write``:
+For example, with PostgreSQL, before running ``apply``:
 
 .. code-block:: console
 
@@ -324,7 +346,7 @@ For example, with PostgreSQL, before running ``--write``:
     $ DATABASE_URL=postgres:///clean_check python manage.py migrate
     $ pg_dump --schema-only --no-owner clean_check > /tmp/before.sql
 
-Then run ``clean_migrations --write``, and repeat on a fresh database:
+Then run ``clean_migrations apply``, and repeat on a fresh database:
 
 .. code-block:: console
 

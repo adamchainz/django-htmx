@@ -218,14 +218,23 @@ def verify_in_memory(
         raise VerificationError(f"the edited history ends in a different state: {diff}")
 
 
+def state_from_disk() -> tuple[MigrationLoader, list[Key], ProjectState]:
+    """Load the migrations currently on disk and replay them."""
+    loader = MigrationLoader(None, ignore_no_migrations=True)
+    plan = generate_plan(loader.graph)
+    state = ProjectState(real_apps=set(loader.unmigrated_apps))
+    for key in plan:
+        state = loader.graph.nodes[key].mutate_state(state, preserve=False)
+    return loader, plan, state
+
+
 def verify_on_disk(
-    history: History,
+    original_plan: Sequence[Key],
     original_final: ProjectState,
     expected_ops: Mapping[Key, Sequence[str]],
 ) -> None:
-    loader = MigrationLoader(None, ignore_no_migrations=True)
-    plan = generate_plan(loader.graph)
-    if plan != history.plan:
+    loader, plan, state = state_from_disk()
+    if plan != list(original_plan):
         raise VerificationError("the migration graph changed after rewriting")
     for key, names in expected_ops.items():
         actual = [type(op).__name__ for op in loader.graph.nodes[key].operations]
@@ -233,9 +242,6 @@ def verify_on_disk(
             raise VerificationError(
                 f"{key[0]}.{key[1]} has operations {actual}, expected {list(names)}"
             )
-    state = ProjectState(real_apps=set(loader.unmigrated_apps))
-    for key in plan:
-        state = loader.graph.nodes[key].mutate_state(state, preserve=False)
     diff = first_difference(original_final.models, state.models)
     if diff is not None:
         raise VerificationError(

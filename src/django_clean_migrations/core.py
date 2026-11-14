@@ -1,20 +1,24 @@
-"""Library entry point: ``clean()`` analyses, ``Result.write()`` applies."""
+"""
+Library entry point: ``plan()`` analyses, ``Result.save()`` / ``load_plan()``
+store and restore a plan, ``Result.write()`` applies it.
+"""
 
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 import tempfile
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from django.apps import apps
 from django.db.migrations.operations.base import Operation
 from django.db.migrations.state import ProjectState
 
 from django_clean_migrations.history import (
-    History,
     Key,
     OpRecord,
     invalidate_modules,
@@ -41,6 +45,7 @@ from django_clean_migrations.timeline import (
 )
 from django_clean_migrations.verify import (
     VerificationError,
+    state_from_disk,
     verify_in_memory,
     verify_on_disk,
 )
@@ -51,7 +56,8 @@ __all__ = [
     "Location",
     "Removal",
     "Result",
-    "clean",
+    "load_plan",
+    "plan",
 ]
 
 
@@ -113,6 +119,20 @@ class FileChange:
     module: str
     original: str
     new: str
+    operations_after: tuple[str, ...] = ()
+    """Operation class names the rewritten migration must load with."""
+    expected_sha256: str | None = None
+    """For a loaded plan: the hash of the content the plan was made from."""
+
+    @property
+    def sha256_before(self) -> str:
+        if self.expected_sha256 is not None:
+            return self.expected_sha256
+        return sha256_text(self.original)
+
+
+def sha256_text(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 @dataclass
@@ -124,20 +144,42 @@ class Result:
     removed_operations: int
     edited_operations: int
     empty_migrations: list[Key]
-    _history: History = field(repr=False)
-    _final_state: ProjectState = field(repr=False)
-    _expected_ops: dict[Key, list[str]] = field(repr=False)
+    options: dict[str, Any] = field(default_factory=dict)
+    """The options the plan was made with, as passed to ``plan()``."""
+    verification: dict[str, Any] = field(default_factory=lambda: {"mode": "static"})
+    """How the plan was checked before being reported."""
+    _plan_keys: list[Key] | None = field(default=None, repr=False)
+    _final_state: ProjectState | None = field(default=None, repr=False)
 
     @property
     def changed(self) -> bool:
         return bool(self.files)
+
+    def save(self, path: str | os.PathLike[str]) -> None:
+        """Write the plan as a reviewable JSON file for ``load_plan()``."""
+        from django_clean_migrations.planfile import save_plan
+
+        save_plan(self, Path(path))
 
     def write(self) -> None:
         """
         Write the rewritten files, then reload them from disk and check the
         resulting project state; on any failure restore every file and raise
         CleanError.
+
+        For a loaded plan, every file must still have the content the plan
+        was made from.
         """
+        self._check_unchanged()
+        if self._final_state is None or self._plan_keys is None:
+            _forget(self.files)
+            try:
+                _, plan_keys, final_state = state_from_disk()
+            except Exception as exc:
+                raise CleanError(f"Could not load migrations: {exc}") from exc
+        else:
+            plan_keys, final_state = self._plan_keys, self._final_state
+        expected = {c.migration: list(c.operations_after) for c in self.files}
         # Registered before writing: a failure (or interrupt) mid-write must
         # still restore that file.
         touched: list[FileChange] = []
@@ -146,7 +188,7 @@ class Result:
                 touched.append(change)
                 _write_text(change.path, change.new)
             _forget(self.files)
-            verify_on_disk(self._history, self._final_state, self._expected_ops)
+            verify_on_disk(plan_keys, final_state, expected)
         except BaseException as exc:
             unrestored: list[str] = []
             for change in touched:
@@ -166,6 +208,27 @@ class Result:
                 "Writing or verifying the rewritten migration files failed, so"
                 f" they were restored: {exc}. Please report this as a bug."
             ) from exc
+
+    def _check_unchanged(self) -> None:
+        stale = []
+        for change in self.files:
+            try:
+                current = _read_text(change.path)
+            except OSError:
+                stale.append(f"{change.path} (missing)")
+                continue
+            if sha256_text(current) != change.sha256_before:
+                stale.append(str(change.path))
+        if stale:
+            raise CleanError(
+                "These migration files changed since the plan was made, so"
+                f" nothing was written: {', '.join(stale)}. Make a new plan."
+            )
+
+
+def _read_text(path: Path) -> str:
+    with open(path, encoding="utf-8", newline="") as f:
+        return f.read()
 
 
 def _write_text(path: Path, text: str) -> None:
@@ -269,7 +332,7 @@ def _sort_key(e: Element) -> tuple[int, int]:
     return (e.rec.seq, 0)
 
 
-def clean(
+def plan(
     targets: Sequence[str] = (),
     *,
     exclude: Sequence[str] = (),
@@ -368,6 +431,7 @@ def clean(
                 type(info.migration).__module__,
                 info.source.text,
                 new_text,
+                tuple(expected[info.key]),
             )
         )
         removed_count += sum(1 for e in op_edits.values() if e.remove)
@@ -385,9 +449,15 @@ def clean(
         removed_operations=removed_count,
         edited_operations=edited_count,
         empty_migrations=empty,
-        _history=history,
+        options={
+            "targets": list(targets),
+            "exclude": list(exclude),
+            "kinds": sorted(kind_set),
+            "opaque": opaque,
+            "elidable": elidable,
+        },
+        _plan_keys=list(history.plan),
         _final_state=timeline.state,
-        _expected_ops=expected,
     )
 
 
@@ -558,3 +628,10 @@ def _describe_short(life: Life) -> str:
     if isinstance(life, TogetherLife):
         return f"{life.option} ({', '.join(f.names[-1] for f in life.fields)})"
     return f"{life.kind} {life.names[0]!r}"
+
+
+def load_plan(path: str | os.PathLike[str]) -> Result:
+    """Read a plan saved with ``Result.save()``; ``write()`` applies it."""
+    from django_clean_migrations.planfile import load_plan as _load
+
+    return _load(Path(path))

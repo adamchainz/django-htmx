@@ -268,7 +268,7 @@ If any of these fail, the command stops with an “Internal error” message, an
 That is a bug in django-clean-migrations, and the message asks you to report it.
 In the meantime you can work around it by excluding the thing involved with ``--exclude``.
 
-With ``--write``, there is a second round after the files are written.
+When applying, there is a second round after the files are written.
 The command builds a fresh ``MigrationLoader`` that re-reads the files from disk, and checks that the graph has not changed, that every migration has the operations it expected, and that the final project state is the same as before.
 If anything is off, it puts the original text back in every file it wrote, and fails with an error.
 
