@@ -415,11 +415,16 @@ If data from the original history itself differs between runs (random or time-ba
 
     **A trial on SQLite verifies less than one on PostgreSQL.**
     SQLite constraints and inline unique indexes have no names worth comparing (Django creates them as part of ``CREATE TABLE`` and rebuilds the table on most changes), so a change of constraint or index name, which matters on PostgreSQL and MySQL, can’t be seen there.
-    And columns are compared by name rather than position: Django rebuilds SQLite tables in the order fields have in its model state, which shifts as the history renames and alters fields, so the physical column order there depends on incidental details of the history, and differs after removals and folds even though nothing that matters changed.
-    On other backends column order and every name are compared.
     If your production database isn’t SQLite, run the trial against a scratch database of the same backend (``--database``).
 
+SQLite column order needs care of its own.
+Django rebuilds SQLite tables in the order fields have in its model state, and an ``AlterField`` or ``RenameField`` moves its field to the end of that order; so removing or folding such operations, or folding a field past one, can change the physical order of columns in a table that is rebuilt later.
+Nothing in Django depends on that order, but a trial compares it anyway, so its result is exact on SQLite as on other backends (which never move columns): a difference blocks the removals and folds on that table, including ones the default plan makes, which are then left out of the plan.
+``--trial-ignore-column-order`` turns that comparison off.
+A plan made without a trial on SQLite says, in its summary, when it may change column order.
+
 Removals the default plan makes on its own are never blamed for a failure: they are proven without a trial.
+The exceptions are folds, no-op data migrations (see below), and SQLite column order: when the default plan’s own trial run fails or differs because of one of those, it is solved again without them.
 Only removals that the name scan would have kept, and folds, are tried and blocked on evidence.
 
 Pruning empty migrations

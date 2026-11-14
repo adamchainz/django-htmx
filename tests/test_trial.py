@@ -359,3 +359,38 @@ def test_shorten_error() -> None:
         "Cannot resolve keyword 'x' into field. (choices omitted)"
     )
     assert len(trial_module.shorten_error("y" * 500)) == 200
+
+
+def test_sqlite_column_order(project: Project) -> None:
+    project.migration(
+        "shop",
+        "0001_initial",
+        """
+        migrations.CreateModel(
+            name="Item",
+            fields=[
+                ("id", models.AutoField(primary_key=True)),
+                ("name", models.CharField(max_length=10)),
+                ("qty", models.IntegerField()),
+            ],
+        ),
+        """,
+    )
+    project.migration(
+        "shop",
+        "0002_longer",
+        'migrations.AlterField("item", "name", models.CharField(max_length=20)),',
+    )
+    static = project.clean(skip_kinds=[])
+    assert [r.kind for r in static.removals] == ["fold"]
+    # Folding keeps the column where CreateModel had it, while the
+    # AlterField rebuilt the SQLite table with its field last.
+    result = project.clean(trial=True, skip_kinds=[])
+    assert result.removals == []
+    assert result.verification["trial_blocked"] == 1
+    loose = project.clean(trial=True, skip_kinds=[], trial_ignore_column_order=True)
+    assert len(loose.removals) == 1
+    out, _ = project.command("plan", "--kind", "fold")
+    assert "physical order of columns" in out
+    out, _ = project.command("plan", "--kind", "fold", "--trial")
+    assert "physical order of columns" not in out

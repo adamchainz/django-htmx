@@ -353,7 +353,7 @@ Scratch databases are created with the backend’s own machinery and named ``cle
 Each run happens in a forked child process; the parent creates and drops the databases, and gets back the failures and the snapshot.
 
 The baseline is migrated twice: values that differ between the two runs (per column, else per table, and any schema object) are masked in every later comparison, so they are never blamed on a removal.
-Data is compared by column name, not position.
+Data is compared by column name, not position; on SQLite, the physical column order of each table is compared as a separate schema item, which blames every removal on that table.
 With ``--noop-data``, the first baseline run also records, through ``execute_wrapper`` on every connection, the statements each candidate data migration runs and their row counts.
 Those that wrote nothing are removed in the first round of every solve, the static one included, and the name scan ignores them, so what they mentioned can be removed or folded in the same plan.
 Like folds, they can be blamed: one that is blamed is put back, and the static plan is solved again without it.

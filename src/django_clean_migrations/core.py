@@ -397,6 +397,7 @@ def plan(
     database: str = "default",
     trial_max_runs: int = 8,
     trial_single_baseline: bool = False,
+    trial_ignore_column_order: bool = False,
     noop_data: bool = False,
     prune: bool = False,
     progress: Any = None,
@@ -429,6 +430,8 @@ def plan(
     )
     analysis.options["noop_data"] = noop_data
     analysis.options["prune"] = prune
+    if trial_ignore_column_order:
+        analysis.options["trial_ignore_column_order"] = True
     if trial:
         from django_clean_migrations.trial import run_trial
 
@@ -438,6 +441,7 @@ def plan(
             max_runs=trial_max_runs,
             progress=progress,
             single_baseline=trial_single_baseline,
+            ignore_column_order=trial_ignore_column_order,
             noop_data=noop_data,
         )
         return result

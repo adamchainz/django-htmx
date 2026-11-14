@@ -55,7 +55,13 @@ from django_clean_migrations.ops import OPAQUE, classify
 from django_clean_migrations.prune import PrunePlan
 from django_clean_migrations.runner import DatabaseForwards, RunError, run_history
 from django_clean_migrations.scratch import ScratchDatabaseError, scratch_database
-from django_clean_migrations.snapshot import Difference, Mask, Snapshot, take_snapshot
+from django_clean_migrations.snapshot import (
+    COLUMN_ORDER,
+    Difference,
+    Mask,
+    Snapshot,
+    take_snapshot,
+)
 
 if TYPE_CHECKING:
     pass
@@ -108,6 +114,7 @@ class Trial:
         isolate: bool = True,
         single_baseline: bool = False,
         noop_data: bool = False,
+        ignore_column_order: bool = False,
     ) -> None:
         self.analysis = analysis
         self.alias = alias
@@ -130,6 +137,8 @@ class Trial:
         """What differs between two runs of the original history."""
         self.single_baseline = single_baseline
         self.noop_data = noop_data
+        self.ignore_column_order = ignore_column_order
+        """Don't compare the physical column order of SQLite tables."""
         self.noop: dict[tuple[int, int], str] = {}
         """(plan index, index on disk) of data migrations that did nothing on
         the baseline run, with what they did."""
@@ -359,6 +368,8 @@ class Trial:
                 + ENVIRONMENT_HINT
             )
         reference = baseline.snapshot
+        if self.ignore_column_order:
+            self.mask.schema.update(k for k in reference.schema if k[0] == COLUMN_ORDER)
         if self.noop_data:
             self._learn_noop(baseline.observations)
             self._say(
@@ -403,7 +414,9 @@ class Trial:
                     + (f": {failure.error}" if failure else "")
                     + ENVIRONMENT_HINT
                 )
+            ignored = self.mask.schema
             self.mask = reference.nondeterminism(again.snapshot)
+            self.mask.schema |= ignored
             if self.mask:
                 self._say(
                     f"Differs between two runs of the original history, so not"
@@ -471,11 +484,36 @@ class Trial:
         if not candidates:
             self._say("Nothing to unlock: only the static plan is trialled.", note=True)
 
-        solution = static
-        built = build(self.analysis, solution)
-        outcome = self._candidate(solution, built, reference)
-        if outcome is not None:
+        while True:
+            solution = static
+            built = build(self.analysis, solution)
+            outcome = self._candidate(solution, built, reference)
+            if outcome is None:
+                break
             failures, diffs = outcome
+            # What the static plan builds on (folds, no-op data migrations,
+            # SQLite column moves) can be blamed too: solve it again without.
+            blocks = self._attribute(solution, failures, diffs)
+            fresh = {
+                k: r
+                for k, r in blocks.items()
+                if k not in trial_blocked and k in static.unit_keys()
+            }
+            if fresh and self.passes < self.max_runs + 2:
+                self._say(
+                    f"Run {self.passes} (static plan): blocked {len(fresh)}: "
+                    + ", ".join(sorted(fresh)[:5])
+                    + (", ..." if len(fresh) > 5 else ""),
+                    note=True,
+                )
+                trial_blocked.update(fresh)
+                for key in fresh:
+                    if key in self.noop_keys:
+                        self.noop.pop(self.noop_keys[key], None)
+                static = self.analysis.solve(
+                    noop=self.noop, trial_blocked=trial_blocked
+                )
+                continue
             problems = [f.describe() for f in failures] + [str(d) for d in diffs]
             raise CleanError(
                 "Even the static plan failed its trial run, so nothing can be"
@@ -633,6 +671,20 @@ class Trial:
                 blocks.setdefault(key, reason)
         for d in diffs:
             reason = f"trial: {d}"
+            if d.detail.startswith(COLUMN_ORDER):
+                # Even what the static analysis proves can move columns on
+                # SQLite (it reasons about the project state, not about
+                # which table rebuilds happen).
+                # Whole dead fields and models don't move the columns that
+                # stay; skipping or moving an AlterField/RenameField does.
+                targets = [
+                    u
+                    for u in (_related(solution.units, d.table) if d.table else [])
+                    if u.key.startswith((FOLD_PREFIX, "element:"))
+                ]
+                for u in targets:
+                    blocks.setdefault(u.key, reason)
+                continue
             targets = _related(units, d.table) if d.table else []
             if d.columns:
                 # Only those changing the columns that differ, if any do.
@@ -815,6 +867,7 @@ def run_trial(
     progress: Progress | None = None,
     single_baseline: bool = False,
     noop_data: bool = False,
+    ignore_column_order: bool = False,
 ) -> Result:
     return Trial(
         analysis,
@@ -823,4 +876,5 @@ def run_trial(
         progress,
         single_baseline=single_baseline,
         noop_data=noop_data,
+        ignore_column_order=ignore_column_order,
     ).run()

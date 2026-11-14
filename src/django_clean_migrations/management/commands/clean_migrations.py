@@ -372,6 +372,7 @@ class Command(RichCommand):
             database=options["database"],
             trial_max_runs=options["trial_max_runs"],
             trial_single_baseline=options["trial_single_baseline"],
+            trial_ignore_column_order=options["trial_ignore_column_order"],
             noop_data=options["noop_data"],
             prune=options["prune"],
             progress=progress,
@@ -485,6 +486,11 @@ class Command(RichCommand):
             self._print("No operations to remove.")
             return
         self._print(Text(summary(result, write), style="bold green"))
+        order_warning = sqlite_order_warning(
+            result, options.get("database") or "default"
+        )
+        if order_warning:
+            self._print(Text(order_warning, style="yellow"))
 
     def _report_removals(self, removals: list[Removal], verbosity: int) -> None:
         rows: list[tuple[Row, list[Text]]] = []
@@ -651,6 +657,13 @@ def _add_trial_arguments(parser: ArgumentParser) -> None:
         " Their reverse code and any effect outside the database are lost.",
     )
     parser.add_argument(
+        "--trial-ignore-column-order",
+        action="store_true",
+        help="On SQLite, don't compare the physical order of table columns,"
+        " which removals and folds of AlterField and RenameField can change"
+        " (other backends never move columns).",
+    )
+    parser.add_argument(
         "--trial-single-baseline",
         action="store_true",
         help="Migrate the original history once, not twice: saves a run, but"
@@ -716,6 +729,37 @@ def _locations(removal: Removal, indent: int, verbosity: int) -> list[Text]:
 
 def _count(n: int, noun: str) -> str:
     return f"{n} {noun}{'' if n == 1 else 's'}"
+
+
+def sqlite_order_warning(result: Result, alias: str) -> str | None:
+    """
+    On SQLite, Django rebuilds tables in the order the project state lists
+    their fields, which AlterField and RenameField change: removing or
+    folding operations can change the physical column order. Only a trial
+    that compares it shows whether this plan does.
+    """
+    from django.db import connections
+
+    info = result.verification
+    if alias not in connections or connections[alias].vendor != "sqlite":
+        return None
+    if info.get("mode") == "trial" and not result.options.get(
+        "trial_ignore_column_order"
+    ):
+        return None
+    # Removing dead fields or models doesn't reorder the columns that stay;
+    # dropping or moving an AlterField or RenameField (or folding anything
+    # past one) can.
+    if not any(
+        r.kind == "fold"
+        or any(loc.operation in ("AlterField", "RenameField") for loc in r.elements)
+        for r in result.removals
+    ):
+        return None
+    return (
+        "On SQLite, this plan may change the physical order of columns in"
+        " rebuilt tables (harmless for Django); --trial checks it."
+    )
 
 
 def summary(result: Result, write: bool) -> str:
