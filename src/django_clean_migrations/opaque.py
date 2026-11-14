@@ -4,6 +4,7 @@ import ast
 import functools
 import inspect
 import re
+import textwrap
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -97,23 +98,88 @@ def _migration_text(info: MigrationInfo) -> tuple[str, bool]:
             except OSError:
                 pass
         return "", True
-    spans: list[tuple[int, int]] = []
+    skip: list[ast.AST] = list(_metadata_statements(source.tree))
     if info.op_nodes is not None:
-        spans.extend(
-            source.node_span(node)
+        skip.extend(
+            node
             for node, op in zip(info.op_nodes, info.migration.operations, strict=True)
             if classify(op) != OPAQUE
         )
-    spans.extend(source.node_span(stmt) for stmt in _metadata_statements(source.tree))
+    if source.tree is not None:
+        return python_words(source.tree, skip), False
+    spans = sorted(
+        source.node_span(n) for n in skip if isinstance(n, (ast.expr, ast.stmt))
+    )
     parts: list[str] = []
     last = 0
-    for start, end in sorted(spans):
+    for start, end in spans:
         if start < last:
             continue
         parts.append(source.text[last:start])
         last = end
     parts.append(source.text[last:])
     return "".join(parts), False
+
+
+def python_words(tree: ast.AST, skip: Iterable[ast.AST] = ()) -> str:
+    """
+    The parts of Python source that can name a model, field, relation, table
+    or index at run time: string and bytes constants (f-string literal parts
+    included), attribute names, keyword argument names, and imported module
+    paths and names. Local variables, parameters, function and class names,
+    and comments can't, so they are left out. Dynamic names (getattr,
+    **kwargs) are in practice built from string constants in the same source.
+    """
+    skipped = {id(n) for n in skip}
+    out: list[str] = []
+    stack: list[ast.AST] = [tree]
+    while stack:
+        node = stack.pop()
+        if id(node) in skipped:
+            continue
+        if isinstance(node, ast.Constant):
+            if isinstance(node.value, str):
+                out.append(node.value)
+            elif isinstance(node.value, bytes):
+                out.append(node.value.decode("utf-8", "replace"))
+        elif isinstance(node, ast.Attribute):
+            out.append(node.attr)
+        elif isinstance(node, ast.keyword) and node.arg is not None:
+            out.append(node.arg)
+        elif isinstance(node, ast.alias):
+            out.append(node.name)
+            if node.asname:
+                out.append(node.asname)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            out.append(node.module)
+        elif _is_get_model(node):
+            # apps.get_model("app_label", "Model"): the first argument only
+            # names an app, so don't let it match fields or models.
+            assert isinstance(node, ast.Call)
+            stack.extend([node.func, *node.args[1:], *node.keywords])
+            continue
+        stack.extend(ast.iter_child_nodes(node))
+    return "\n".join(out)
+
+
+def _is_get_model(node: ast.AST) -> bool:
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "get_model"
+        and len(node.args) == 2
+        and isinstance(node.args[0], ast.Constant)
+        and isinstance(node.args[0].value, str)
+    )
+
+
+def _source_words(source: str) -> str:
+    """Words of a Python snippet, or the raw text if it doesn't parse."""
+    try:
+        tree = ast.parse(textwrap.dedent(source))
+    except (SyntaxError, ValueError):
+        return source
+    return python_words(tree)
 
 
 # Migration attributes that only name migrations: auto-generated names such as
@@ -156,7 +222,7 @@ def _callable_source(func: Any, migration_path: Path | None) -> tuple[str, bool]
     ):
         return "", False
     try:
-        return inspect.getsource(func), False
+        return _source_words(inspect.getsource(func)), False
     except (OSError, TypeError):
         return "", True
 
@@ -248,21 +314,34 @@ class OpaqueIndex:
             outside |= self.history.descendants[end[0]]
         return outside
 
-    def contains(self, o: OpaqueOp, start: Pos, end: Pos | None) -> bool:
+    def contains(
+        self, o: OpaqueOp, start: Pos, end: Pos | None, known_from: Pos
+    ) -> bool:
         """
         Whether ``o`` may run while an entity created at ``start`` and ended
-        at ``end`` exists. Migrations unordered relative to either bound count
-        as inside. ``end=None`` means never ended.
+        at ``end`` exists, and may know about it. ``end=None`` means never
+        ended.
+
+        Project migrations unordered relative to either bound count as
+        inside, since missing dependencies between project apps are common.
+        A migration from an installed package can only act on the entity if
+        it comes after the entity's creation (``known_from``) in the graph.
         """
         mig, idx = o.pos
         if self._outside(start, end) >> mig & 1:
             return False
         if mig == start[0] and idx < start[1]:
             return False
-        return not (end is not None and mig == end[0] and idx > end[1])
+        if end is not None and mig == end[0] and idx > end[1]:
+            return False
+        if not o.rec.migration.editable:
+            if mig == known_from[0]:
+                return idx > known_from[1]
+            return bool(self.history.ancestors[mig] >> known_from[0] & 1)
+        return True
 
     def mentioning(
-        self, names: Iterable[str], start: Pos, end: Pos | None
+        self, names: Iterable[str], start: Pos, end: Pos | None, known_from: Pos
     ) -> list[tuple[OpaqueOp, str]]:
         """Opaque ops in the window mentioning any name, in plan order."""
         found: dict[int, str] = {}
@@ -275,17 +354,21 @@ class OpaqueIndex:
                 if i in found:
                     continue
                 o = self.ops[i]
-                if self.contains(o, start, end) and self.text(o).mentions(name):
+                if self.contains(o, start, end, known_from) and self.text(o).mentions(
+                    name
+                ):
                     found[i] = name
         return [(self.ops[i], found[i]) for i in sorted(found)]
 
-    def first_blocking(self, start: Pos, end: Pos | None) -> OpaqueOp | None:
+    def first_blocking(
+        self, start: Pos, end: Pos | None, known_from: Pos
+    ) -> OpaqueOp | None:
         """First non-elidable opaque op in the window, if any."""
         mask = self.blocking_migrations & ~self._outside(start, end)
         while mask:
             low = mask & -mask
             mask ^= low
             for o in self.by_migration[low.bit_length() - 1]:
-                if not o.elidable and self.contains(o, start, end):
+                if not o.elidable and self.contains(o, start, end, known_from):
                     return o
         return None

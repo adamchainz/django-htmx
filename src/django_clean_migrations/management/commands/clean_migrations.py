@@ -111,7 +111,7 @@ class Command(BaseCommand):
         if show_blocked and result.blocked:
             self.stdout.write(self.style.MIGRATE_HEADING("Blocked:"))
             for blocked in result.blocked:
-                self.stdout.write(f"  {blocked.label} ({blocked.kind}):")
+                self.stdout.write(f"  {blocked.label}: {blocked.description}")
                 for reason in blocked.reasons:
                     self.stdout.write(f"    - {reason}")
         if not result.changed:

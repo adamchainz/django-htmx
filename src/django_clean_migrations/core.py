@@ -94,6 +94,8 @@ class Blocked:
     model: str | None
     label: str
     reasons: tuple[str, ...]
+    description: str = ""
+    """Where it lived, e.g. "field added in 0002_x, removed in 0005_y"."""
 
 
 @dataclass(frozen=True)
@@ -510,9 +512,12 @@ def _blocked(solver: Solver) -> list[Blocked]:
                 if isinstance(life, (ModelLife, FieldLife))
                 else f"{life.model.label} {_describe_short(life)}",
                 reasons=tuple(dict.fromkeys(reasons)),
+                description=_describe_life(life),
             )
         )
-    result.sort(key=lambda b: (b.app_label, (b.model or "").lower(), b.label))
+    result.sort(
+        key=lambda b: (b.app_label, (b.model or "").lower(), b.label, b.description)
+    )
     return result
 
 

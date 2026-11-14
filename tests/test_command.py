@@ -57,7 +57,7 @@ def test_verbose(history: Project) -> None:
     assert lines[1].endswith("0002_coupon.py:14  CreateModel")
     assert lines[2].endswith("0003_drop.py:11  DeleteModel")
     assert "Blocked:" in lines
-    assert "  shop.Item.rank (field):" in lines
+    assert "  shop.Item.rank: field added in 0002_coupon, removed in 0003_drop" in lines
     assert "    - RunPython in shop.0002_coupon mentions 'rank'" in lines
 
 

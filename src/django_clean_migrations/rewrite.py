@@ -78,6 +78,8 @@ def edited_operation(edit: OpEdit) -> Operation | None:
                 options[key] = [
                     x for i, x in enumerate(options[key]) if i not in removed_idx
                 ]
+                if not options[key]:
+                    del options[key]
         for option, removed in edit.together.items():
             if removed:
                 value = _filter_together(options[option], removed)
@@ -235,13 +237,15 @@ def rewrite_source(source: SourceFile, edits: list[OpEdit]) -> str:
             if isinstance(loc, str):
                 raise RewriteError(loc)
             fe.remove(loc.fields, {loc.field_index[n] for n in edit.fields})
+            dropped_keys: set[int] = set()
             for key, removed_idx in (
                 ("indexes", edit.indexes),
                 ("constraints", edit.constraints),
             ):
-                if removed_idx:
+                if removed_idx and len(removed_idx) == len(loc.lists[key].elts):
+                    dropped_keys.add(loc.option_index[key])
+                elif removed_idx:
                     fe.remove(loc.lists[key], removed_idx)
-            dropped_keys: set[int] = set()
             for option, removed in edit.together.items():
                 if not removed:
                     continue

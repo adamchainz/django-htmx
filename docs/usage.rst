@@ -171,6 +171,7 @@ The ``--opaque`` option sets how cautious the command is:
 .. warning::
 
     With ``--opaque ignore``, a ``RunPython`` that refers to a removed field or model is left in place, and will fail when run on a fresh database.
+    It also turns off the check for a model’s default ``ordering`` (or ``get_latest_by``) naming a removed field: any ``RunPython`` that queries that model in the meantime, even without naming the field, then fails with ``Cannot resolve keyword``.
     Run the whole history on a new database afterwards.
 
 Regardless of the policy, an opaque operation that changes the project state (for example, a ``SeparateDatabaseAndState`` that adds a field) makes the models and fields it touches permanently off limits.
@@ -232,7 +233,7 @@ Add ``--show-blocked`` to also list things that cancel out in the history but we
     $ python manage.py clean_migrations --show-blocked
     ...
     Blocked:
-      shop.Product.rank (field):
+      shop.Product.rank: field added in 0002_coupon_legacy_ref, removed in 0004_cleanup
         - RunPython in shop.0002_coupon_legacy_ref mentions 'rank'
 
 The reasons say which operation, in which migration, is in the way.

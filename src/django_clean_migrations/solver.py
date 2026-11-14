@@ -128,6 +128,7 @@ class Solver:
                     self.opaque_elements[e.rec.seq] = e
         self.plan = Plan()
         self._static: dict[Life, str | None] = {}
+        self._query_names_cache: dict[ModelLife, set[str]] = {}
         self._elidable_hits: dict[Life, list[tuple[OpaqueOp, str]]] = {}
 
     # Element state
@@ -168,6 +169,7 @@ class Solver:
         start: Pos,
         end: Pos | None,
         hits: list[tuple[OpaqueOp, str]] | None,
+        known_from: Pos,
     ) -> str | None:
         """
         Reason an opaque op in the window blocks, else None. When ``hits`` is
@@ -178,7 +180,7 @@ class Solver:
         removed) blocks like any opaque op: a word match is not proof that
         it is about this entity.
         """
-        for o, name in self.opaque.mentioning(names, start, end):
+        for o, name in self.opaque.mentioning(names, start, end, known_from):
             if (
                 o.elidable
                 and hits is not None
@@ -202,7 +204,7 @@ class Solver:
             if self.policy == "scan" or (o.elidable and self.policy == "block"):
                 return f"{o.rec.describe()} mentions {name!r}"
         if self.policy == "block":
-            blocking = self.opaque.first_blocking(start, end)
+            blocking = self.opaque.first_blocking(start, end, known_from)
             if blocking is not None:
                 return f"opaque {blocking.rec.describe()} may run meanwhile"
         return None
@@ -225,10 +227,13 @@ class Solver:
         if life in self._static:
             return self._static[life]
         reason: str | None = None
-        lives = set(life.subtree())
-        for sub in lives:
+        ordered = list(life.subtree())
+        lives = set(ordered)
+        for sub in ordered:
             if sub.poisoned:
                 reason = sub.poison_reasons[0]
+                if sub is not life:
+                    reason = f"its {sub.kind} {_short_label(sub)} was {reason}"
                 break
             if sub is not life and self.scope.excluded(sub):
                 reason = f"it contains the excluded {sub.kind} {_short_label(sub)}"
@@ -250,7 +255,7 @@ class Solver:
         if reason is None:
             hits: list[tuple[OpaqueOp, str]] = []
             reason = self._opaque_block(
-                life.scan_names(), life.start_pos, life.end_pos, hits
+                life.scan_names(), life.start_pos, life.end_pos, hits, life.start_pos
             )
             if reason is None:
                 self._elidable_hits[life] = hits
@@ -263,33 +268,63 @@ class Solver:
                 return other.owner
         return None
 
-    def _soft_blocked(self, life: FieldLife) -> bool:
+    def _query_names(self, model: ModelLife) -> set[str]:
+        """
+        Names by which code may query ``model`` with its default ordering:
+        its own scan names (names, tables, related names of its relations),
+        those of models inheriting from it (which inherit Meta.ordering), and
+        every name of relation fields elsewhere pointing at it. The latter
+        only strictly matter for many-to-many and reverse managers, but
+        forward foreign keys are included rather than relying on that.
+        """
+        cached = self._query_names_cache.get(model)
+        if cached is None:
+            cached = set()
+            seen: set[ModelLife] = set()
+            todo = [model]
+            while todo:
+                current = todo.pop()
+                if current in seen:
+                    continue
+                seen.add(current)
+                cached |= current.scan_names()
+                for f in current.incoming:
+                    cached |= {n.lower() for n in f.names} | f.related_names
+                todo.extend(current.child_models)
+            self._query_names_cache[model] = cached
+        return cached
+
+    def _soft_blocker(self, life: FieldLife) -> str | None:
         if self.policy == "ignore":
-            return False
-        return (
-            self._opaque_block(
-                life.model.scan_names(), life.start_pos, life.end_pos, None
+            return None
+        for soft in life.soft_refs:
+            if self.removed(soft.element):
+                continue
+            end = soft.end if soft.end is not None else life.end_pos
+            reason = self._opaque_block(
+                self._query_names(life.model),
+                soft.start,
+                end,
+                None,
+                life.model.start_pos,
             )
-            is not None
-        )
+            if reason is not None:
+                return f"{soft.element.describe()} orders by it, and meanwhile {reason}"
+        return None
 
     def blocker(self, life: Life) -> str | None:
         reason = self._static_blocker(life)
         if reason is not None:
             return reason
-        lives = set(life.subtree())
-        for sub in lives:
+        for sub in life.subtree():
             for e in sub.referenced_by:
                 if self.removed(e):
                     continue
                 return f"referenced by {e.describe()}"
             if isinstance(sub, FieldLife):
-                soft = [e for e in sub.soft_referenced_by if not self.removed(e)]
-                if soft and self._soft_blocked(sub):
-                    return (
-                        f"{soft[0].describe()} orders by it and an opaque operation"
-                        " may query the model meanwhile"
-                    )
+                soft_reason = self._soft_blocker(sub)
+                if soft_reason is not None:
+                    return soft_reason
         return None
 
     # Pass 1
@@ -453,8 +488,10 @@ class Solver:
         self.plan.dropped[e1] = "superseded"
         self.plan.superseded.append((e1, e2))
 
-    def _window_clear(self, names: set[str], e1: Element, e2: Element) -> bool:
-        return self._opaque_block(names, e1.pos, e2.pos, None) is None
+    def _window_clear(
+        self, names: set[str], e1: Element, e2: Element, life: Life
+    ) -> bool:
+        return self._opaque_block(names, e1.pos, e2.pos, None, life.start_pos) is None
 
     def _superseded_fields(self, life: FieldLife) -> None:
         if life.ever_pk:
@@ -523,7 +560,7 @@ class Solver:
             if not self.removed(e) and self._between(e, e1.pos, e2.pos):
                 return False
         names = life.scan_names() | life.model.scan_names()
-        return self._window_clear(names, e1, e2)
+        return self._window_clear(names, e1, e2, life)
 
     def _superseded_model(self, model: ModelLife) -> None:
         own = sorted(
@@ -565,7 +602,7 @@ class Solver:
                         continue
                     if self._between(e, e1.pos, e2.pos):
                         return False
-        return self._window_clear(model.scan_names(), e1, e2)
+        return self._window_clear(model.scan_names(), e1, e2, model)
 
 
 def _short_label(life: Life) -> str:

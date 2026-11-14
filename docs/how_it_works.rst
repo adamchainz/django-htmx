@@ -15,7 +15,8 @@ It then replays every migration in the same order that ``migrate`` would run the
 
 Squashed migrations are applied as Django does: the squashed migration is used, and the migrations it replaces are skipped.
 If replaced migrations are still on disk, the command prints a warning saying how many it skipped.
-They are neither analysed nor edited.
+They are neither analysed nor edited: only the squashed migration is cleaned.
+That is fine as long as every database has the squashed migration recorded as applied, which is the usual precondition for deleting the replaced files anyway; delete them before or after cleaning.
 
 Which migrations are edited
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -94,10 +95,11 @@ The command starts by assuming everything selected can go, then repeatedly puts 
 That is how a model and the foreign keys that point to it, possibly in other apps, are removed together, or kept together.
 
 *Soft references* are a weaker kind.
-A model’s ``ordering`` and ``get_latest_by`` options can name a field.
+A model’s ``ordering`` and ``get_latest_by`` options can name a field: directly, with a ``-`` prefix, through a lookup such as ``fk__name`` (which names the local ``fk``), or in an ``F()``/``OrderBy`` expression.
+The option may even name the field before it is added, as happens in squashed migrations, so the command tracks the periods during which an option names an existing field.
 That doesn’t block removing the field by itself.
-But if an opaque operation might query the model while the field exists, then it’s an issue, since a stale default ordering could crash the query.
-So in that case the field is kept.
+But if an opaque operation might query the model during such a period, a stale default ordering could crash the query, so the field is kept.
+The scan for that looks for the model’s names (including its tables and the related names of its relations), the names of models that inherit from it (they inherit ``Meta.ordering``), and the names of relation fields on any model that point at it, since related managers and ``prefetch_related`` use the default ordering too.
 
 Opaque operations
 -----------------
@@ -114,8 +116,10 @@ State changes
 
 While replaying, the command applies each operation to a real Django ``ProjectState``.
 For an opaque operation, it compares the state before and after.
-Any model or field it created, deleted or altered becomes *poisoned*: never removable.
+Any model, field, index, constraint or ``unique_together``/``index_together`` entry it created, deleted or altered becomes *poisoned*: never removable, and never the subject of a superseded removal.
 This covers a ``SeparateDatabaseAndState`` that adds a field, or a custom operation that adds an index.
+A poisoned field or index also keeps its model, since removing the model would remove it, but it doesn’t affect the model’s other fields, indexes or options.
+A common case is a ``SeparateDatabaseAndState`` that removes a field from the state only, leaving the column to be dropped later: that field is reported as “ended by” the operation.
 
 The command then resynchronises its picture of the history with the state, so later operations still resolve correctly.
 
@@ -134,12 +138,23 @@ Migrations that aren’t ordered relative to the thing, for example in an unrela
 
 The text that gets scanned is:
 
-* The source of the migration file, minus the operations the command understands, and minus the ``dependencies``, ``replaces``, ``run_before``, ``initial`` and ``atomic`` attributes.
+* The migration file, minus the operations the command understands, and minus the ``dependencies``, ``replaces``, ``run_before``, ``initial`` and ``atomic`` attributes.
   So module-level helper functions, and the arguments of the opaque operations themselves, are included, but migration names such as ``0002_item_owner`` are not.
 * The source of ``RunPython`` ``code`` and ``reverse_code`` callables that are defined outside the migration file, with ``functools.partial`` unwrapped.
-* The ``sql`` and ``reverse_sql`` of ``RunSQL``.
-* For custom operations, the source of their class.
+* The ``sql`` and ``reverse_sql`` of ``RunSQL``, as raw text.
+* For custom operations, the source of their classes (outside Django).
 * Operations nested in ``SeparateDatabaseAndState`` or ``RunSQL(state_operations=...)``.
+
+Python source is parsed, and only the parts that can name a model, field, relation, table or index when the code runs are kept: string and bytes constants (including the literal parts of f-strings), attribute names (``obj.name``), keyword argument names (``filter(name=...)``), and imported modules and names.
+Local variables, parameters, function and class names, and comments are left out, so a loop variable called ``event`` doesn’t block a field called ``event``.
+The app label argument of ``apps.get_model("app_label", "Model")`` is left out too.
+Names built dynamically, with ``getattr()`` or ``**kwargs``, come from string constants in practice, which are kept.
+If the source can’t be parsed, the raw text is used instead.
+
+Migrations from installed packages are treated a little differently.
+Such a migration can only act on a project model or field if it comes after its creation in the dependency graph, so it only counts if it is a descendant of the creating migration.
+For example Django’s own ``auth.0011_update_proxy_permissions`` doesn’t block anything in your apps.
+Project migrations that aren’t ordered relative to a thing still count as inside its window, since missing dependencies between project apps are common.
 
 The names that are looked for are:
 
@@ -182,6 +197,9 @@ If a removal would leave it mentioning a name that no longer exists, the command
 
 Otherwise it blocks like any other opaque operation.
 Each such removal is reported with the name that matched and the thing it was removed with.
+
+The whole operation is removed, so an elidable ``RunSQL`` that also does unrelated things, such as creating an index on another table, loses those too.
+That is the same contract as ``squashmigrations``, which drops elidable operations wholesale: only mark operations elidable if all of their effects can go.
 
 This only removes the elidable operation when it mentions a removed model, field, index or constraint.
 Unrelated elidable operations stay, unless you pass ``--elidable``.

@@ -385,7 +385,8 @@ class TestIndexAndConstraint:
         )
         result = project.check_equivalence()
         assert kinds(result) == [("constraint", "shop.Item")]
-        assert '"constraints": [],' in project.read("shop", "0001_initial")
+        assert "constraints" not in project.read("shop", "0001_initial")
+        assert "options={}," in project.read("shop", "0001_initial")
 
     def test_constraint_keeps_field_alive(self, project: Project) -> None:
         project.migration("shop", "0001_initial", ITEM)

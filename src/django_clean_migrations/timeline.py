@@ -46,7 +46,8 @@ class Life:
         self.elements: list[Element] = []
         self.poison_reasons: list[str] = []
         self.referenced_by: list[Element] = []
-        self.soft_referenced_by: list[Element] = []
+        self.soft_refs: list[SoftRef] = []
+        """Periods during which a model option (ordering...) names this life."""
 
     def __repr__(self) -> str:
         return f"<{type(self).__name__} {self.label}>"
@@ -69,10 +70,13 @@ class Life:
         return bool(self.poison_reasons)
 
     def poison(self, reason: str) -> None:
+        """
+        Never removable, nor the subject of a superseded drop. A poisoned
+        child also blocks removing its model (the solver checks the whole
+        subtree), but doesn't otherwise affect the model or its siblings.
+        """
         if reason not in self.poison_reasons:
             self.poison_reasons.append(reason)
-        if self.parent is not None:
-            self.parent.poison(reason)
 
     @property
     def start_pos(self) -> Pos:
@@ -115,6 +119,14 @@ class ModelLife(Life):
         self.children: list[Life] = []
         self.tables: set[str] = set()
         self.default_related_names: set[str] = set()
+        self.option_names: set[str] = set()
+        """Field names the current ordering / get_latest_by refer to."""
+        self.option_element: Element | None = None
+        self.active_soft: list[SoftRef] = []
+        self.incoming: set[FieldLife] = set()
+        """Relation fields (of any model) that ever pointed at this model."""
+        self.child_models: set[ModelLife] = set()
+        """Models that ever listed this one in their bases."""
 
     def note_options(self, options: Any) -> None:
         table = options.get("db_table")
@@ -253,6 +265,19 @@ def describe_sub(sub: tuple[Any, ...]) -> str:
 
 
 @dataclass(eq=False)
+class SoftRef:
+    """
+    ``element`` (setting ordering / get_latest_by) names a field from
+    ``start`` until ``end`` (None: until the field ends). Removing the field
+    alone leaves a stale default ordering, which breaks queries on the model.
+    """
+
+    element: Element
+    start: Pos
+    end: Pos | None = None
+
+
+@dataclass(eq=False)
 class TogetherEvent:
     rec: OpRecord
     kind: str
@@ -307,6 +332,25 @@ def mentioned_names(obj: Any) -> set[str]:
     return out
 
 
+def _option_field_names(options: Any) -> set[str]:
+    values: list[Any] = []
+    for key in ("ordering", "get_latest_by"):
+        value = options.get(key)
+        if isinstance(value, (list, tuple)):
+            values.extend(value)
+        elif value is not None:
+            values.append(value)
+    names: set[str] = set()
+    for value in values:
+        if isinstance(value, str):
+            # "-field", "?", "fk__name" (a lookup through the local fk).
+            names.add(value.lstrip("-?+").split("__")[0])
+        else:
+            # F(), OrderBy and other expressions: every identifier in them.
+            names |= mentioned_names(value)
+    return names
+
+
 def _is_expression(value: Any) -> bool:
     return hasattr(value, "resolve_expression") and not isinstance(value, type)
 
@@ -339,6 +383,10 @@ class _ModelSnap:
     options: dict[str, Any]
     bases: Any
     managers: list[Any]
+
+
+# Options whose changes are tracked on child lives rather than the model.
+_CHILD_OPTIONS = frozenset({"indexes", "constraints", *TOGETHER_OPTIONS})
 
 
 def _fingerprint(f: Any) -> Any:
@@ -468,10 +516,11 @@ class Timeline:
         sub: tuple[Any, ...] | None,
         owner: Life | None,
         ctx: Element | None,
+        verb: str = "changed",
     ) -> Element:
         if ctx is not None:
             if owner is not None:
-                owner.poison(f"changed by {ctx.rec.describe()}")
+                owner.poison(f"{verb} by {ctx.rec.describe()}")
             return ctx
         return self._register(Element(rec, sub, owner))
 
@@ -485,14 +534,11 @@ class Timeline:
         return life
 
     @staticmethod
-    def _ref(element: Element, life: Life | None, soft: bool = False) -> None:
+    def _ref(element: Element, life: Life | None) -> None:
         if life is None:
             return
-        if soft:
-            life.soft_referenced_by.append(element)
-        else:
-            element.refs.append(life)
-            life.referenced_by.append(element)
+        element.refs.append(life)
+        life.referenced_by.append(element)
 
     def _model(
         self, app_label: str, name: str, rec: OpRecord, ctx: Element | None
@@ -547,6 +593,8 @@ class Timeline:
                 targets.add(to_key)
                 target = self.models.get(to_key)
                 remote_life = target
+                if target is not None:
+                    target.incoming.add(life)
                 self._ref(element, target)
                 if target is not None:
                     to_fields = getattr(fld, "to_fields", None)
@@ -583,36 +631,55 @@ class Timeline:
         self._set_targets(life, targets)
         life.defs.append((element, fld, remote_life))
 
-    def _ref_local(
-        self, element: Element, model: ModelLife, name: str, soft: bool = False
-    ) -> None:
+    def _ref_local(self, element: Element, model: ModelLife, name: str) -> None:
         target = model.fields.get(name)
         if target is not None:
-            self._ref(element, target, soft)
+            self._ref(element, target)
 
     def _refs_mentioned(self, element: Element, model: ModelLife, obj: Any) -> None:
         for name in mentioned_names(obj):
             self._ref_local(element, model, name)
 
-    def _soft_refs(self, element: Element, model: ModelLife, options: Any) -> None:
-        values: list[Any] = []
-        ordering = options.get("ordering")
-        if isinstance(ordering, (list, tuple)):
-            values.extend(ordering)
-        latest = options.get("get_latest_by")
-        if isinstance(latest, str):
-            values.append(latest)
-        elif isinstance(latest, (list, tuple)):
-            values.extend(latest)
-        for value in values:
-            if isinstance(value, str):
-                name = value.lstrip("-?").split("__")[0]
-                self._ref_local(element, model, name, soft=True)
-            else:
-                for name in mentioned_names(value):
-                    self._ref_local(element, model, name, soft=True)
+    def _set_ordering(
+        self, element: Element, model: ModelLife, options: Any, rec: OpRecord
+    ) -> None:
+        """
+        Record which fields the model's ordering / get_latest_by now name.
+        Fields added (or renamed into a named name) later are matched too:
+        an option may name a field before it exists.
+        """
+        pos = (rec.migration.index, rec.index)
+        for soft in model.active_soft:
+            soft.end = pos
+        model.active_soft = []
+        model.option_names = _option_field_names(options)
+        model.option_element = element
+        for name in model.option_names:
+            life = model.fields.get(name)
+            if life is not None:
+                self._start_soft(model, life, rec)
+
+    def _start_soft(self, model: ModelLife, life: FieldLife, rec: OpRecord) -> None:
+        assert model.option_element is not None
+        soft = SoftRef(model.option_element, (rec.migration.index, rec.index))
+        life.soft_refs.append(soft)
+        model.active_soft.append(soft)
+
+    def _field_named(self, model: ModelLife, life: FieldLife, rec: OpRecord) -> None:
+        """A field got a name (added or renamed): the options may name it."""
+        if life.names[-1] in model.option_names and model.option_element is not None:
+            self._start_soft(model, life, rec)
+
+    def _field_unnamed(self, model: ModelLife, life: FieldLife, rec: OpRecord) -> None:
+        """A field lost its name (removed or renamed)."""
+        pos = (rec.migration.index, rec.index)
+        for soft in list(model.active_soft):
+            if soft in life.soft_refs:
+                soft.end = pos
+                model.active_soft.remove(soft)
 
     def _end_field(self, life: FieldLife, rec: OpRecord) -> None:
+        self._field_unnamed(life.model, life, rec)
         life.end = rec
         self._set_targets(life, set())
 
@@ -679,12 +746,15 @@ class Timeline:
         wrt = op.options.get("order_with_respect_to")
         if isinstance(wrt, str):
             self._ref_local(element, model, wrt)
-        self._soft_refs(element, model, op.options)
+        self._set_ordering(element, model, op.options, rec)
         for base in op.bases or ():
             if isinstance(base, str) or hasattr(base, "_meta"):
                 base_key = _resolve(base, app_label, op.name_lower)
                 if base_key is not None:
-                    self._ref(element, self.models.get(base_key))
+                    base_life = self.models.get(base_key)
+                    self._ref(element, base_life)
+                    if base_life is not None:
+                        base_life.child_models.add(model)
         # Fields that already point at this name (dangling until now) now
         # reference this life for as long as they exist.
         for f in list(self.by_target.get(key, ())):
@@ -713,7 +783,7 @@ class Timeline:
         model = self._model(app_label, op.name, rec, ctx)
         if model is None:
             return
-        self._element(rec, None, model, ctx)
+        self._element(rec, None, model, ctx, "ended")
         model.end = rec
         del self.models[model.key]
         for f in model.fields.values():
@@ -778,7 +848,7 @@ class Timeline:
         if ms is not None and element is not ctx:
             element.info["managed_before"] = ms.options.get("managed", True)
         model.note_options(op.options)
-        self._soft_refs(element, model, op.options)
+        self._set_ordering(element, model, op.options, rec)
 
     def _on_AlterModelManagers(
         self,
@@ -807,9 +877,12 @@ class Timeline:
         app_label: str,
         ctx: Element | None,
     ) -> None:
-        model, element = self._model_op(rec, op, app_label, ctx)
+        # Inside an opaque op only the together entries are touched (and
+        # poisoned below), not the model's other options.
+        model = self._model(app_label, op.name, rec, ctx)
         if model is None:
             return
+        element = self._element(rec, None, model if ctx is None else None, ctx)
         option = op.option_name
         assert option is not None
         resolved: list[tuple[Entry, tuple[FieldLife, ...]]] = []
@@ -879,6 +952,7 @@ class Timeline:
         self._new_life(life, element)
         model.fields[op.name] = life
         self._field_def(element, model, life, op.field)
+        self._field_named(model, life, rec)
 
     def _on_RemoveField(
         self, rec: OpRecord, op: m.RemoveField, app_label: str, ctx: Element | None
@@ -889,7 +963,7 @@ class Timeline:
         life = self._field(model, op.name, rec, ctx)
         if life is None:
             return
-        self._element(rec, None, life, ctx)
+        self._element(rec, None, life, ctx, "ended")
         del model.fields[op.name]
         self._end_field(life, rec)
 
@@ -917,12 +991,14 @@ class Timeline:
         element = self._element(rec, None, life, ctx)
         if element is not ctx:
             element.info["rename"] = True
+        self._field_unnamed(model, life, rec)
         del model.fields[op.old_name]
         if op.new_name in model.fields:
             model.fields[op.new_name].poison(f"name taken over in {rec.describe()}")
             life.poison(f"name taken over in {rec.describe()}")
         model.fields[op.new_name] = life
         life.names.append(op.new_name)
+        self._field_named(model, life, rec)
 
     def _on_AddIndex(
         self, rec: OpRecord, op: m.AddIndex, app_label: str, ctx: Element | None
@@ -953,7 +1029,7 @@ class Timeline:
             model.poison(f"unknown index {op.name!r} in {rec.describe()}")
             self._element(rec, None, model, ctx)
             return
-        self._element(rec, None, life, ctx)
+        self._element(rec, None, life, ctx, "ended")
         life.end = rec
 
     def _on_RenameIndex(
@@ -1030,7 +1106,7 @@ class Timeline:
             model.poison(f"unknown constraint {op.name!r} in {rec.describe()}")
             self._element(rec, None, model, ctx)
             return
-        self._element(rec, None, life, ctx)
+        self._element(rec, None, life, ctx, "ended")
         life.end = rec
 
     def _on_AlterConstraint(
@@ -1092,7 +1168,17 @@ class Timeline:
             if model is None:
                 self._opaque_model(key, a, ctx)
                 continue
-            model.poison(reason)
+            if (
+                a.name != b.name
+                or not _same(b.bases, a.bases)
+                or not _same(b.managers, a.managers)
+                or any(
+                    not _same(b.options.get(k), a.options.get(k))
+                    for k in b.options.keys() | a.options.keys()
+                    if k not in _CHILD_OPTIONS
+                )
+            ):
+                model.poison(reason)
             if a.name != model.names[-1]:
                 model.names.append(a.name)
             self._resync_fields(model, b, a, ctx)
@@ -1110,6 +1196,11 @@ class Timeline:
                 if not _same(b.options.get(option), a.options.get(option)):
                     self._resync_together(model, option, a.options.get(option), ctx)
             model.note_options(a.options)
+            if any(
+                not _same(b.options.get(k), a.options.get(k))
+                for k in ("ordering", "get_latest_by")
+            ):
+                self._set_ordering(ctx, model, a.options, ctx.rec)
         return changed
 
     @staticmethod
@@ -1144,6 +1235,7 @@ class Timeline:
             model.fields[name] = life
         for name, (fld, _) in snap.fields.items():
             self._field_def(ctx, model, model.fields[name], fld)
+        self._set_ordering(ctx, model, snap.options, ctx.rec)
         for index in snap.options.get("indexes", ()):
             model.indexes[index.name] = self._new_life(
                 IndexLife(model, index.name), ctx
@@ -1174,6 +1266,7 @@ class Timeline:
             self._new_life(life, ctx)
             model.fields[name] = life
             self._field_def(ctx, model, life, a.fields[name][0])
+            self._field_named(model, life, ctx.rec)
         for name in a.fields.keys() & b.fields.keys():
             if (
                 a.fields[name][0] is b.fields[name][0]
