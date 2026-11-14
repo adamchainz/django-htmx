@@ -217,6 +217,13 @@ def verify_in_memory(
     diff = first_difference(original_final.models, state.models)
     if diff is not None:
         raise VerificationError(f"the edited history ends in a different state: {diff}")
+    for key, model_state in original_final.models.items():
+        if list(model_state.fields) != list(state.models[key].fields):
+            # SQLite rebuilds tables in this order.
+            raise VerificationError(
+                f"the edited history lists the fields of {key[0]}.{key[1]} in"
+                " another order"
+            )
     if list(original_final.models) != list(state.models):
         # post_migrate creates content types and permissions in this order:
         # a different order numbers their rows differently.

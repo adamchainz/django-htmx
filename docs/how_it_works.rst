@@ -291,6 +291,15 @@ What can be folded:
 3. An ``AddIndex`` or ``AddConstraint`` (or their PostgreSQL variants) into the ``CreateModel``’s ``indexes`` or ``constraints``.
 4. The model’s first ``AlterUniqueTogether`` or ``AlterIndexTogether`` into the ``CreateModel`` options.
 5. The model’s first ``AlterModelOptions`` (unless it changes ``managed``), ``AlterModelManagers`` or ``AlterModelTableComment`` into the ``CreateModel``.
+6. A ``RenameField`` into the ``AddField`` or ``CreateModel`` entry that created the field, which then gets the new name.
+   Django’s ``RenameField`` renames the column only: indexes (including PostgreSQL’s ``_like`` ones), unique and check constraints, foreign key constraints and many-to-many tables keep names made from the old column or field name, while a field created under the new name gets names made from the new one.
+   So only a field without any of these is folded: not unique, not indexed, not a relation, no check constraint (``PositiveIntegerField`` and the like), not generated, never a primary key; or one whose column is fixed by ``db_column``, which the rename doesn’t change.
+   Nothing may refer to the field between the two (indexes, constraints, ``unique_together``, other fields’ ``to_field``), the ``CreateModel``’s options may not name it, no other field may ever have had the new name, and the scan for both names must be clean.
+   And since a rename moves the field to the end of the model’s fields in the project state, which is the column order SQLite rebuilds tables in, the field must already be the last one: no other field of the model is created or renamed in between.
+7. An ``AlterModelTable`` of an unmanaged model (``managed=False`` in its ``CreateModel``, with nothing else happening to the model in between) into the ``CreateModel``’s ``db_table``: there is no table to rename.
+
+``RenameModel`` is never folded, nor is ``AlterModelTable`` of a managed model: Django renames the table only, so its primary key constraint, sequence or identity, indexes, foreign keys and many-to-many tables keep names made from the old table name, which a table created under the new name wouldn’t have.
+``AlterOrderWithRespectTo`` isn’t folded either: it adds a column, last.
 
 Conditions for every fold:
 
@@ -302,6 +311,7 @@ Conditions for every fold:
   The exception is a foreign key that just points at a different model, when the new model already exists at P; the old one then becomes unreferenced, and may in turn become removable.
 * Nothing that stays between P and E refers to the field being changed.
 * Every field and model the folded definition names has the same name at P as at E: no ``RenameField``, ``RenameModel`` or ``AlterModelTable`` of them in between.
+* The final project state lists every model’s fields in the same order (SQLite rebuilds tables in that order), which the verification checks.
 * Every database object gets the name it got in the original history.
   Django’s schema editor names some objects differently when it creates them with the table than when it adds them later, so these folds are not made:
 
@@ -317,7 +327,7 @@ Conditions for every fold:
 * The opaque operations in the window pass the name scan (for the field and its model, the model, the index or constraint name and, for anything enforced such as a constraint, the model), or, with ``--trial``, the trial runs.
 * P can be rewritten: Django’s migration writer must be able to serialize it, every import it needs must be a normal module path that doesn’t clash with a name the file already binds to something else, and the written source must load back to an operation with the same effect.
   For example, an ``AlterModelManagers`` setting just the default manager can’t be folded, since a ``CreateModel`` can’t state that.
-  ``AlterModelTable`` is never folded: tables, sequences and indexes created under the new name from the start would get different names than in the original history.
+  ``AlterModelTable`` of a managed model is never folded: tables, sequences and indexes created under the new name from the start would get different names than in the original history.
 
 Folds enable each other, and can make more things removable (a foreign key retargeted at P leaves its old model unreferenced).
 So the command analyses the edited history again, removing, superseding and folding, until nothing changes.

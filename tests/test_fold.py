@@ -797,3 +797,143 @@ def test_unchanged_operation_not_regenerated(project: Project) -> None:
         'migrations.AddField("item", "qty", models.IntegerField(default=1)),  # keep me'
         in project.read("shop", "0002_qty")
     )
+
+
+class TestRenames:
+    """RenameField folds into the field's creation; renamed database
+    objects keep names derived from the old name, so most can't fold."""
+
+    def renamed(self, project: Project, field: str, *, extra_ops: str = "") -> Result:
+        project.migration("shop", "0001_initial", ITEM)
+        project.migration(
+            "shop", "0002_qty", f'migrations.AddField("item", "qty", {field}),'
+        )
+        project.migration(
+            "shop",
+            "0003_rename",
+            extra_ops + 'migrations.RenameField("item", "qty", "quantity"),',
+        )
+        return project.check_equivalence(**FOLD)
+
+    def test_folded_into_add_field(self, project: Project) -> None:
+        result = self.renamed(project, "models.IntegerField(default=1)")
+        descriptions = [d for _, d in folds(result)]
+        # Into the AddField, which then goes into the CreateModel.
+        assert "RenameField in 0003_rename folded into CreateModel in 0001_initial" in (
+            descriptions
+        )
+        assert "RenameField" not in project.read("shop", "0003_rename")
+
+    @pytest.mark.parametrize(
+        "field",
+        [
+            "models.IntegerField(default=1, unique=True)",
+            "models.IntegerField(default=1, db_index=True)",
+            "models.PositiveIntegerField(default=1)",
+            "models.ForeignKey('shop.Item', models.CASCADE, null=True)",
+            "models.ManyToManyField('shop.Item')",
+        ],
+    )
+    def test_named_objects_block(self, project: Project, field: str) -> None:
+        result = self.renamed(project, field)
+        assert not [d for _, d in folds(result) if d.startswith("RenameField")]
+
+    def test_db_column_keeps_names(self, project: Project) -> None:
+        result = self.renamed(
+            project, "models.IntegerField(default=1, unique=True, db_column='q')"
+        )
+        assert [d for _, d in folds(result) if d.startswith("RenameField")]
+
+    def test_reference_between_blocks(self, project: Project) -> None:
+        result = self.renamed(
+            project,
+            "models.IntegerField(default=1)",
+            extra_ops='migrations.AddIndex("item", models.Index(fields=["qty"], name="qty_idx")),\n',
+        )
+        assert not [d for _, d in folds(result) if d.startswith("RenameField")]
+
+    def test_opaque_mention_blocks(self, project: Project) -> None:
+        result = self.renamed(
+            project,
+            "models.IntegerField(default=1)",
+            extra_ops='migrations.RunSQL("UPDATE shop_item SET qty = 2"),\n',
+        )
+        assert not [d for _, d in folds(result) if d.startswith("RenameField")]
+
+    def test_not_last_field_blocks(self, project: Project) -> None:
+        # SQLite rebuilds tables in the state's field order, and the
+        # RenameField moved name to the end of it.
+        project.migration("shop", "0001_initial", ITEM)
+        project.migration(
+            "shop",
+            "0002_qty",
+            'migrations.AddField("item", "qty", models.IntegerField(default=1)),',
+        )
+        project.migration(
+            "shop", "0003_rename", 'migrations.RenameField("item", "name", "title"),'
+        )
+        result = project.check_equivalence(**FOLD)
+        assert not [d for _, d in folds(result) if d.startswith("RenameField")]
+
+    def test_create_model_last_entry(self, project: Project) -> None:
+        project.migration("shop", "0001_initial", ITEM)
+        project.migration(
+            "shop", "0002_rename", 'migrations.RenameField("item", "name", "title"),'
+        )
+        result = project.check_equivalence(**FOLD)
+        assert [d for _, d in folds(result) if d.startswith("RenameField")]
+        assert "'title'" in project.read("shop", "0001_initial")
+
+    def test_new_name_taken_before_blocks(self, project: Project) -> None:
+        project.migration("shop", "0001_initial", ITEM)
+        project.migration(
+            "shop",
+            "0002_old",
+            'migrations.AddField("item", "quantity", models.IntegerField(default=1)),',
+        )
+        project.migration(
+            "shop",
+            "0003_drop",
+            # Keeps the old field from being removed as dead.
+            'migrations.RunSQL("SELECT quantity FROM shop_item"),\n'
+            'migrations.RemoveField("item", "quantity"),',
+        )
+        project.migration(
+            "shop",
+            "0004_qty",
+            'migrations.AddField("item", "qty", models.IntegerField(default=1)),',
+        )
+        project.migration(
+            "shop",
+            "0005_rename",
+            'migrations.RenameField("item", "qty", "quantity"),',
+        )
+        result = project.check_equivalence(**FOLD)
+        assert not [d for _, d in folds(result) if d.startswith("RenameField in 0005")]
+
+    def test_unmanaged_table_folded(self, project: Project) -> None:
+        project.migration(
+            "shop",
+            "0001_initial",
+            """
+            migrations.CreateModel(
+                name="View",
+                fields=[("id", models.AutoField(primary_key=True))],
+                options={"managed": False},
+            ),
+            """,
+        )
+        project.migration(
+            "shop", "0002_table", 'migrations.AlterModelTable("view", "some_view"),'
+        )
+        result = project.check_equivalence(**FOLD)
+        assert [d for _, d in folds(result) if d.startswith("AlterModelTable")]
+        assert "some_view" in project.read("shop", "0001_initial")
+
+    def test_managed_table_not_folded(self, project: Project) -> None:
+        project.migration("shop", "0001_initial", ITEM)
+        project.migration(
+            "shop", "0002_table", 'migrations.AlterModelTable("item", "goods"),'
+        )
+        result = project.check_equivalence(**FOLD)
+        assert not [d for _, d in folds(result) if d.startswith("AlterModelTable")]

@@ -11,6 +11,7 @@ the same round; the core runs rounds until nothing changes.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -49,6 +50,8 @@ FOLD_KINDS = (
     "options",
     "managers",
     "comment",
+    "rename",
+    "table",
 )
 
 
@@ -287,10 +290,16 @@ class Folder:
             ):
                 if kind in kinds:
                     self._fold_model_op(life, create, kind, cls)
+            if "table" in kinds:
+                self._fold_table(life, create)
         if "field" in kinds:
             for life in lives:
                 if isinstance(life, FieldLife):
                     self._fold_alter_field(life)
+        if "rename" in kinds:
+            for life in lives:
+                if isinstance(life, FieldLife):
+                    self._fold_rename_field(life)
         return self.folds
 
     def _ordered_wrt(self, model: ModelLife) -> bool:
@@ -450,6 +459,24 @@ class Folder:
                 and names & ({n.lower() for n in sibling.names} | sibling.extra_names)
             ):
                 return False
+        # A RenameField of another field in between moved that field to the
+        # end of the state's fields, ahead of this one: folded, this one
+        # would come first (and SQLite rebuilds tables in that order), which
+        # matters if that field stays to the end.
+        for sibling in model.children:
+            if (
+                sibling is life
+                or not isinstance(sibling, FieldLife)
+                or sibling.end is not None  # dropped later: its place won't matter
+            ):
+                continue
+            for el in sibling.elements:
+                if (
+                    el.info.get("rename")
+                    and not self.solver.removed(el)
+                    and self.solver._between(el, create.pos, a.pos)
+                ):
+                    return False
         if not self._requirements(a.refs, create, model):
             return False
         if not self._stable_names([*a.refs, model], create, a):
@@ -586,6 +613,178 @@ class Folder:
 
     # 5. Model options, managers, table comment
 
+    # 6. RenameField -> the field's creation
+
+    def _fold_rename_field(self, life: FieldLife) -> None:
+        """
+        Give the field its new name where it is created, and delete the
+        RenameField. Django's RenameField only renames the column: indexes,
+        unique and check constraints, foreign key constraints and many-to-many
+        tables keep names derived from the old column or field name, while a
+        field created under the new name gets names derived from it. So only
+        fields without any such object are folded (or whose column is fixed
+        by db_column, so it doesn't change at all).
+        """
+        solver = self.solver
+        model = life.model
+        if (
+            life.poisoned
+            or life.ever_pk
+            or life in solver.plan.removed
+            or model in solver.plan.removed
+            or model.poisoned
+            or not life.defs
+            or not self._in_scope(life)
+        ):
+            return
+        p = life.creation
+        if p is None or p.opaque or type(p.rec.op) not in (m.AddField, m.CreateModel):
+            return
+        own = sorted(
+            (e for e in life.elements if not solver.removed(e) and e is not p),
+            key=lambda e: e.rec.seq,
+        )
+        if not own or type(own[0].rec.op) is not m.RenameField:
+            return
+        e = own[0]
+        rename = e.rec.op
+        assert isinstance(rename, m.RenameField)
+        if not (self._usable_target(p) and self._usable_folded(e)):
+            return
+        if not self.history.ordered(p.pos[0], e.pos[0]):
+            return
+        defs = {id(el): fld for el, fld, _ in life.defs}
+        field = defs.get(id(p))
+        if field is None or not _rename_keeps_names(field):
+            return
+        # Nothing may name the field between P and E (other fields' to_field,
+        # indexes, constraints, options), nor any field point at it.
+        if referenced_by_fields(life) or not self._no_refs_between(life, p, e):
+            return
+        current = self._current(p)
+        if type(current) is m.CreateModel and _mentions(
+            current.options, rename.old_name
+        ):
+            return
+        # The new name must be free from P onward.
+        new = rename.new_name.lower()
+        for sibling in model.children:
+            if (
+                sibling is not life
+                and isinstance(sibling, FieldLife)
+                and sibling not in solver.plan.removed
+                and new in {n.lower() for n in sibling.names}
+            ):
+                return
+        if not self._stays_last(life, model, p, e):
+            return
+        if not self._quiet(life.scan_names() | model.scan_names(), p, e, model):
+            return
+        op = self._renamed_into(p, current, rename)
+        if op is not None:
+            self._commit("rename", p, e, life, op)
+
+    def _stays_last(
+        self, life: FieldLife, model: ModelLife, p: Element, e: Element
+    ) -> bool:
+        """
+        RenameField moves the field to the end of the model state's fields,
+        which decides the column order of SQLite table rebuilds: folded, the
+        field keeps its place. So the field must already be last when it is
+        renamed: no other field of the model gets created or renamed after
+        P (or after it in the same CreateModel) and before E.
+        """
+        current = self._current(p)
+        if type(current) is m.CreateModel:
+            assert p.sub is not None
+            names = [n for n, _ in current.fields]
+            if names and names[-1] != p.sub[1]:
+                return False
+        for sibling in model.children:
+            if sibling is life or not isinstance(sibling, FieldLife):
+                continue
+            if sibling in self.solver.plan.removed:
+                continue
+            for el in sibling.elements:
+                naming = el is sibling.creation or el.info.get("rename")
+                if (
+                    naming
+                    and el.rec is not p.rec
+                    and not self.solver.removed(el)
+                    and self.solver._between(el, p.pos, e.pos)
+                ):
+                    return False
+        return True
+
+    def _renamed_into(
+        self, p: Element, current: Operation, rename: m.RenameField
+    ) -> Operation | None:
+        if type(current) is m.AddField:
+            return m.AddField(
+                model_name=current.model_name,
+                name=rename.new_name,
+                field=current.field,
+                preserve_default=current.preserve_default,
+            )
+        if type(current) is m.CreateModel:
+            assert p.sub is not None
+            return _create(
+                current,
+                fields=[
+                    (rename.new_name if n == p.sub[1] else n, f)
+                    for n, f in current.fields
+                ],
+            )
+        return None
+
+    # AlterModelTable -> CreateModel options, for unmanaged models only
+
+    def _fold_table(self, model: ModelLife, create: Element) -> None:
+        """
+        A table created under a name and renamed later keeps the names its
+        primary key constraint, sequence or identity, indexes and foreign
+        keys got from the old name (Django renames the table only), so a
+        managed model's AlterModelTable is never folded. An unmanaged model
+        has no table to rename: its AlterModelTable is folded into the
+        CreateModel, as long as the model stays unmanaged in between.
+        """
+        solver = self.solver
+        current = self._current(create)
+        if not isinstance(current, m.CreateModel):
+            return
+        if current.options.get("managed", True):
+            return
+        own = sorted(
+            (
+                e
+                for e in model.elements
+                if e.sub is None and not e.opaque and not solver.removed(e)
+            ),
+            key=lambda e: e.rec.seq,
+        )
+        tables = [e for e in own if type(e.rec.op) is m.AlterModelTable]
+        if not tables:
+            return
+        e = tables[0]
+        if not self._usable_folded(e) or not self.history.ordered(
+            create.pos[0], e.pos[0]
+        ):
+            return
+        for other in own:
+            # Whatever else happens to the model in between (options that
+            # could make it managed, renames) keeps it as it is.
+            if other is not e and solver._between(other, create.pos, e.pos):
+                return
+        op = e.rec.op
+        assert isinstance(op, m.AlterModelTable)
+        options = {**current.options, "db_table": op.table}
+        if op.table is None:
+            options.pop("db_table", None)
+        names = solver._query_names(model)
+        if not self._quiet(names, create, e, model):
+            return
+        self._commit("table", create, e, model, _create(current, options=options))
+
     def _fold_model_op(
         self, model: ModelLife, create: Element, kind: str, cls: type[Operation]
     ) -> None:
@@ -699,6 +898,38 @@ def _check_kind(field: Any) -> Any:
         return cls
     internal = field.get_internal_type()
     return internal if internal in CHECK_TYPES else None
+
+
+def _rename_keeps_names(field: Any) -> bool:
+    """
+    Whether creating ``field`` under its new name gives the database the same
+    object names as creating it under the old name and renaming it: no index,
+    unique or check constraint, foreign key or many-to-many table derives a
+    name from the column or field name, or the column is fixed by db_column.
+    """
+    if getattr(field, "many_to_many", False):
+        return False
+    if getattr(field, "db_column", None):
+        return True
+    return not (
+        getattr(field, "remote_field", None) is not None
+        or field.unique
+        or field.db_index
+        or field.primary_key
+        or _check_kind(field) is not None
+        or getattr(field, "generated", False)
+    )
+
+
+def _mentions(value: Any, name: str) -> bool:
+    """Whether a name appears in serialized options (ordering, indexes...)."""
+    from django.db.migrations.writer import MigrationWriter
+
+    try:
+        text = MigrationWriter.serialize(value)[0]
+    except Exception:
+        return True
+    return re.search(rf"(?<![\w]){re.escape(name)}(?![\w])", text) is not None
 
 
 def same_named_objects(a: Any, b: Any) -> bool:
