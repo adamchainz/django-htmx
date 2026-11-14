@@ -9,7 +9,7 @@ import hashlib
 import os
 import shutil
 import tempfile
-from collections.abc import Collection, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -19,6 +19,7 @@ from django.db.migrations.operations.base import Operation
 from django.db.migrations.state import ProjectState
 
 from django_clean_migrations.history import (
+    History,
     Key,
     OpRecord,
     invalidate_modules,
@@ -32,6 +33,7 @@ from django_clean_migrations.solver import (
     SelectionError,
     Solver,
     Target,
+    Unit,
     kinds_from,
 )
 from django_clean_migrations.timeline import (
@@ -343,12 +345,74 @@ def plan(
     kinds: Collection[str] | None = None,
     opaque: str = "scan",
     elidable: bool = False,
+    trial: bool = False,
+    database: str = "default",
+    trial_max_runs: int = 8,
+    progress: Any = None,
 ) -> Result:
     """
     Analyse the whole migration history and plan removals. Nothing is written;
     call ``Result.write()`` to apply. Raises CleanError on invalid options or
     if the planned edit fails verification.
+
+    With ``trial``, removals blocked only by the opaque-operation name scan
+    are tried for real on scratch databases of ``database``'s backend (see
+    ``django_clean_migrations.trial``).
     """
+    analysis = analyse(
+        targets, exclude=exclude, kinds=kinds, opaque=opaque, elidable=elidable
+    )
+    if trial:
+        from django_clean_migrations.trial import run_trial
+
+        result: Result = run_trial(
+            analysis, alias=database, max_runs=trial_max_runs, progress=progress
+        )
+        return result
+    solver = analysis.solve()
+    return make_result(analysis, solver, build(analysis, solver))
+
+
+@dataclass
+class Analysis:
+    """A loaded and replayed history, ready to be solved repeatedly."""
+
+    history: History
+    timeline: Timeline
+    scope: Scope
+    options: dict[str, Any]
+
+    def solve(
+        self,
+        *,
+        aggressive: bool = False,
+        trial_blocked: Mapping[Unit, str] | None = None,
+    ) -> Solver:
+        solver = Solver(
+            self.history,
+            self.timeline,
+            self.scope,
+            self.options["opaque"],
+            self.options["elidable"],
+            aggressive=aggressive,
+            trial_blocked=trial_blocked,
+        )
+        solver.solve_dead()
+        if self.options["elidable"]:
+            solver.drop_all_elidable()
+        solver.drop_redundant_together()
+        solver.solve_superseded()
+        return solver
+
+
+def analyse(
+    targets: Sequence[str] = (),
+    *,
+    exclude: Sequence[str] = (),
+    kinds: Collection[str] | None = None,
+    opaque: str = "scan",
+    elidable: bool = False,
+) -> Analysis:
     if opaque not in OPAQUE_POLICIES:
         raise CleanError(f"Unknown opaque policy {opaque!r}.")
     try:
@@ -383,14 +447,36 @@ def plan(
             raise CleanError(
                 f"No {what} matching {text!r} exists anywhere in the migration history."
             )
+    return Analysis(
+        history,
+        timeline,
+        scope,
+        {
+            "targets": list(targets),
+            "exclude": list(exclude),
+            "kinds": sorted(kind_set),
+            "opaque": opaque,
+            "elidable": elidable,
+        },
+    )
 
-    solver = Solver(history, timeline, scope, opaque, elidable)
-    solver.solve_dead()
-    if elidable:
-        solver.drop_all_elidable()
-    solver.drop_redundant_together()
-    solver.solve_superseded()
 
+@dataclass
+class Built:
+    """The edits a solved plan makes, as operation lists and per-op edits."""
+
+    edits: dict[int, dict[int, OpEdit]]
+    edited_ops: dict[int, list[Operation]]
+    """Migration plan index -> its operations after editing."""
+    expected: dict[Key, list[str]]
+
+    def operations_by_key(self, history: History) -> dict[Key, list[Operation]]:
+        return {history.migrations[i].key: ops for i, ops in self.edited_ops.items()}
+
+
+def build(analysis: Analysis, solver: Solver) -> Built:
+    """Edited operation lists, verified in memory against the original."""
+    history, timeline = analysis.history, analysis.timeline
     edits = _collect_edits(solver)
     edited_ops: dict[int, list[Operation]] = {}
     expected: dict[Key, list[str]] = {}
@@ -404,7 +490,6 @@ def plan(
                 new_ops.append(new_op)
         edited_ops[info_index] = new_ops
         expected[info.key] = [type(op).__name__ for op in new_ops]
-
     try:
         verify_in_memory(history, edited_ops, timeline.dangling, timeline.state)
     except VerificationError as exc:
@@ -412,7 +497,12 @@ def plan(
             f"Internal error: {exc}. No files were changed. Please report this as a"
             " bug, and use --exclude to work around it."
         ) from exc
+    return Built(edits, edited_ops, expected)
 
+
+def make_result(analysis: Analysis, solver: Solver, built: Built) -> Result:
+    history, timeline = analysis.history, analysis.timeline
+    edits, edited_ops, expected = built.edits, built.edited_ops, built.expected
     files: list[FileChange] = []
     removed_count = 0
     edited_count = 0
@@ -453,13 +543,7 @@ def plan(
         removed_operations=removed_count,
         edited_operations=edited_count,
         empty_migrations=empty,
-        options={
-            "targets": list(targets),
-            "exclude": list(exclude),
-            "kinds": sorted(kind_set),
-            "opaque": opaque,
-            "elidable": elidable,
-        },
+        options=dict(analysis.options),
         removed_positions=frozenset(
             (history.migrations[m].key, i)
             for m, op_edits in edits.items()

@@ -56,6 +56,7 @@ class Command(RichCommand):
             " removed. Nothing is written, except the plan file with --output.",
         )
         _add_selection_arguments(plan_parser)
+        _add_trial_arguments(plan_parser)
         plan_parser.add_argument(
             "-o",
             "--output",
@@ -84,6 +85,7 @@ class Command(RichCommand):
             " migration file changed since.",
         )
         _add_selection_arguments(apply_parser)
+        _add_trial_arguments(apply_parser)
         _add_show_blocked(apply_parser)
         _add_common_arguments(apply_parser)
         profile_parser = subparsers.add_parser(
@@ -252,23 +254,74 @@ class Command(RichCommand):
             self._print(Text(note, style="dim"))
 
     def _analyse(self, options: dict[str, Any], verbosity: int) -> Result:
+        if options["trial"] and options["opaque"] != "scan":
+            raise CommandError(
+                "--trial replaces the --opaque policy with trial runs; don't"
+                " combine them."
+            )
         try:
             if verbosity > 0:
-                with self.console.status("Analysing migrations...", spinner="dots"):
-                    return self._plan(options)
-            return self._plan(options)
+                with self.console.status(
+                    "Analysing migrations...", spinner="dots"
+                ) as status:
+                    return self._plan(options, lambda message: status.update(message))
+            return self._plan(options, None)
         except CleanError as exc:
             raise CommandError(str(exc)) from exc
 
     @staticmethod
-    def _plan(options: dict[str, Any]) -> Result:
+    def _plan(options: dict[str, Any], progress: Any) -> Result:
         return plan(
             options["targets"],
             exclude=options["exclude"],
             kinds=options["kinds"],
             opaque=options["opaque"],
             elidable=options["elidable"],
+            trial=options["trial"],
+            database=options["database"],
+            trial_max_runs=options["trial_max_runs"],
+            progress=progress,
         )
+
+    def _report_trial(self, result: Result, verbosity: int) -> None:
+        info = result.verification
+        if info.get("mode") != "trial":
+            return
+        line = (
+            f"Trial: {_count(info['passes'] + 1, 'migrate run')} on"
+            f" {info['vendor']} in {info['seconds']:.1f}s;"
+            f" unlocked {_count(info['unlocked'], 'removal')} that the static"
+            " scan blocks"
+        )
+        if info["trial_blocked"]:
+            line += f", blocked {info['trial_blocked']} on evidence"
+        self._print(Text(line + ".", style="bold"))
+        if info["fallback"]:
+            self._print(
+                Text(
+                    "The trial didn't converge, so this is the static plan,"
+                    " which passed its own trial run.",
+                    style="yellow",
+                )
+            )
+        for table in info["nondeterministic_tables"]:
+            self._print(
+                Text(
+                    f"Data in {table} differs between runs of the original"
+                    " history (random or time-based values?); not compared.",
+                    style="yellow",
+                )
+            )
+        if verbosity >= 2:
+            for failure in info["failures"]:
+                self._print(
+                    Text(
+                        f"  harvested: {failure['migration'][0]}."
+                        f"{failure['migration'][1]} {failure['operation']}:"
+                        f" {failure['error']}",
+                        style="dim",
+                    )
+                )
 
     def _stderr_console(self, options: dict[str, Any]) -> Console:
         force_terminal: bool | None = None
@@ -304,6 +357,7 @@ class Command(RichCommand):
         self._report_removals(result.removals, verbosity)
         if show_blocked and result.blocked:
             self._report_blocked(result)
+        self._report_trial(result, verbosity)
         if not result.changed:
             self._print("No operations to remove.")
             return
@@ -427,6 +481,29 @@ def _add_common_arguments(parser: ArgumentParser) -> None:
         parser.add_argument(flag, action="store_true", default=argparse.SUPPRESS)
 
 
+def _add_trial_arguments(parser: ArgumentParser) -> None:
+    parser.add_argument(
+        "--trial",
+        action="store_true",
+        help="Verify by migrating scratch databases instead of relying on the"
+        " name scan of data migrations; unlocks more removals.",
+    )
+    parser.add_argument(
+        "--database",
+        default="default",
+        help="Database alias whose backend and settings trial runs use"
+        " (default: 'default').",
+    )
+    parser.add_argument(
+        "--trial-max-runs",
+        type=int,
+        default=8,
+        metavar="N",
+        help="Trial runs of candidate plans before falling back to the"
+        " static plan (default 8).",
+    )
+
+
 def _add_show_blocked(parser: ArgumentParser) -> None:
     parser.add_argument(
         "--show-blocked",
@@ -442,6 +519,7 @@ def _has_selection(options: dict[str, Any]) -> bool:
         or options["kinds"]
         or options["opaque"] != "scan"
         or options["elidable"]
+        or options["trial"]
     )
 
 

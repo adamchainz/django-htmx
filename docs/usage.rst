@@ -179,6 +179,8 @@ The default is all kinds.
 Operations from ``django.contrib.postgres.operations`` are handled the same way as their standard equivalents.
 For example, ``AddIndexConcurrently`` is treated as ``AddIndex``.
 
+.. _opaque-operations:
+
 Opaque operations
 -----------------
 
@@ -331,6 +333,44 @@ This is harmless, but means the graph may order migrations more strictly than ne
 Functions that only an operation used, such as a ``RunPython`` callable, are left in place if the ``RunPython`` is not removed.
 
 .. _verifying-your-schema:
+
+Trial runs
+----------
+
+By default, the command decides whether a data migration (``RunPython``, ``RunSQL`` or a custom operation) might use something by scanning its source for names, which blocks a lot (see :ref:`opaque-operations`).
+``--trial`` replaces that guess with evidence, by actually migrating scratch databases:
+
+.. code-block:: console
+
+    $ python manage.py clean_migrations plan --trial --output plan.json
+    ...
+    Trial: 3 migrate runs on postgresql in 141.7s; unlocked 212 removals that the static scan blocks, blocked 9 on evidence.
+    $ python manage.py clean_migrations apply --plan plan.json
+
+It works like this:
+
+1. The original history is migrated on an empty scratch database (as for ``profile``), and a snapshot is taken of the resulting schema (in far more detail than Django’s model state: columns, defaults, constraints, indexes, sequences, views, functions, triggers and more) and all data, except date and time values.
+2. A candidate plan is made in which the name scan doesn’t block anything, but each removal remembers which data migrations mentioned it.
+3. The candidate is migrated on a fresh scratch database, with the edited operations in memory: no files are touched.
+   If a data migration fails, its savepoint is rolled back, the failure is recorded, and the run goes on, so one run finds many failures.
+   (That needs a backend that can roll back schema changes, such as PostgreSQL or SQLite, and an atomic migration; otherwise the run stops at the first failure.)
+4. Each failure blocks the removals it points to: those the failing operation mentioned (narrowed to the ones named in the error message, if any), or else those whose lifetime includes the failing migration.
+   A snapshot that differs from the original blocks the removals relating to the differing table.
+5. The candidate is solved again, and run again, until a run has no failures and a snapshot identical to the original.
+   That final clean run is required.
+   After ``--trial-max-runs`` runs (default 8), or when nothing more can be blamed, the command falls back to the default plan, and still trials it.
+
+``apply --trial`` does the same and applies the result.
+The plan file records the trial: backend, number of runs, what it unlocked, and the failures it harvested (shown with ``-v 2``).
+``--trial`` can’t be combined with ``--opaque``.
+
+.. warning::
+
+    The evidence holds for the database backend and settings of the scratch database (``--database``), and only for *empty* databases: data migrations are only shown to be harmless when they find no rows (other than rows seeded by earlier migrations, which are compared).
+    That is the tool’s premise anyway, since every real database must already be fully migrated.
+    But if your test suite tests migrations with data, for example with django-test-migrations, a migration that now finds a removed field may fail there.
+
+If data from the original history itself differs between runs (random or time-based values in seeded rows), the command reports the table and stops comparing its data, rather than blaming removals for it.
 
 Profiling migrations
 --------------------

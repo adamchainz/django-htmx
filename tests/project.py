@@ -155,13 +155,15 @@ class Project:
     def clean(self, *targets: str, **options: Any) -> Result:
         self.activate()
         self.purge()
-        return plan(targets, **options)
+        with self.db_blocker.unblock():
+            return plan(targets, **options)
 
     def command(self, *args: str, **options: Any) -> tuple[str, str]:
         self.activate()
         self.purge()
         out, err = StringIO(), StringIO()
-        call_command("clean_migrations", *args, stdout=out, stderr=err, **options)
+        with self.db_blocker.unblock():
+            call_command("clean_migrations", *args, stdout=out, stderr=err, **options)
         return out.getvalue(), err.getvalue()
 
     def command_db(self, *args: str, **options: Any) -> tuple[str, str]:

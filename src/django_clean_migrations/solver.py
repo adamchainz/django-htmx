@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Collection, Iterable, Iterator, Sequence
+from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -18,6 +18,9 @@ from django_clean_migrations.timeline import (
     Timeline,
     TogetherLife,
 )
+
+Unit = Life | Element
+"""What a trial can block: an entity's whole removal, or one dropped element."""
 
 KINDS = ("model", "field", "index", "constraint", "together", "superseded")
 OPAQUE_POLICIES = ("scan", "block", "ignore")
@@ -114,7 +117,15 @@ class Solver:
         scope: Scope,
         opaque_policy: str = "scan",
         remove_all_elidable: bool = False,
+        *,
+        aggressive: bool = False,
+        trial_blocked: Mapping[Unit, str] | None = None,
     ) -> None:
+        """
+        ``aggressive``: name-scan and soft-reference hits don't block but are
+        recorded in ``at_risk``, for a trial run to confirm or refute.
+        ``trial_blocked``: removal units a trial run showed to be unsafe.
+        """
         self.history = history
         self.timeline = timeline
         self.scope = scope
@@ -130,6 +141,9 @@ class Solver:
         self._static: dict[Life, str | None] = {}
         self._query_names_cache: dict[ModelLife, set[str]] = {}
         self._elidable_hits: dict[Life, list[tuple[OpaqueOp, str]]] = {}
+        self.aggressive = aggressive
+        self.trial_blocked: Mapping[Unit, str] = trial_blocked or {}
+        self.at_risk: dict[Unit, dict[int, OpaqueOp]] = {}
 
     # Element state
 
@@ -170,6 +184,7 @@ class Solver:
         end: Pos | None,
         hits: list[tuple[OpaqueOp, str]] | None,
         known_from: Pos,
+        unit: Unit | None = None,
     ) -> str | None:
         """
         Reason an opaque op in the window blocks, else None. When ``hits`` is
@@ -179,7 +194,11 @@ class Solver:
         (unordered relative to the entity, or nothing it could need is being
         removed) blocks like any opaque op: a word match is not proof that
         it is about this entity.
+
+        In aggressive mode, what would block is recorded against ``unit``
+        instead.
         """
+        record = self.aggressive and unit is not None
         for o, name in self.opaque.mentioning(names, start, end, known_from):
             if (
                 o.elidable
@@ -197,13 +216,21 @@ class Solver:
                     continue
                 if self.policy == "ignore":
                     continue
+                if record:
+                    assert unit is not None
+                    self.at_risk.setdefault(unit, {})[o.rec.seq] = o
+                    continue
                 return (
                     f"elidable {o.rec.describe()} mentions {name!r} but cannot be"
                     f" removed: {reason}"
                 )
+            if record:
+                assert unit is not None
+                self.at_risk.setdefault(unit, {})[o.rec.seq] = o
+                continue
             if self.policy == "scan" or (o.elidable and self.policy == "block"):
                 return f"{o.rec.describe()} mentions {name!r}"
-        if self.policy == "block":
+        if self.policy == "block" and not record:
             blocking = self.opaque.first_blocking(start, end, known_from)
             if blocking is not None:
                 return f"opaque {blocking.rec.describe()} may run meanwhile"
@@ -226,7 +253,10 @@ class Solver:
         """Blockers that don't depend on which other lives are removed."""
         if life in self._static:
             return self._static[life]
-        reason: str | None = None
+        reason: str | None = self.trial_blocked.get(life)
+        if reason is not None:
+            self._static[life] = reason
+            return reason
         ordered = list(life.subtree())
         lives = set(ordered)
         for sub in ordered:
@@ -255,7 +285,12 @@ class Solver:
         if reason is None:
             hits: list[tuple[OpaqueOp, str]] = []
             reason = self._opaque_block(
-                life.scan_names(), life.start_pos, life.end_pos, hits, life.start_pos
+                life.scan_names(),
+                life.start_pos,
+                life.end_pos,
+                hits,
+                life.start_pos,
+                life,
             )
             if reason is None:
                 self._elidable_hits[life] = hits
@@ -307,6 +342,7 @@ class Solver:
                 end,
                 None,
                 life.model.start_pos,
+                life,
             )
             if reason is not None:
                 return f"{soft.element.describe()} orders by it, and meanwhile {reason}"
@@ -491,7 +527,9 @@ class Solver:
     def _window_clear(
         self, names: set[str], e1: Element, e2: Element, life: Life
     ) -> bool:
-        return self._opaque_block(names, e1.pos, e2.pos, None, life.start_pos) is None
+        return (
+            self._opaque_block(names, e1.pos, e2.pos, None, life.start_pos, e1) is None
+        )
 
     def _superseded_fields(self, life: FieldLife) -> None:
         if life.ever_pk:
@@ -531,7 +569,11 @@ class Solver:
         current: tuple[Any, Life | None],
         defs: dict[int, tuple[Any, Life | None]],
     ) -> bool:
-        if e1.not_editable_reason() is not None or self.removed(e2):
+        if (
+            e1 in self.trial_blocked
+            or e1.not_editable_reason() is not None
+            or self.removed(e2)
+        ):
             return False
         if not self.history.ordered(e1.pos[0], e2.pos[0]):
             return False
@@ -583,7 +625,11 @@ class Solver:
                     self._drop_superseded(e1, e2)
 
     def _can_drop_model_op(self, model: ModelLife, e1: Element, e2: Element) -> bool:
-        if e1.not_editable_reason() is not None or self.removed(e2):
+        if (
+            e1 in self.trial_blocked
+            or e1.not_editable_reason() is not None
+            or self.removed(e2)
+        ):
             return False
         if not self.history.ordered(e1.pos[0], e2.pos[0]):
             return False

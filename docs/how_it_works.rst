@@ -272,6 +272,31 @@ When applying, there is a second round after the files are written.
 The command builds a fresh ``MigrationLoader`` that re-reads the files from disk, and checks that the graph has not changed, that every migration has the operations it expected, and that the final project state is the same as before.
 If anything is off, it puts the original text back in every file it wrote, and fails with an error.
 
+Trial mode
+----------
+
+With ``--trial``, the name scan and the soft-reference rule stop being blockers.
+Their hits are recorded instead: each removal (a whole life, or a superseded operation) keeps the list of opaque operations that mentioned it.
+Every other rule stays: references, poisoning, editability, the primary key rule, exclusions and the superseded guards.
+
+The original history is migrated on a scratch database first.
+If that fails, the command stops: the history doesn’t migrate from scratch, so nothing can be learnt from trials.
+The resulting snapshot covers, on SQLite, every table’s columns, foreign keys, indexes and check constraints (through ``PRAGMA`` statements, since the stored ``CREATE TABLE`` text depends on how a table was built), plus index, trigger and view definitions.
+On PostgreSQL it covers columns (type, length, precision, nullability, default, identity, collation, generation), constraints (``pg_get_constraintdef``), indexes (``pg_get_indexdef``), sequences and their owners, views, materialized views, functions and procedures, triggers, enum types, extensions and comments.
+On MySQL and MariaDB a best-effort set from ``information_schema`` is used; this is untested.
+Other backends fall back to Django’s introspection, which is weaker.
+Data is compared as a multiset of rows per table, with date and time values masked, and ``django_migrations`` compared by app and name only.
+
+A candidate run substitutes the edited operation lists on a private ``MigrationLoader`` and runs Django’s ``MigrationExecutor``, so the files on disk are untouched.
+Opaque operations that don’t change the project state are wrapped: an exception inside one rolls back to a savepoint and is recorded, and the run continues as if it did nothing.
+Any other failure ends the run, and is blamed on the removals whose lifetime includes that migration.
+A run with failures isn’t compared to the baseline, since the skipped operations explain any difference.
+
+Each round blocks more removals, then solves again (blocking can cascade through references), until a run is clean and identical to the baseline.
+That final run is what the plan reports.
+
+Scratch databases are created with the backend’s own machinery and named ``cleanmig_<random>_<name>`` (a temporary file on SQLite); the alias is pointed at them for the run, as the test runner does, and they are always dropped.
+
 Limitations
 -----------
 
