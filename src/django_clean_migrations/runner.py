@@ -25,6 +25,7 @@ from django.db.migrations.state import ProjectState
 
 from django_clean_migrations.history import Key, generate_plan
 from django_clean_migrations.ops import isolated
+from django_clean_migrations.prune import PrunePlan, pruned_graph
 
 DatabaseForwards = Callable[..., Any]
 OpHook = Callable[[Key, int, Operation, DatabaseForwards], DatabaseForwards]
@@ -79,11 +80,13 @@ def run_history(
     operations: Mapping[Key, Sequence[Operation]] | None = None,
     hook: OpHook | None = None,
     progress: Progress | None = None,
+    prune: PrunePlan | None = None,
 ) -> RunReport:
     """
     Apply every migration to ``connection``, which must be empty, timing each
     migration and operation. ``operations`` replaces the operation lists of
-    some migrations, on a private loader only. Failures raise RunError naming
+    some migrations, on a private loader only; ``prune`` deletes migrations
+    from its graph. Failures raise RunError naming
     the migration.
 
     pre_migrate is sent first, as ``migrate`` does. post_migrate isn't: it
@@ -117,6 +120,9 @@ def run_history(
             done[0] += 1
 
     executor = MigrationExecutor(connection, progress_callback=cast(Any, callback))
+    if prune:
+        # Pruned migrations deleted, their dependants rewired.
+        executor.loader.graph = pruned_graph(executor.loader.graph, prune)
     graph = executor.loader.graph
     if executor.loader.applied_migrations:
         raise RunError("The scratch database already has applied migrations.")

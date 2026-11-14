@@ -73,6 +73,7 @@ def plan_data(result: Result, base: Path) -> dict[str, Any]:
             "edited_operations": result.edited_operations,
             "folded_operations": result.folded_operations,
             "empty_migrations": [list(k) for k in result.empty_migrations],
+            "pruned_migrations": [list(k) for k in result.pruned_migrations],
         },
         "warnings": list(result.warnings),
         "removals": removals,
@@ -84,7 +85,8 @@ def plan_data(result: Result, base: Path) -> dict[str, Any]:
                 "module": change.module,
                 "sha256_before": change.sha256_before,
                 "operations_after": list(change.operations_after),
-                "content_after": change.new,
+                "deleted": change.deleted,
+                "content_after": None if change.deleted else change.new,
             }
             for change in result.files
         ],
@@ -157,9 +159,10 @@ def load_plan(path: Path) -> Result:
                     migration=(f["migration"][0], f["migration"][1]),
                     module=f["module"],
                     original=original,
-                    new=f["content_after"],
+                    new=f["content_after"] or "",
                     operations_after=tuple(f["operations_after"]),
                     expected_sha256=f["sha256_before"],
+                    deleted=bool(f.get("deleted", False)),
                 )
             )
         removals = [
@@ -187,6 +190,7 @@ def load_plan(path: Path) -> Result:
             edited_operations=summary["edited_operations"],
             folded_operations=summary.get("folded_operations", 0),
             empty_migrations=[(a, n) for a, n in summary["empty_migrations"]],
+            pruned_migrations=[(a, n) for a, n in summary.get("pruned_migrations", [])],
             options=data["options"],
             verification=data["verification"],
         )

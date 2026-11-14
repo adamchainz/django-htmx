@@ -422,6 +422,49 @@ If data from the original history itself differs between runs (random or time-ba
 Removals the default plan makes on its own are never blamed for a failure: they are proven without a trial.
 Only removals that the name scan would have kept, and folds, are tried and blocked on evidence.
 
+Pruning empty migrations
+------------------------
+
+Once operations are removed and folded, many migrations are left with no operations at all.
+``--prune`` (on ``plan`` and ``apply``) deletes them, and makes every migration that depended on a deleted one depend on that one's dependencies instead:
+
+.. code-block:: console
+
+    $ python manage.py clean_migrations apply --prune
+    ...
+    shop
+      Migration  prune  0002_add  (dependants rewired: shop.0004_qty)
+    ...
+    Removed 42 operations in 30 migration files. 12 migrations deleted.
+
+Every remaining migration still runs after exactly the same migrations as before (minus the deleted ones): a dependency is only added where the migration didn't already have it through its other dependencies, and the result is checked, in memory and after writing the files.
+Migrations that were already empty are pruned too.
+
+A migration is kept, and listed with ``--show-blocked``, when:
+
+* it is the first or the latest migration of its app, or marked ``initial`` (an app keeps its first and latest migrations, so merges, ``--fake-initial`` and ``__first__``/``__latest__`` dependencies behave as before);
+* it is a squashed migration, or a squashed migration replaces it;
+* it has ``run_before``, or another migration names it in ``run_before``;
+* a migration depending on it can't be edited (an installed package, an excluded app), or doesn't list it as a plain ``("app", "name")`` tuple in a literal ``dependencies`` list;
+* another migration file mentions its name other than in its dependencies, for example to import a function from it with ``import_module()``;
+* its app isn't selected, or is excluded.
+
+Whatever else the deleted file held (functions of the data migrations removed from it, ``atomic = False``...) goes with it.
+Rewritten dependency lists keep their other entries as written, ``swappable_dependency()`` calls included.
+``apply`` deletes the files (and their bytecode) and, if anything fails, writes them back; plan files record each deletion with the hash of the file.
+
+.. warning::
+
+    Pruning changes the set of migration names:
+
+    * Existing databases keep a row in ``django_migrations`` for each deleted migration.
+      It is harmless; ``python manage.py migrate --prune`` removes such rows.
+    * Branches, or other projects, with migrations that depend on a deleted migration need that dependency updated (to the deleted migration's dependencies) before they can be merged.
+    * Tooling that names migrations, such as ``migrate app 0042_x`` in scripts or documentation, needs updating.
+
+With ``--trial``, the trial runs use the pruned graph too, and expect exactly the pruned migrations to be missing from ``django_migrations``.
+
+
 No-op data migrations
 ---------------------
 

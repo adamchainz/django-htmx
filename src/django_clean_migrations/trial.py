@@ -45,12 +45,14 @@ from django_clean_migrations.core import (
     UnitInfo,
     build,
     make_result,
+    prune_plan,
 )
 from django_clean_migrations.history import Key, OpRecord
 from django_clean_migrations.isolate import ChildError, Send, run_isolated
 from django_clean_migrations.noop import Observation, observe
 from django_clean_migrations.opaque import OpaqueOp, Text
 from django_clean_migrations.ops import OPAQUE, classify
+from django_clean_migrations.prune import PrunePlan
 from django_clean_migrations.runner import DatabaseForwards, RunError, run_history
 from django_clean_migrations.scratch import ScratchDatabaseError, scratch_database
 from django_clean_migrations.snapshot import Difference, Mask, Snapshot, take_snapshot
@@ -155,6 +157,7 @@ class Trial:
         label: str,
         operations: Mapping[Key, Sequence[Operation]] | None,
         observing: bool = False,
+        prune: PrunePlan | None = None,
     ) -> PassResult:
         """
         Migrate a fresh scratch database, in a forked child process (see
@@ -172,6 +175,7 @@ class Trial:
                         operations,
                         lambda m: send((m, False)),
                         observing,
+                        prune,
                     )
 
                 return run_isolated(
@@ -193,6 +197,7 @@ class Trial:
         operations: Mapping[Key, Sequence[Operation]] | None,
         say: Callable[[str], None],
         observing: bool = False,
+        prune: PrunePlan | None = None,
     ) -> PassResult:
         failures: list[TrialFailure] = []
         observations: dict[int, Observation] = {}
@@ -213,7 +218,11 @@ class Trial:
         )
         try:
             run_history(
-                connection, operations=operations, hook=hook, progress=on_progress
+                connection,
+                operations=operations,
+                hook=hook,
+                progress=on_progress,
+                prune=prune,
             )
         except RunError as exc:
             where = current[0]
@@ -491,8 +500,16 @@ class Trial:
         operations = built.operations_by_key(self.analysis.history)
         if _candidate_hook is not None:
             _candidate_hook(operations, self.passes)
+        prune = (
+            prune_plan(self.analysis, built)
+            if self.analysis.options.get("prune")
+            else None
+        )
+        if prune:
+            # The pruned history doesn't record the pruned migrations.
+            reference = reference.without_migrations(prune.pruned)
         self.passes += 1
-        result = self._run(f"Trial run {self.passes}", operations)
+        result = self._run(f"Trial run {self.passes}", operations, prune=prune)
         self.harvested.extend(result.failures)
         if result.failures or result.snapshot is None:
             # Skipped failing operations explain any snapshot differences,
@@ -522,7 +539,12 @@ class Trial:
         if any(u.at_risk for u in solution.units):
             return diffs
         for d in diffs:
-            if d.kind == "data" and d.table and not _related(solution.units, d.table):
+            if (
+                d.kind == "data"
+                and d.table
+                and d.table != "django_migrations"
+                and not _related(solution.units, d.table)
+            ):
                 self.masked.add(d.table)
         return reference.differences(snapshot, self.mask, self.masked)
 

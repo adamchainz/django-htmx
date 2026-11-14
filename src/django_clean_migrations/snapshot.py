@@ -118,6 +118,18 @@ class Snapshot:
                 )
         return found
 
+    def without_migrations(self, keys: Iterable[tuple[str, str]]) -> Snapshot:
+        """A copy without the django_migrations rows of ``keys`` (pruned
+        migrations, which a run of the pruned history doesn't record)."""
+        rows = self.data.get("django_migrations")
+        if rows is None:
+            return self
+        data = dict(self.data)
+        data["django_migrations"] = rows - Counter(
+            (_value(app), _value(name)) for app, name in keys
+        )
+        return Snapshot(self.vendor, self.schema, data, self.columns, self.exact)
+
     def _rows(self, table: str, without: set[str]) -> Counter[tuple[str, ...]]:
         rows = self.data.get(table, Counter())
         if not without:

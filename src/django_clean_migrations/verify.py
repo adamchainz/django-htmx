@@ -7,6 +7,7 @@ and produce exactly the same final project state.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from collections.abc import Set as AbstractSet
 from typing import TYPE_CHECKING, Any
 
 from django.db.migrations import operations as m
@@ -232,10 +233,41 @@ def verify_on_disk(
     original_plan: Sequence[Key],
     original_final: ProjectState,
     expected_ops: Mapping[Key, Sequence[str]],
+    pruned: AbstractSet[Key] = frozenset(),
+    ancestors: Mapping[Key, AbstractSet[Key]] | None = None,
 ) -> None:
+    """
+    Reload the migrations from disk and check them. With ``pruned``
+    migrations deleted, the plan may be ordered differently, but must hold
+    the others, and each must have exactly ``ancestors`` (its old ancestors
+    minus the pruned) as its ancestors.
+    """
     loader, plan, state = state_from_disk()
-    if plan != list(original_plan):
-        raise VerificationError("the migration graph changed after rewriting")
+    if not pruned:
+        if plan != list(original_plan):
+            raise VerificationError("the migration graph changed after rewriting")
+    else:
+        from django_clean_migrations.prune import ancestor_sets
+
+        loader.graph.validate_consistency()
+        expected_keys = [k for k in original_plan if k not in pruned]
+        if sorted(plan) != sorted(expected_keys):
+            raise VerificationError(
+                "the migration graph doesn't hold exactly the migrations that"
+                " were not pruned"
+            )
+        if ancestors is not None:
+            found = ancestor_sets(loader.graph, plan)
+            for key in plan:
+                if found[key] != ancestors.get(key):
+                    raise VerificationError(
+                        f"after pruning, {key[0]}.{key[1]} doesn't run after the"
+                        " same migrations as before"
+                    )
+        for app in {k[0] for k in pruned}:
+            before = {k for k in original_plan if k[0] == app and k not in pruned}
+            if before and not loader.graph.leaf_nodes(app):
+                raise VerificationError(f"app {app} has no migrations left")
     for key, names in expected_ops.items():
         actual = [type(op).__name__ for op in loader.graph.nodes[key].operations]
         if actual != list(names):

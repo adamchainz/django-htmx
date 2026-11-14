@@ -360,6 +360,17 @@ Like folds, they can be blamed: one that is blamed is put back, and the static p
 
 Candidates are solved starting from the history as the default plan leaves it, so they contain all of it; at the end, every operation the default plan removes must be removed, or the default plan, trialled too, is used.
 
+Pruning
+-------
+
+With ``--prune``, after everything else, migrations left with no operations are deleted (the rules for what is kept are in the usage guide).
+For a deleted migration P, every surviving migration that depended on it gets P’s dependencies instead, following chains of deleted migrations, except those it already runs after through its other dependencies.
+So the set of migrations every surviving migration runs after (its ancestors in the graph) is exactly the original set minus the deleted migrations: no ordering constraint between the migrations that do something is lost or added.
+This invariant is checked on the planned graph, and again on the graph loaded from the rewritten files, which must also contain exactly the surviving migrations and be consistent.
+
+Keeping the first and latest migration of every app means ``__first__`` and ``__latest__`` dependencies, ``swappable_dependency()`` (which means ``__first__``), Django’s inference of ``initial`` and ``--fake-initial`` all resolve as before.
+Only literal ``("app", "name")`` entries are rewritten, in the dependants’ ``dependencies`` lists, which are regenerated keeping their other entries’ source text.
+
 Limitations
 -----------
 

@@ -33,6 +33,7 @@ KIND_STYLES = {
     "elidable": "bright_magenta",
     "fold": "bright_cyan",
     "noop": "bright_yellow",
+    "prune": "bright_red",
 }
 
 
@@ -372,6 +373,7 @@ class Command(RichCommand):
             trial_max_runs=options["trial_max_runs"],
             trial_single_baseline=options["trial_single_baseline"],
             noop_data=options["noop_data"],
+            prune=options["prune"],
             progress=progress,
         )
 
@@ -589,6 +591,13 @@ def _add_selection_arguments(parser: ArgumentParser) -> None:
         action="store_true",
         help="Also remove every elidable RunPython/RunSQL operation.",
     )
+    parser.add_argument(
+        "--prune",
+        action="store_true",
+        help="Delete migrations left with no operations, and make the"
+        " migrations depending on them depend on their dependencies instead."
+        " Changes the set of migration names.",
+    )
 
 
 def _add_common_arguments(parser: ArgumentParser) -> None:
@@ -668,6 +677,7 @@ def _has_selection(options: dict[str, Any]) -> bool:
         or options["elidable"]
         or options["trial"]
         or options["noop_data"]
+        or options["prune"]
     )
 
 
@@ -682,7 +692,9 @@ def _row(indent: int, removal: Removal, name: Text) -> Row:
     if removal.end:
         span.append(" -> ", style="dim")
         span.append(removal.end, style="dim")
-    return Row(indent, name, removal.kind, span, len(removal.elements), removal.note)
+    # A pruned migration is a file, not operations.
+    count = None if removal.kind == "prune" else len(removal.elements)
+    return Row(indent, name, removal.kind, span, count, removal.note)
 
 
 def _locations(removal: Removal, indent: int, verbosity: int) -> list[Text]:
@@ -719,12 +731,22 @@ def summary(result: Result, write: bool) -> str:
             if not actions:
                 verb = verb.capitalize() if write else f"Would {verb}"
             actions.append(f"{verb} {_count(count, 'operation')}")
-    joined = (
-        actions[0]
-        if len(actions) == 1
-        else ", ".join(actions[:-1]) + " and " + actions[-1]
-    )
-    text = joined + f" in {_count(len(result.files), 'migration file')}."
+    pruned = len(result.pruned_migrations)
+    if actions:
+        joined = (
+            actions[0]
+            if len(actions) == 1
+            else ", ".join(actions[:-1]) + " and " + actions[-1]
+        )
+        text = joined + f" in {_count(len(result.files), 'migration file')}."
+        if pruned:
+            text += f" {_count(pruned, 'migration')} " + (
+                "deleted." if write else "would be deleted."
+            )
+    else:
+        text = f"{_count(pruned, 'migration')} " + (
+            "deleted." if write else "would be deleted."
+        )
     noop = sum(1 for r in result.removals if r.kind == "noop")
     if noop:
         text += (

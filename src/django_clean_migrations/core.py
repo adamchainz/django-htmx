@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from django.apps import apps
+from django.db.migrations.loader import MigrationLoader
 from django.db.migrations.operations.base import Operation
 from django.db.migrations.state import ProjectState
 
@@ -29,6 +30,13 @@ from django_clean_migrations.history import (
 )
 from django_clean_migrations.locate import locate_create_model, locate_together_op
 from django_clean_migrations.opaque import TextBuilder
+from django_clean_migrations.prune import (
+    PruneError,
+    PrunePlan,
+    ancestor_sets,
+    plan_prune,
+    rewrite_dependencies,
+)
 from django_clean_migrations.rewrite import (
     OpEdit,
     RewriteError,
@@ -138,6 +146,8 @@ class FileChange:
     """Operation class names the rewritten migration must load with."""
     expected_sha256: str | None = None
     """For a loaded plan: the hash of the content the plan was made from."""
+    deleted: bool = False
+    """The file is deleted (--prune); ``new`` is empty."""
 
     @property
     def sha256_before(self) -> str:
@@ -170,6 +180,8 @@ class Result:
     """(migration, operation index) of every operation removed outright."""
     edited_positions: frozenset[tuple[Key, int]] = frozenset()
     """(migration, operation index) of every operation edited."""
+    pruned_migrations: list[Key] = field(default_factory=list)
+    """Migrations deleted (--prune)."""
     _plan_keys: list[Key] | None = field(default=None, repr=False)
     _final_state: ProjectState | None = field(default=None, repr=False)
 
@@ -201,16 +213,35 @@ class Result:
                 raise CleanError(f"Could not load migrations: {exc}") from exc
         else:
             plan_keys, final_state = self._plan_keys, self._final_state
-        expected = {c.migration: list(c.operations_after) for c in self.files}
+        pruned = {c.migration for c in self.files if c.deleted}
+        ancestors = None
+        if pruned:
+            # The key invariant of pruning: every surviving migration runs
+            # after exactly the same migrations as before, minus the pruned.
+            try:
+                loader = MigrationLoader(None, ignore_no_migrations=True)
+            except Exception as exc:
+                raise CleanError(f"Could not load migrations: {exc}") from exc
+            survivors = [k for k in loader.graph.nodes if k not in pruned]
+            ancestors = {
+                k: frozenset(v - pruned)
+                for k, v in ancestor_sets(loader.graph, survivors).items()
+            }
+        expected = {
+            c.migration: list(c.operations_after) for c in self.files if not c.deleted
+        }
         # Registered before writing: a failure (or interrupt) mid-write must
         # still restore that file.
         touched: list[FileChange] = []
         try:
             for change in self.files:
                 touched.append(change)
-                _write_text(change.path, change.new)
+                if change.deleted:
+                    change.path.unlink()
+                else:
+                    _write_text(change.path, change.new)
             _forget(self.files)
-            verify_on_disk(plan_keys, final_state, expected)
+            verify_on_disk(plan_keys, final_state, expected, pruned, ancestors)
         except BaseException as exc:
             unrestored: list[str] = []
             for change in touched:
@@ -367,6 +398,7 @@ def plan(
     trial_max_runs: int = 8,
     trial_single_baseline: bool = False,
     noop_data: bool = False,
+    prune: bool = False,
     progress: Any = None,
 ) -> Result:
     """
@@ -378,6 +410,8 @@ def plan(
     are tried for real on scratch databases of ``database``'s backend (see
     ``django_clean_migrations.trial``). ``noop_data`` (implies ``trial``)
     also removes data migrations that do nothing on a fresh database.
+    ``prune`` deletes migrations left with no operations, rewiring their
+    dependants (see ``django_clean_migrations.prune``).
     """
     if noop_data:
         if opaque != "scan":
@@ -394,6 +428,7 @@ def plan(
         elidable=elidable,
     )
     analysis.options["noop_data"] = noop_data
+    analysis.options["prune"] = prune
     if trial:
         from django_clean_migrations.trial import run_trial
 
@@ -666,6 +701,7 @@ def make_result(analysis: Analysis, solution: Solution, built: Built) -> Result:
     removed: set[tuple[Key, int]] = set()
     edited: set[tuple[Key, int]] = set()
     empty: list[Key] = []
+    texts: dict[int, str] = {}
     folded_count = 0
     by_migration: dict[int, list[OpRecord]] = {}
     for rec in history.ops:
@@ -701,22 +737,62 @@ def make_result(analysis: Analysis, solution: Solution, built: Built) -> Result:
                 f"Internal error: rewriting {info.label} failed ({exc}). No files"
                 " were changed. Please report this as a bug."
             ) from exc
+        texts[index] = new_text
+        if not final:
+            empty.append(info.key)
+
+    removals = list(solution.removals)
+    blocked = list(solution.blocked)
+    prune = prune_plan(analysis, built) if analysis.options.get("prune") else None
+    deleted: set[int] = set()
+    if prune is not None:
+        for key in prune.pruned:
+            deleted.add(history.by_key[key].index)
+        for key, added in prune.added.items():
+            info = history.by_key[key]
+            assert info.source is not None and info.path is not None
+            text = texts.get(info.index, info.source.text)
+            try:
+                text = rewrite_dependencies(text, info, prune.removed[key], added)
+                compile(text, str(info.path), "exec")
+            except (SyntaxError, PruneError) as exc:
+                raise CleanError(
+                    f"Internal error: rewiring {info.label} failed ({exc}). No"
+                    " files were changed. Please report this as a bug."
+                ) from exc
+            texts[info.index] = text
+        removals.extend(_prune_removals(history, prune))
+        blocked.extend(
+            Blocked(
+                kind="prune",
+                app_label=key[0],
+                model=None,
+                label=f"{key[0]}.{key[1]}",
+                reasons=(reason,),
+                description="migration with no operations left",
+            )
+            for key, reason in sorted(prune.blocked.items())
+        )
+        empty = [k for k in empty if k not in set(prune.pruned)]
+    for index in sorted(set(texts) | deleted):
+        info = history.migrations[index]
+        assert info.source is not None and info.path is not None
+        ops = built.edited_ops.get(index, info.migration.operations)
         files.append(
             FileChange(
                 info.path,
                 info.key,
                 type(info.migration).__module__,
                 info.source.text,
-                new_text,
-                tuple(built.expected[info.key]),
+                "" if index in deleted else texts[index],
+                tuple(type(op).__name__ for op in ops),
+                deleted=index in deleted,
             )
         )
-        if not final:
-            empty.append(info.key)
 
     return Result(
-        removals=solution.removals,
-        blocked=solution.blocked,
+        removals=removals,
+        blocked=blocked,
         warnings=list(history.warnings),
         files=files,
         removed_operations=len(removed) - folded_count,
@@ -726,9 +802,47 @@ def make_result(analysis: Analysis, solution: Solution, built: Built) -> Result:
         options=dict(analysis.options),
         removed_positions=frozenset(removed),
         edited_positions=frozenset(edited),
+        pruned_migrations=list(prune.pruned) if prune is not None else [],
         _plan_keys=list(history.plan),
         _final_state=timeline.state,
     )
+
+
+def prune_plan(analysis: Analysis, built: Built) -> PrunePlan:
+    """Which emptied migrations --prune deletes, for a built solution."""
+    try:
+        return plan_prune(analysis.history, built.edited_ops, analysis.scope)
+    except PruneError as exc:
+        raise CleanError(
+            f"Internal error: {exc}. No files were changed. Please report this"
+            " as a bug, and leave out --prune to work around it."
+        ) from exc
+
+
+def _prune_removals(history: History, prune: PrunePlan) -> list[Removal]:
+    result = []
+    for key in prune.pruned:
+        info = history.by_key[key]
+        dependants = prune.dependants.get(key, [])
+        note = (
+            "dependants rewired: " + ", ".join(f"{a}.{n}" for a, n in dependants)
+            if dependants
+            else "no operations left"
+        )
+        result.append(
+            Removal(
+                kind="prune",
+                app_label=key[0],
+                model=None,
+                label=key[0],
+                description=f"{key[1]} has no operations left and is deleted ({note})",
+                elements=(Location(key, info.path, None, "Migration", None),),
+                name="Migration",
+                start=key[1],
+                note=note,
+            )
+        )
+    return result
 
 
 def _matches_entity(target: Target, life: Life) -> bool:
