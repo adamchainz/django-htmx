@@ -71,7 +71,7 @@ class Command(RichCommand):
             "-o",
             "--output",
             metavar="FILE",
-            help="Save the plan as a JSON file, to review and then apply.",
+            help="Save the plan as a TOML file, to review and then apply.",
         )
         plan_parser.add_argument(
             "--check",
@@ -179,7 +179,7 @@ class Command(RichCommand):
         if subcommand == "plan":
             self._report(result, verbosity, show_blocked, False, options)
             if options["output"]:
-                result.save(options["output"])
+                result.save(options["output"], blocked=show_blocked)
                 if verbosity > 0:
                     self._print(
                         Text(

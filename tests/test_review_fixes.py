@@ -115,12 +115,12 @@ class TestWriteRestores:
         real = core._write_text
         calls = []
 
-        def flaky(path, text):
+        def flaky(path, text, encoding="utf-8"):
             calls.append(path)
             if len(calls) == 2:
                 path.write_text("garbage")  # a torn write
                 raise OSError("disk full")
-            real(path, text)
+            real(path, text, encoding)
 
         monkeypatch.setattr(core, "_write_text", flaky)
         with pytest.raises(CleanError, match="restored: disk full"):
@@ -419,22 +419,25 @@ class TestUnknownTargets:
         assert project.clean("shop.Item.name").removals == []
 
 
-def test_bom_reason(project: Project) -> None:
+def test_bom_kept(project: Project) -> None:
+    # Python reads a file with a byte order mark as UTF-8; it is written
+    # back with it.
     project.migration("shop", "0001_initial", ITEM)
     path = project.migration(
         "shop",
         "0002_add",
-        'migrations.AddField("item", "legacy", models.IntegerField(default=0)),',
+        'migrations.AddField("item", "legacy", models.IntegerField(default=0)),\n'
+        'migrations.AddField("item", "qty", models.IntegerField(default=0)),',
     )
-    path.write_text("﻿" + path.read_text(), encoding="utf-8")
+    path.write_bytes(b"\xef\xbb\xbf" + path.read_bytes())
     project.migration(
         "shop", "0003_remove", 'migrations.RemoveField("item", "legacy"),'
     )
-    result = project.clean()
-    assert blocked(result)["shop.Item.legacy"] == (
-        "operations list in shop.0002_add could not be parsed"
-        " (file starts with a UTF-8 byte order mark)",
-    )
+    result = project.check_equivalence()
+    assert ("field", "shop.Item.legacy") in kinds(result)
+    data = path.read_bytes()
+    assert data.startswith(b"\xef\xbb\xbf")
+    assert b"legacy" not in data
 
 
 def test_summary_wording(project: Project) -> None:

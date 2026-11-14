@@ -81,16 +81,84 @@ Running ``plan`` again then reports that there’s nothing left to do:
 Plan files
 ~~~~~~~~~~
 
-``plan --output FILE`` saves the plan as a JSON file, and ``apply --plan FILE`` applies exactly that plan, without analysing the history again:
+``plan --output FILE`` saves the plan as a TOML file, and ``apply --plan FILE`` applies exactly that plan, without analysing the history again:
 
 .. code-block:: console
 
-    $ python manage.py clean_migrations plan --output plan.json
-    $ python manage.py clean_migrations apply --plan plan.json
+    $ python manage.py clean_migrations plan --output plan.toml
+    $ python manage.py clean_migrations apply --plan plan.toml
 
 That lets you review the plan, or make it in CI and apply it elsewhere.
-The file records the tool version, the options used, how the plan was verified, the full report (removals with their locations, blocked things with reasons, warnings), and, for each migration file to edit, its module and path (relative to the plan file), a SHA-256 hash of its current content, and its new content.
-``apply --plan`` finds each file through its module, as Python imports it now, so it can be run from any directory; ``apply`` refuses to write anything if any of those files changed since the plan was made.
+The file reads top-down: what the plan does and how it was checked, then each removal, then the files, each edit as a unified diff.
+A shortened example:
+
+.. code-block:: toml
+
+    format = "django-clean-migrations-plan"
+    version = 2
+    tool_version = "1.0.0"
+    tool_path = "/home/me/venv/lib/python3.13/site-packages/django_clean_migrations"
+    created = "2026-11-14T17:40:02+00:00"
+    warnings = []
+
+    [summary]
+    removed_operations = 2
+    folded_operations = 0
+    edited_operations = 0
+    files_changed = 2
+    files_deleted = 0
+    empty_migrations = [["shop", "0003_remove"]]
+    pruned_migrations = []
+
+    [options]
+    targets = []
+    exclude = []
+    kinds = ["constraint", "field", "fold", "index", "model", "superseded", "together"]
+    opaque = "scan"
+    elidable = false
+    noop_data = false
+    prune = false
+
+    [verification]
+    mode = "static"
+
+    [[removals]]
+    app = "shop"
+    model = "Item"
+    kind = "field"
+    label = "shop.Item.legacy"
+    name = "legacy"
+    start = "0002_add"
+    end = "0003_remove"
+    description = "field added in 0002_add, removed in 0003_remove"
+    elements = [{ migration = ["shop", "0002_add"], path = "shop/migrations/0002_add.py", line = 11, operation = "AddField" }, { migration = ["shop", "0003_remove"], path = "shop/migrations/0003_remove.py", line = 11, operation = "RemoveField" }]
+
+    [[files]]
+    migration = ["shop", "0002_add"]
+    module = "shop.migrations.0002_add"
+    path = "shop/migrations/0002_add.py"
+    operations_after = ["AddField"]
+    sha256_before = "9c9c8531aea37e578e0e608a2da84742cfb1e7e112692c8621d08ad696fd5906"
+    sha256_after = "f6654a1f0172145d992a58cdaf1738c3f1d63a2c9301ea5d4ff4c6cbf3ab6a51"
+    diff = '''
+    --- a/shop/migrations/0002_add.py
+    +++ b/shop/migrations/0002_add.py
+    @@ -8,6 +8,5 @@
+         ]
+
+         operations = [
+    -        migrations.AddField("item", "legacy", models.IntegerField(default=0)),
+             migrations.AddField("item", "qty", models.IntegerField(default=1)),
+         ]
+    '''
+
+With ``--show-blocked``, the file also lists what was kept and why (``[[blocked]]``).
+With ``--prune``, deleted files are listed under ``[[deleted]]``, with the hash of their content.
+Paths are relative to the plan file, and ``tool_path`` says which copy of django-clean-migrations made the plan.
+
+``apply --plan`` finds each file through its module, as Python imports it now, so it can be run from any directory.
+It refuses to write anything if any file changed since the plan was made (its SHA-256 hash differs), if a diff doesn’t apply exactly (no fuzz: every context and removed line must match where the hunk says), or if applying it doesn’t give the file the plan was made for (``sha256_after``).
+Files are read and written back as Python reads them: with their line endings, their byte order mark or ``coding`` declaration, and without a final newline if they had none.
 It then writes the files and verifies them exactly as ``apply`` without a plan does.
 A plan file can’t be combined with targets or other analysis options.
 
@@ -366,10 +434,10 @@ By default, the command decides whether a data migration (``RunPython``, ``RunSQ
 
 .. code-block:: console
 
-    $ python manage.py clean_migrations plan --trial --output plan.json
+    $ python manage.py clean_migrations plan --trial --output plan.toml
     ...
     Trial: 5 migrate runs on postgresql in 141.7s; unlocked 212 removals of 221 that the static scan blocks, blocked 9 on evidence.
-    $ python manage.py clean_migrations apply --plan plan.json
+    $ python manage.py clean_migrations apply --plan plan.toml
 
 It works like this:
 

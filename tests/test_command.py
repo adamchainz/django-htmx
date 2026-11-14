@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
-import json
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -215,14 +215,14 @@ def test_options_after_subcommand(history: Project) -> None:
 
 
 def test_plan_file_round_trip(history: Project, tmp_path: Path) -> None:
-    plan_path = tmp_path / "plan.json"
+    plan_path = tmp_path / "plan.toml"
     before = history.files()
     out, _ = history.command("plan", "-o", str(plan_path))
     assert f"Saved the plan to {plan_path}" in out
     assert history.files() == before
-    data = json.loads(plan_path.read_text())
+    data = tomllib.loads(plan_path.read_text())
     assert data["format"] == "django-clean-migrations-plan"
-    assert data["version"] == 1
+    assert data["version"] == 2
     assert data["verification"] == {"mode": "static"}
     assert data["options"]["opaque"] == "scan"
     assert [f["migration"] for f in data["files"]] == [
@@ -238,7 +238,7 @@ def test_plan_file_round_trip(history: Project, tmp_path: Path) -> None:
 
 
 def test_plan_file_stale(history: Project, tmp_path: Path) -> None:
-    plan_path = tmp_path / "plan.json"
+    plan_path = tmp_path / "plan.toml"
     history.command("plan", "-o", str(plan_path))
     path = history.path("shop", "0003_drop")
     path.write_text(path.read_text() + "# edited\n")
@@ -249,34 +249,35 @@ def test_plan_file_stale(history: Project, tmp_path: Path) -> None:
 
 
 def test_plan_file_with_targets(history: Project, tmp_path: Path) -> None:
-    plan_path = tmp_path / "plan.json"
+    plan_path = tmp_path / "plan.toml"
     history.command("plan", "-o", str(plan_path))
     with pytest.raises(CommandError, match="--plan can't be combined"):
         history.command("apply", "--plan", str(plan_path), "shop")
 
 
 def test_plan_file_invalid(history: Project, tmp_path: Path) -> None:
-    bad = tmp_path / "bad.json"
-    bad.write_text("{}")
+    bad = tmp_path / "bad.toml"
+    bad.write_text("not = [toml")
+    with pytest.raises(CommandError, match="Could not read plan file"):
+        history.command("apply", "--plan", str(bad))
+    bad.write_text("")
     with pytest.raises(CommandError, match="is not a django-clean-migrations plan"):
         history.command("apply", "--plan", str(bad))
-    bad.write_text(
-        json.dumps({"format": "django-clean-migrations-plan", "version": 99})
-    )
+    bad.write_text('format = "django-clean-migrations-plan"\nversion = 99\n')
     with pytest.raises(CommandError, match="plan format version 99"):
         history.command("apply", "--plan", str(bad))
-    bad.write_text(json.dumps({"format": "django-clean-migrations-plan", "version": 1}))
+    bad.write_text('format = "django-clean-migrations-plan"\nversion = 2\n')
     with pytest.raises(CommandError, match="Malformed plan file"):
         history.command("apply", "--plan", str(bad))
     with pytest.raises(CommandError, match="Could not read plan file"):
-        history.command("apply", "--plan", str(tmp_path / "missing.json"))
+        history.command("apply", "--plan", str(tmp_path / "missing.toml"))
 
 
 def test_library_round_trip(history: Project, tmp_path: Path) -> None:
     result = history.clean()
-    result.save(tmp_path / "plan.json")
+    result.save(tmp_path / "plan.toml", blocked=True)
     history.activate()
-    loaded = load_plan(tmp_path / "plan.json")
+    loaded = load_plan(tmp_path / "plan.toml")
     assert loaded.removals == [
         dataclasses.replace(
             r,

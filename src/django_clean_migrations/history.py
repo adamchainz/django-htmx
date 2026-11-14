@@ -4,8 +4,10 @@ import ast
 import copy
 import dataclasses
 import importlib.util
+import io
 import re
 import sys
+import tokenize
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from functools import cached_property
@@ -31,14 +33,14 @@ _LINE_BREAK = re.compile(r"\r\n|\r|\n")
 
 
 class SourceFile:
-    def __init__(self, path: Path, text: str) -> None:
+    def __init__(self, path: Path, text: str, encoding: str = "utf-8") -> None:
         self.path = path
         self.text = text
+        self.encoding = encoding
+        """As Python reads the file (a coding cookie, a BOM, else UTF-8)."""
 
     @cached_property
     def tree(self) -> ast.Module | None:
-        if self.text.startswith("﻿"):
-            return None
         try:
             return ast.parse(self.text)
         except (SyntaxError, ValueError):
@@ -91,12 +93,20 @@ class SourceFile:
         return cache[id(node)]
 
 
+def read_python(path: Path) -> tuple[str, str]:
+    """The exact text of a Python file (line endings kept), decoded as
+    Python would (coding cookie or BOM), and that encoding."""
+    data = path.read_bytes()
+    encoding, _ = tokenize.detect_encoding(io.BytesIO(data).readline)
+    return data.decode(encoding), encoding
+
+
 def _read_source(path: Path) -> SourceFile | None:
     try:
-        with open(path, encoding="utf-8", newline="") as f:
-            return SourceFile(path, f.read())
-    except (OSError, UnicodeDecodeError):
+        text, encoding = read_python(path)
+    except (OSError, UnicodeDecodeError, SyntaxError, LookupError):
         return None
+    return SourceFile(path, text, encoding)
 
 
 @dataclass(eq=False)
@@ -304,9 +314,6 @@ def locate_operations(info: MigrationInfo) -> None:
         info.unlocatable_reason = "source not readable"
         return
     tree = source.tree
-    if source.text.startswith("\ufeff"):
-        info.unlocatable_reason = "file starts with a UTF-8 byte order mark"
-        return
     if tree is None:
         info.unlocatable_reason = "file could not be parsed"
         return

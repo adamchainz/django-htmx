@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import json
 import textwrap
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -140,10 +140,10 @@ def test_fold_unlocked(project: Project) -> None:
 
 def test_plan_file(project: Project, tmp_path: Path) -> None:
     data_migration(project, "Item.objects.using(alias).update(legacy=2)")
-    plan_path = tmp_path / "plan.json"
+    plan_path = tmp_path / "plan.toml"
     out, _ = project.command("plan", "--noop-data", "-o", str(plan_path))
     assert "noop" in out
-    data = json.loads(plan_path.read_text())
+    data = tomllib.loads(plan_path.read_text())
     assert data["verification"]["noop"]
     assert data["options"]["noop_data"] is True
     project.command("apply", "--plan", str(plan_path))

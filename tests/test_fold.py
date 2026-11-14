@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import json
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -432,7 +432,7 @@ def test_skip_kind_and_plan_file(project: Project, tmp_path: Path) -> None:
     )
     out, _ = project.command("plan", "--skip-kind", "fold")
     assert out == "No operations to remove.\n"
-    plan_path = tmp_path / "plan.json"
+    plan_path = tmp_path / "plan.toml"
     out, _ = project.command("plan", "--kind", "fold", "-v", "2", "-o", str(plan_path))
     lines = out.splitlines()
     assert lines[2].split() == [
@@ -450,7 +450,7 @@ def test_skip_kind_and_plan_file(project: Project, tmp_path: Path) -> None:
         "Would fold 1 operation and edit 1 operation in 2 migration files."
         " 1 migration would be left with no operations."
     )
-    data = json.loads(plan_path.read_text())
+    data = tomllib.loads(plan_path.read_text())
     assert data["summary"]["folded_operations"] == 1
     assert data["removals"][0]["targets"][0]["detail"] == "regenerated"
     project.command("apply", "--plan", str(plan_path))

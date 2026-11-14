@@ -27,6 +27,7 @@ from django_clean_migrations.history import (
     derive_history,
     invalidate_modules,
     load_history,
+    read_python,
 )
 from django_clean_migrations.locate import locate_create_model, locate_together_op
 from django_clean_migrations.opaque import TextBuilder
@@ -149,16 +150,23 @@ class FileChange:
     """For a loaded plan: the hash of the content the plan was made from."""
     deleted: bool = False
     """The file is deleted (--prune); ``new`` is empty."""
+    encoding: str = "utf-8"
+    """The file's encoding (coding cookie or BOM), for writing it back."""
 
     @property
     def sha256_before(self) -> str:
         if self.expected_sha256 is not None:
             return self.expected_sha256
-        return sha256_text(self.original)
+        return sha256_text(self.original, self.encoding)
+
+    @property
+    def sha256_after(self) -> str | None:
+        return None if self.deleted else sha256_text(self.new, self.encoding)
 
 
-def sha256_text(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+def sha256_text(text: str, encoding: str = "utf-8") -> str:
+    """The hash of the file holding ``text`` in ``encoding``."""
+    return hashlib.sha256(text.encode(encoding)).hexdigest()
 
 
 @dataclass
@@ -190,11 +198,14 @@ class Result:
     def changed(self) -> bool:
         return bool(self.files)
 
-    def save(self, path: str | os.PathLike[str]) -> None:
-        """Write the plan as a reviewable JSON file for ``load_plan()``."""
+    def save(self, path: str | os.PathLike[str], *, blocked: bool = False) -> None:
+        """
+        Write the plan as a reviewable TOML file for ``load_plan()``;
+        ``blocked`` includes what was kept and why.
+        """
         from django_clean_migrations.planfile import save_plan
 
-        save_plan(self, Path(path))
+        save_plan(self, Path(path), blocked=blocked)
 
     def write(self) -> None:
         """
@@ -242,14 +253,14 @@ class Result:
                 if change.deleted:
                     change.path.unlink()
                 else:
-                    _write_text(change.path, change.new)
+                    _write_text(change.path, change.new, change.encoding)
             _forget(self.files)
             verify_on_disk(plan_keys, final_state, expected, pruned, ancestors, ends)
         except BaseException as exc:
             unrestored: list[str] = []
             for change in touched:
                 try:
-                    _write_text(change.path, change.original)
+                    _write_text(change.path, change.original, change.encoding)
                 except OSError as restore_exc:
                     unrestored.append(f"{change.path} ({restore_exc})")
             _forget(self.files)
@@ -269,11 +280,11 @@ class Result:
         stale = []
         for change in self.files:
             try:
-                current = _read_text(change.path)
+                current = change.path.read_bytes()
             except OSError:
                 stale.append(f"{change.path} (missing)")
                 continue
-            if sha256_text(current) != change.sha256_before:
+            if hashlib.sha256(current).hexdigest() != change.sha256_before:
                 stale.append(str(change.path))
         if stale:
             raise CleanError(
@@ -282,17 +293,17 @@ class Result:
             )
 
 
-def _read_text(path: Path) -> str:
-    with open(path, encoding="utf-8", newline="") as f:
-        return f.read()
+def _read_text(path: Path) -> tuple[str, str]:
+    """The exact text of a migration file and its encoding."""
+    return read_python(path)
 
 
-def _write_text(path: Path, text: str) -> None:
+def _write_text(path: Path, text: str, encoding: str = "utf-8") -> None:
     """Replace ``path`` atomically, keeping its permissions."""
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
     try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
-            f.write(text)
+        with os.fdopen(fd, "wb") as f:
+            f.write(text.encode(encoding))
         try:
             shutil.copymode(path, tmp)
         except OSError:
@@ -799,6 +810,7 @@ def make_result(analysis: Analysis, solution: Solution, built: Built) -> Result:
                 "" if index in deleted else texts[index],
                 tuple(type(op).__name__ for op in ops),
                 deleted=index in deleted,
+                encoding=info.source.encoding,
             )
         )
 

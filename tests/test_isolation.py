@@ -3,8 +3,8 @@ command-line and plan-file fixes that came with them."""
 
 from __future__ import annotations
 
-import json
 import os
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -252,11 +252,11 @@ def test_apply_plan_from_elsewhere(
     plans = tmp_path / "plans"
     plans.mkdir()
     monkeypatch.chdir(plans)
-    project.command("plan", "-o", "plan.json")
-    data = json.loads((plans / "plan.json").read_text())
+    project.command("plan", "-o", "plan.toml")
+    data = tomllib.loads((plans / "plan.toml").read_text())
     assert all(f["path"].startswith("../") for f in data["files"])
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
     monkeypatch.chdir(elsewhere)
-    project.command("apply", "--plan", str(plans / "plan.json"))
+    project.command("apply", "--plan", str(plans / "plan.toml"))
     assert 'AddField("item", "legacy"' not in project.read("shop", "0002_add")

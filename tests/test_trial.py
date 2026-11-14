@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import json
+import tomllib
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -207,11 +207,11 @@ def test_plan_file_round_trip(project: Project, tmp_path: Path) -> None:
             item.legacy = 1
         """,
     )
-    plan_path = tmp_path / "plan.json"
+    plan_path = tmp_path / "plan.toml"
     out, _ = project.command("plan", "--trial", "-o", str(plan_path))
     assert "Trial: 3 migrate runs on sqlite in " in out
     assert "unlocked 1 removal of 1 that the static scan blocks" in out
-    data = json.loads(plan_path.read_text())
+    data = tomllib.loads(plan_path.read_text())
     assert data["verification"]["mode"] == "trial"
     assert data["verification"]["unlocked"] == 1
     assert data["options"]["targets"] == []

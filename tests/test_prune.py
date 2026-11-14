@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
-import json
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -297,14 +297,14 @@ def test_unselected_app_not_pruned(project: Project) -> None:
 
 def test_plan_round_trip(project: Project, tmp_path: Path) -> None:
     dead_field(project)
-    plan_path = tmp_path / "plan.json"
+    plan_path = tmp_path / "plan.toml"
     out, _ = project.command("plan", "--prune", "-o", str(plan_path))
     assert "prune" in out
     assert "2 migrations would be deleted." in out
-    data = json.loads(plan_path.read_text())
-    deleted = [f for f in data["files"] if f["deleted"]]
+    data = tomllib.loads(plan_path.read_text())
+    deleted = data["deleted"]
     assert len(deleted) == 2
-    assert all(f["content_after"] is None and f["sha256_before"] for f in deleted)
+    assert all(f["sha256_before"] and "diff" not in f for f in deleted)
     assert data["summary"]["pruned_migrations"] == [
         ["shop", "0002_add"],
         ["shop", "0003_remove"],
@@ -356,7 +356,7 @@ def test_noop_data_then_pruned(project: Project) -> None:
 
 def test_flag_with_plan_file(project: Project, tmp_path: Path) -> None:
     dead_field(project)
-    plan_path = tmp_path / "plan.json"
+    plan_path = tmp_path / "plan.toml"
     project.command("plan", "-o", str(plan_path))
     with pytest.raises(CommandError, match="--plan can't be combined"):
         project.command("apply", "--plan", str(plan_path), "--prune")
