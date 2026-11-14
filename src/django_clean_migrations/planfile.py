@@ -15,6 +15,8 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
+import tomli_w
+
 from django_clean_migrations.core import (
     Blocked,
     CleanError,
@@ -26,7 +28,6 @@ from django_clean_migrations.core import (
     sha256_text,
 )
 from django_clean_migrations.patch import PatchError, apply_diff, make_diff
-from django_clean_migrations.tomlwriter import dumps
 
 FORMAT = "django-clean-migrations-plan"
 FORMAT_VERSION = 2
@@ -146,6 +147,34 @@ def plan_data(result: Result, base: Path, *, blocked: bool = False) -> dict[str,
         if not c.deleted
     ]
     return data
+
+
+def dumps(data: dict[str, Any]) -> str:
+    """Write TOML, leaving out None values (TOML has no null), with multi-line
+    strings (diffs) on their own lines.
+
+    TOML readers turn CRLF inside multi-line strings into LF, so when any
+    string has a carriage return, all strings are written on one line with
+    escapes instead.
+    """
+    data = _without_none(data)
+    return tomli_w.dumps(data, multiline_strings=not _has_carriage_return(data))
+
+
+def _has_carriage_return(value: Any) -> bool:
+    if isinstance(value, dict):
+        return any(_has_carriage_return(v) for v in value.values())
+    if isinstance(value, list):
+        return any(_has_carriage_return(v) for v in value)
+    return isinstance(value, str) and "\r" in value
+
+
+def _without_none(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {k: _without_none(v) for k, v in value.items() if v is not None}
+    if isinstance(value, list | tuple):
+        return [_without_none(v) for v in value if v is not None]
+    return value
 
 
 def save_plan(result: Result, path: Path, *, blocked: bool = False) -> None:

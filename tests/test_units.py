@@ -32,7 +32,6 @@ from django_clean_migrations.patch import PatchError, apply_diff, make_diff
 from django_clean_migrations.runner import RunError, run_history
 from django_clean_migrations.scratch import scratch_database
 from django_clean_migrations.tokens import container_for_node
-from django_clean_migrations.tomlwriter import dumps
 from tests import noop_samples as samples
 from tests.project import Project
 from tests.test_clean import ITEM
@@ -170,7 +169,7 @@ def test_postgres_operations() -> None:
     assert classify_op(pg_operations.CollationOperation("c", "und")) == OPAQUE
 
 
-# patch and tomlwriter
+# patch
 
 
 def test_patch_hunks_out_of_order() -> None:
@@ -181,10 +180,6 @@ def test_patch_hunks_out_of_order() -> None:
     swapped = header + "@@ -" + second + "@@ -" + first
     with pytest.raises(PatchError, match="out of order"):
         apply_diff(old, swapped)
-
-
-def test_toml_key_with_newline() -> None:
-    assert dumps({"a\nb": 1}) == '"a\\nb" = 1\n'
 
 
 # planfile

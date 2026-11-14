@@ -10,7 +10,7 @@ import pytest
 from django.core.management import CommandError
 
 from django_clean_migrations.patch import PatchError, apply_diff, make_diff
-from django_clean_migrations.tomlwriter import dumps
+from django_clean_migrations.planfile import dumps
 from tests.project import Project
 from tests.test_clean import ITEM
 
@@ -190,7 +190,3 @@ def test_toml_shapes() -> None:
         "rows": [{"k": "a", "nested": [{"z": 1}]}, {"k": "b"}],
         "empty": [],
     }
-    with pytest.raises(ValueError, match="nan"):
-        dumps({"x": float("nan")})
-    with pytest.raises(TypeError, match="set"):
-        dumps({"x": {1}})

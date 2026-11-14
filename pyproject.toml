@@ -39,6 +39,7 @@ dependencies = [
   "django>=5.2",
   "django-rich>=2.2",
   "tokenize-rt>=6.1",
+  "tomli-w>=1.1",
 ]
 urls.Changelog = "https://django-clean-migrations.readthedocs.io/en/latest/changelog.html"
 urls.Documentation = "https://django-clean-migrations.readthedocs.io/"

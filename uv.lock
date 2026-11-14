@@ -423,6 +423,7 @@ dependencies = [
     { name = "django", version = "6.1.3", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and extra != 'group-23-django-clean-migrations-django52' and extra != 'group-23-django-clean-migrations-django60') or (extra == 'group-23-django-clean-migrations-django52' and extra == 'group-23-django-clean-migrations-django60') or (extra == 'group-23-django-clean-migrations-django52' and extra == 'group-23-django-clean-migrations-django61') or (extra == 'group-23-django-clean-migrations-django60' and extra == 'group-23-django-clean-migrations-django61')" },
     { name = "django-rich" },
     { name = "tokenize-rt" },
+    { name = "tomli-w" },
 ]
 
 [package.dev-dependencies]
@@ -455,6 +456,7 @@ requires-dist = [
     { name = "django", specifier = ">=5.2" },
     { name = "django-rich", specifier = ">=2.2" },
     { name = "tokenize-rt", specifier = ">=6.1" },
+    { name = "tomli-w", specifier = ">=1.1" },
 ]
 
 [package.metadata.requires-dev]
@@ -1132,6 +1134,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/69/ed/8f07e893132d5051d86a553e749d5c89b2a4776eb3a579b72ed61f8559ca/tokenize_rt-6.2.0.tar.gz", hash = "sha256:8439c042b330c553fdbe1758e4a05c0ed460dbbbb24a606f11f0dee75da4cad6", size = 5476, upload-time = "2025-05-23T23:48:00.035Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/33/f0/3fe8c6e69135a845f4106f2ff8b6805638d4e85c264e70114e8126689587/tokenize_rt-6.2.0-py2.py3-none-any.whl", hash = "sha256:a152bf4f249c847a66497a4a95f63376ed68ac6abf092a2f7cfb29d044ecff44", size = 6004, upload-time = "2025-05-23T23:47:58.812Z" },
+]
+
+[[package]]
+name = "tomli-w"
+version = "1.2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/19/75/241269d1da26b624c0d5e110e8149093c759b7a286138f4efd61a60e75fe/tomli_w-1.2.0.tar.gz", hash = "sha256:2dd14fac5a47c27be9cd4c976af5a12d87fb1f0b4512f81d69cce3b35ae25021", size = 7184, upload-time = "2025-01-15T12:07:24.262Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c7/18/c86eb8e0202e32dd3df50d43d7ff9854f8e0603945ff398974c1d91ac1ef/tomli_w-1.2.0-py3-none-any.whl", hash = "sha256:188306098d013b691fcadc011abd66727d3c414c571bb01b1a174ba8c983cf90", size = 6675, upload-time = "2025-01-15T12:07:22.074Z" },
 ]
 
 [[package]]
