@@ -105,7 +105,7 @@ class Folder:
             and not self._touched(e.rec.seq)
             and e.rec.seq not in self.used
             and e.rec.seq not in self.pending
-            and self.solver.unit_key(e) not in self.solver.trial_blocked
+            and "fold:" + self.solver.unit_key(e) not in self.solver.trial_blocked
         )
 
     def _before(self, life: Life, p: Element) -> bool:
@@ -159,9 +159,35 @@ class Folder:
         """
         for life in lives:
             for el in life.elements:
-                renames = el.info.get("rename") or type(el.rec.op) is m.RenameModel
+                # Database object names embed table and column names as they
+                # were at creation: AlterModelTable counts as a rename.
+                renames = el.info.get("rename") or type(el.rec.op) in (
+                    m.RenameModel,
+                    m.AlterModelTable,
+                )
                 if (
                     renames
+                    and not self.solver.removed(el)
+                    and self.solver._between(el, p.pos, e.pos)
+                ):
+                    return False
+        return True
+
+    def _targets_unaltered(self, lives: Iterable[Life], p: Element, e: Element) -> bool:
+        """
+        No AlterField of a field the folded definition points at (a target
+        pk or to_field) may run in the window: the schema editor drops and
+        recreates foreign keys pointing at a field whose type changes, and
+        recreates them under a different name ("..._fk" instead of
+        "..._fk_<table>_<column>"). A foreign key that now exists earlier
+        would go through that and come out named differently.
+        """
+        for life in lives:
+            if not isinstance(life, FieldLife):
+                continue
+            for el in life.elements:
+                if (
+                    type(el.rec.op) is m.AlterField
                     and not self.solver.removed(el)
                     and self.solver._between(el, p.pos, e.pos)
                 ):
@@ -172,6 +198,26 @@ class Folder:
         return (
             self.solver._opaque_block(names, p.pos, e.pos, None, model.start_pos, e)
             is None
+        )
+
+    def _no_setup_between(self, field: Any, p: Element, e: Element) -> bool:
+        """
+        A field class from outside django.db.models may need something set
+        up in the database (an extension such as hstore, a type, a function),
+        possibly by a RunSQL or custom operation between P and E: creating
+        the column at P would come before it. Such fields aren't folded
+        across any opaque operation other than RunPython.
+        """
+        if type(field).__module__.startswith("django.db.models"):
+            return True
+        index = self.solver.opaque
+        return not any(
+            type(o.rec.op) is not m.RunPython
+            and index.contains(o, p.pos, e.pos, p.pos)
+            and self.solver._between(
+                self.solver.opaque_elements[o.rec.seq], p.pos, e.pos
+            )
+            for o in index.ops
         )
 
     def _no_refs_between(self, life: Life, p: Element, e: Element) -> bool:
@@ -289,7 +335,11 @@ class Folder:
         de, _ = defs[id(e)]
         if getattr(dp, "many_to_many", False) or getattr(de, "many_to_many", False):
             return
-        if _occupied(dp) != _occupied(de):
+        if _occupied(dp) != _occupied(de) or not same_named_objects(dp, de):
+            return
+        # An AlterField changing the type of a field that foreign keys point
+        # at (via to_field) recreates those keys under other names.
+        if referenced_by_fields(life):
             return
         released = set(p.refs) - set(e.refs)
         if any(
@@ -301,7 +351,11 @@ class Folder:
             return
         if not self._stable_names([*e.refs, model], p, e):
             return
+        if not self._targets_unaltered(set(e.refs) - set(p.refs), p, e):
+            return
         if not self._no_refs_between(life, p, e):
+            return
+        if not self._no_setup_between(de, p, e):
             return
         if not self._quiet(life.scan_names() | model.scan_names(), p, e, model):
             return
@@ -381,6 +435,8 @@ class Folder:
             or not self.history.ordered(create.pos[0], a.pos[0])
         ):
             return False
+        add = a.rec.op
+        assert isinstance(add, m.AddField)
         names = {n.lower() for n in life.names} | life.extra_names
         for sibling in model.children:
             if (
@@ -394,10 +450,18 @@ class Folder:
             return False
         if not self._stable_names([*a.refs, model], create, a):
             return False
+        own_pk = [f for f in model.children if isinstance(f, FieldLife) and f.ever_pk]
+        many_to_many = getattr(add.field, "many_to_many", False)
+        # The foreign keys of an auto-created through table point at both
+        # models' primary keys.
+        if not self._targets_unaltered(
+            [*a.refs, *(own_pk if many_to_many else [])], create, a
+        ):
+            return False
+        if not self._no_setup_between(add.field, create, a):
+            return False
         if not self._quiet(model.scan_names(), create, a, model):
             return False
-        add = a.rec.op
-        assert isinstance(add, m.AddField)
         current = self._current(create)
         assert isinstance(current, m.CreateModel)
         new = _create(
@@ -606,4 +670,52 @@ def _create(
         options=dict(op.options) if options is None else options,
         bases=op.bases,
         managers=op.managers if managers is None else managers,
+    )
+
+
+# Internal types for which some backend adds a CHECK constraint
+# (data_type_check_constraints): created inline (unnamed, so named by the
+# database) with the column, but by AlterField under Django's hashed name.
+CHECK_TYPES = frozenset(
+    {
+        "PositiveBigIntegerField",
+        "PositiveIntegerField",
+        "PositiveSmallIntegerField",
+        "JSONField",
+        "BooleanField",
+        "NullBooleanField",
+    }
+)
+
+
+def _check_kind(field: Any) -> Any:
+    cls = type(field)
+    if not cls.__module__.startswith("django.db.models"):
+        # A custom field may add its own check: assume it depends on the class.
+        return cls
+    internal = field.get_internal_type()
+    return internal if internal in CHECK_TYPES else None
+
+
+def same_named_objects(a: Any, b: Any) -> bool:
+    """
+    Whether going from definition ``a`` to ``b`` by AlterField creates no
+    database object whose name would differ had ``b`` been created directly.
+    A column's UNIQUE and CHECK constraints are inline (database-named) when
+    the column is created, but added by AlterField under Django's hashed
+    names (..._uniq, ..._check). Indexes, "like" indexes and foreign keys
+    get the same Django-generated names either way.
+    """
+    if bool(getattr(a, "unique", False)) != bool(getattr(b, "unique", False)):
+        return False
+    if _check_kind(a) != _check_kind(b):
+        return False
+    return not any(type(f).__name__ == "GeneratedField" for f in (a, b))
+
+
+def referenced_by_fields(life: FieldLife) -> bool:
+    """Whether any field definition (a foreign key's to_field) points here."""
+    return any(
+        type(e.rec.op) in (m.AddField, m.AlterField, m.CreateModel) and not e.opaque
+        for e in life.referenced_by
     )

@@ -100,3 +100,64 @@ def test_hooks_removed(history: Project) -> None:  # noqa: F811
     for migration in loader.graph.nodes.values():
         for op in migration.operations:
             assert "database_forwards" not in op.__dict__
+
+
+def test_profile_state_time(history: Project) -> None:  # noqa: F811
+    data = json.loads(history.command_db("profile", "--json")[0])
+    assert data["state_seconds"] > 0
+    assert data["database_seconds"] > 0
+    create = data["by_operation_type"]["CreateModel"]
+    assert create["state_seconds"] > 0
+    assert set(data["top_state_operations"][0]) == {
+        "migration",
+        "index",
+        "operation",
+        "state_seconds",
+    }
+    out, _ = history.command_db("profile")
+    assert "in the database" in out
+    assert "updating the project state" in out
+    assert "Top 10 operations by project state cost" in out
+
+
+def test_scratch_listing(
+    project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project.migration("shop", "0001_initial", "")
+    temp = tmp_path / "temp"
+    temp.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(temp))
+    out, _ = project.command_db("scratch")
+    assert out == "No scratch databases found.\n"
+    leftover = temp / "cleanmig_dead"
+    leftover.mkdir()
+    out, _ = project.command_db("scratch")
+    assert out == f"{leftover}\n"
+    with pytest.raises(CommandError, match="is not a scratch"):
+        project.command_db("scratch", "--drop", str(tmp_path / "other"))
+    out, _ = project.command_db("scratch", "--drop-all")
+    assert out == f"Dropped {leftover}.\n"
+    assert not leftover.exists()
+
+
+def test_sigterm_cleans_up(project: Project, monkeypatch: pytest.MonkeyPatch) -> None:
+    import os
+    import signal
+
+    project.migration("shop", "0001_initial", "")
+    made: list[str] = []
+    real_mkdtemp = tempfile.mkdtemp
+
+    def mkdtemp(**kwargs: str) -> str:
+        made.append(real_mkdtemp(**kwargs))
+        return made[-1]
+
+    def terminate(*args: object, **kwargs: object) -> None:
+        os.kill(os.getpid(), signal.SIGTERM)
+
+    monkeypatch.setattr(tempfile, "mkdtemp", mkdtemp)
+    monkeypatch.setattr(profile_module, "run_history", terminate)
+    with pytest.raises(SystemExit):
+        project.command_db("profile")
+    assert made and not Path(made[0]).exists()
+    assert signal.getsignal(signal.SIGTERM) is signal.SIG_DFL

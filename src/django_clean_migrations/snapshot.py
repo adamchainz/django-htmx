@@ -29,10 +29,36 @@ class Difference:
     kind: str
     """"schema" or "data"."""
     detail: str
+    columns: tuple[str, ...] = ()
+    """For a table's columns: the names of those that differ."""
 
     def __str__(self) -> str:
         where = f"table {self.table}" if self.table else "the schema"
         return f"{self.kind} of {where} differs ({self.detail})"
+
+
+@dataclass
+class Mask:
+    """What to leave out of comparisons: it differs between two runs of the
+    same history (random or time-based values)."""
+
+    tables: set[str] = field(default_factory=set)
+    """Tables whose data isn't compared."""
+    columns: dict[str, set[str]] = field(default_factory=dict)
+    """table -> columns whose values aren't compared."""
+    schema: set[tuple[str, str | None, str]] = field(default_factory=set)
+    """Schema objects not compared."""
+
+    def __bool__(self) -> bool:
+        return bool(self.tables or self.columns or self.schema)
+
+    def describe(self) -> str:
+        parts = [f"data of {t}" for t in sorted(self.tables)]
+        parts += [
+            f"{t}.{c}" for t, cols in sorted(self.columns.items()) for c in sorted(cols)
+        ]
+        parts += [f"{k[0]} {k[2]}" for k in sorted(self.schema, key=repr)]
+        return ", ".join(parts)
 
 
 @dataclass
@@ -41,16 +67,26 @@ class Snapshot:
     schema: dict[tuple[str, str | None, str], Any] = field(default_factory=dict)
     """(object kind, table or None, name) -> normalised definition."""
     data: dict[str, Counter[tuple[str, ...]]] = field(default_factory=dict)
-    """table -> multiset of rows (values as repr strings)."""
+    """table -> multiset of rows (values as repr strings, columns in the
+    order of ``columns``)."""
+    columns: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    """table -> its column names, sorted (physical order is compared as
+    part of the schema, where it is meaningful)."""
     exact: bool = True
     """False when only Django's generic introspection was available."""
 
     def differences(
-        self, other: Snapshot, ignore_data: Iterable[str] = ()
+        self,
+        other: Snapshot,
+        mask: Mask | None = None,
+        ignore_data: Iterable[str] = (),
     ) -> list[Difference]:
-        ignored = set(ignore_data)
+        mask = mask or Mask()
+        ignored = set(ignore_data) | mask.tables
         found: list[Difference] = []
         for key in sorted(self.schema.keys() | other.schema.keys(), key=repr):
+            if key in mask.schema:
+                continue
             mine, theirs = self.schema.get(key), other.schema.get(key)
             if mine != theirs:
                 what = (
@@ -58,12 +94,20 @@ class Snapshot:
                     if theirs is None
                     else ("unexpected" if mine is None else "changed")
                 )
-                found.append(Difference(key[1], "schema", f"{key[0]} {key[2]} {what}"))
+                columns = (
+                    _column_changes(mine, theirs)
+                    if key[0] == "columns" and mine and theirs
+                    else ()
+                )
+                detail = f"{key[0]} {key[2]} {what}"
+                if columns:
+                    detail += f": {', '.join(columns)}"
+                found.append(Difference(key[1], "schema", detail, columns))
         for table in sorted(self.data.keys() | other.data.keys()):
             if table in ignored:
                 continue
-            mine_rows = self.data.get(table, Counter())
-            theirs_rows = other.data.get(table, Counter())
+            mine_rows = self._rows(table, mask.columns.get(table, set()))
+            theirs_rows = other._rows(table, mask.columns.get(table, set()))
             if mine_rows != theirs_rows:
                 missing = sum((mine_rows - theirs_rows).values())
                 extra = sum((theirs_rows - mine_rows).values())
@@ -73,6 +117,66 @@ class Snapshot:
                     )
                 )
         return found
+
+    def _rows(self, table: str, without: set[str]) -> Counter[tuple[str, ...]]:
+        rows = self.data.get(table, Counter())
+        if not without:
+            return rows
+        names = self.columns.get(table, ())
+        keep = [i for i, name in enumerate(names) if name not in without]
+        projected: Counter[tuple[str, ...]] = Counter()
+        for row, n in rows.items():
+            projected[tuple(row[i] for i in keep)] += n
+        return projected
+
+    def nondeterminism(self, again: Snapshot) -> Mask:
+        """
+        What differs between this snapshot and ``again``, of the same history:
+        columns whose values differ (if leaving them out makes the rows
+        match), else whole tables, and schema objects.
+        """
+        mask = Mask()
+        for key in self.schema.keys() | again.schema.keys():
+            if self.schema.get(key) != again.schema.get(key):
+                mask.schema.add(key)
+        for table in self.data.keys() | again.data.keys():
+            mine, theirs = self.data.get(table), again.data.get(table)
+            if mine == theirs:
+                continue
+            names = self.columns.get(table)
+            if mine is None or theirs is None or names != again.columns.get(table):
+                mask.tables.add(table)
+                continue
+            assert names is not None
+            differing = {
+                name
+                for i, name in enumerate(names)
+                if Counter(r[i] for r in mine.elements())
+                != Counter(r[i] for r in theirs.elements())
+            }
+            if differing and self._rows(table, differing) == again._rows(
+                table, differing
+            ):
+                mask.columns[table] = differing
+            else:
+                mask.tables.add(table)
+        return mask
+
+
+def _column_changes(mine: Any, theirs: Any) -> tuple[str, ...]:
+    """Names of the columns that differ between two column lists (name
+    first in each entry), or that moved."""
+    try:
+        a = {str(c[0]): c for c in mine}
+        b = {str(c[0]): c for c in theirs}
+    except (TypeError, IndexError):  # pragma: no cover
+        return ()
+    changed = sorted(n for n in a.keys() | b.keys() if a.get(n) != b.get(n))
+    if changed:
+        return tuple(changed)
+    order_a = [str(c[0]) for c in mine]
+    order_b = [str(c[0]) for c in theirs]
+    return tuple(n for n, m in zip(order_a, order_b, strict=False) if n != m)
 
 
 def take_snapshot(connection: BaseDatabaseWrapper) -> Snapshot:
@@ -87,7 +191,7 @@ def take_snapshot(connection: BaseDatabaseWrapper) -> Snapshot:
         else:
             snapshot.exact = False
             _generic_schema(connection, cursor, snapshot.schema)
-        _data(connection, cursor, snapshot.data)
+        _data(connection, cursor, snapshot.data, snapshot.columns)
     return snapshot
 
 
@@ -355,20 +459,27 @@ def _value(value: Any) -> str:
 
 
 def _data(
-    connection: Any, cursor: Any, data: dict[str, Counter[tuple[str, ...]]]
+    connection: Any,
+    cursor: Any,
+    data: dict[str, Counter[tuple[str, ...]]],
+    columns: dict[str, tuple[str, ...]],
 ) -> None:
     quote = connection.ops.quote_name
     for table in connection.introspection.table_names(cursor):
         if table == "django_migrations":
             cursor.execute(f"SELECT app, name FROM {quote(table)}")
             data[table] = Counter(tuple(map(_value, r)) for r in cursor.fetchall())
+            columns[table] = ("app", "name")
             continue
         masked = _masked_columns(connection, cursor, table)
         cursor.execute(f"SELECT * FROM {quote(table)}")
+        names = [str(d[0]) for d in cursor.description]
+        order = sorted(range(len(names)), key=lambda i: names[i])
+        columns[table] = tuple(names[i] for i in order)
         data[table] = Counter(
             tuple(
-                _MASK if i in masked and v is not None else _value(v)
-                for i, v in enumerate(row)
+                _MASK if i in masked and row[i] is not None else _value(row[i])
+                for i in order
             )
             for row in cursor.fetchall()
         )

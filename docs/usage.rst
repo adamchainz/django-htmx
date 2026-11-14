@@ -89,12 +89,12 @@ Plan files
     $ python manage.py clean_migrations apply --plan plan.json
 
 That lets you review the plan, or make it in CI and apply it elsewhere.
-The file records the tool version, the options used, how the plan was verified, the full report (removals with their locations, blocked things with reasons, warnings), and, for each migration file to edit, its path (relative to the current directory), a SHA-256 hash of its current content, and its new content.
-``apply`` refuses to write anything if any of those files changed since the plan was made, so run it from the same directory, on the same checkout.
+The file records the tool version, the options used, how the plan was verified, the full report (removals with their locations, blocked things with reasons, warnings), and, for each migration file to edit, its module and path (relative to the plan file), a SHA-256 hash of its current content, and its new content.
+``apply --plan`` finds each file through its module, as Python imports it now, so it can be run from any directory; ``apply`` refuses to write anything if any of those files changed since the plan was made.
 It then writes the files and verifies them exactly as ``apply`` without a plan does.
 A plan file can’t be combined with targets or other analysis options.
 
-Options such as ``-v``, ``--no-color`` and ``--traceback`` can go before or after the subcommand.
+Django’s own options (``-v``, ``--no-color``, ``--force-color``, ``--traceback``, ``--skip-checks``, ``--settings``, ``--pythonpath``) can go before or after the subcommand.
 
 By default the command considers every app that has at least one migration file inside your project.
 Migrations installed from third-party packages are read, because their operations matter for working out what is safe, but they are never edited.
@@ -367,21 +367,37 @@ By default, the command decides whether a data migration (``RunPython``, ``RunSQ
 
     $ python manage.py clean_migrations plan --trial --output plan.json
     ...
-    Trial: 3 migrate runs on postgresql in 141.7s; unlocked 212 removals that the static scan blocks, blocked 9 on evidence.
+    Trial: 5 migrate runs on postgresql in 141.7s; unlocked 212 removals of 221 that the static scan blocks, blocked 9 on evidence.
     $ python manage.py clean_migrations apply --plan plan.json
 
 It works like this:
 
 1. The original history is migrated on an empty scratch database (as for ``profile``), and a snapshot is taken of the resulting schema (in far more detail than Django’s model state: columns, defaults, constraints, indexes, sequences, views, functions, triggers and more) and all data, except date and time values.
 2. A candidate plan is made in which the name scan doesn’t block anything, but each removal remembers which data migrations mentioned it.
+   The command says how many removals a trial could unlock at most: if that is none, only the default plan is trialled.
+   Then the original history is migrated a second time: anything that differs between the two runs (random or time-based values in rows that migrations create, such as UUIDs, tokens or password hashes) is left out of every comparison: just the differing columns where that is enough, else the table’s data.
+   ``--trial-single-baseline`` skips that run; such differences are then only recognised when nothing else can be blamed, and may block removals.
 3. The candidate is migrated on a fresh scratch database, with the edited operations in memory: no files are touched.
    If a data migration fails, its savepoint is rolled back, the failure is recorded, and the run goes on, so one run finds many failures.
    (That needs a backend that can roll back schema changes, such as PostgreSQL or SQLite, and an atomic migration; otherwise the run stops at the first failure.)
-4. Each failure blocks the removals it points to: those the failing operation mentioned (narrowed to the ones named in the error message, if any), or else those whose lifetime includes the failing migration.
-   A snapshot that differs from the original blocks the removals relating to the differing table.
+4. Failures are blamed as narrowly as possible:
+
+   * An error that names what is missing (``Cannot resolve keyword 'x'``, ``has no field named 'x'``, ``object has no attribute 'x'``, ``column "x" does not exist``, ``doesn't have a 'X' model``, ``No installed app with label 'x'``, ``relation "t" does not exist`` and their SQLite and MySQL forms) blocks exactly the removals of that field, model, table or app, whichever data migration it occurs in.
+   * Any other failure is blamed on the removals the failing operation mentioned (narrowed to those named in the error message, if any), or else on those whose lifetime includes the failing migration.
+     Only half of them are blocked at first; if the same failure comes back in the next run, the other half is blocked too.
+     Only the first such failure of a run is used: later ones may follow from it (the failed operation did nothing), and are tested again in the next run.
+   * A snapshot that differs from the original blocks the removals relating to the differing table.
+
+   A data migration stops at its first error, so its next missing field only shows up in the next run.
+   This is why a project with many data migrations takes a few runs.
 5. The candidate is solved again, and run again, until a run has no failures and a snapshot identical to the original.
    That final clean run is required.
-   After ``--trial-max-runs`` runs (default 8), or when nothing more can be blamed, the command falls back to the default plan, and still trials it.
+   After ``--trial-max-runs`` runs (default 8), or when a run blames nothing new, the command falls back to the default plan, and still trials it.
+   A trial never does worse than the default plan: candidates are solved on top of it (its removals and folds first, then what the trial unlocks), and a final check makes sure every operation the default plan removes is removed; if not, the default plan is used.
+
+The command prints how long the original history took to migrate, and so roughly how long each run takes, before the first trial run, then what each run found and blocked, and shows its progress (run, migration, elapsed time) as it goes.
+The summary counts *migrate runs*, the baseline runs included; so does ``runs`` in the plan file.
+Long error messages are shortened in the output and in plan files (``FieldError``'s list of choices is left out).
 
 ``apply --trial`` does the same and applies the result.
 The plan file records the trial: backend, number of runs, what it unlocked, and the failures it harvested (shown with ``-v 2``).
@@ -395,8 +411,13 @@ The plan file records the trial: backend, number of runs, what it unlocked, and 
 
 If data from the original history itself differs between runs (random or time-based values in seeded rows), the command reports the table and stops comparing its data, rather than blaming removals for it.
 
-On SQLite, columns are compared by name rather than position: Django rebuilds SQLite tables in the order fields have in its model state, which shifts as the history renames and alters fields, so the physical column order there depends on incidental details of the history.
-On other backends column order is compared.
+.. warning::
+
+    **A trial on SQLite verifies less than one on PostgreSQL.**
+    SQLite constraints and inline unique indexes have no names worth comparing (Django creates them as part of ``CREATE TABLE`` and rebuilds the table on most changes), so a change of constraint or index name, which matters on PostgreSQL and MySQL, can’t be seen there.
+    And columns are compared by name rather than position: Django rebuilds SQLite tables in the order fields have in its model state, which shifts as the history renames and alters fields, so the physical column order there depends on incidental details of the history, and differs after removals and folds even though nothing that matters changed.
+    On other backends column order and every name are compared.
+    If your production database isn’t SQLite, run the trial against a scratch database of the same backend (``--database``).
 
 Removals the default plan makes on its own are never blamed for a failure: they are proven without a trial.
 Only removals that the name scan would have kept, and folds, are tried and blocked on evidence.
@@ -410,25 +431,51 @@ It creates an empty scratch database, runs the whole history on it with Django�
 .. code-block:: console
 
     $ python manage.py clean_migrations profile --top 5
-    Migrated 412 migrations in 48.31s on postgresql (39.02s inside operations).
+    Migrated 412 migrations in 68.50s on postgresql: 14.85s in the database, 47.20s updating the project state, 6.45s other.
     Slowest 5 migrations
     ...
     By operation type
     ...
     By app
     ...
-    The default plan removes 151 operations taking 6.204s (12.8%), and edits operations taking 0.412s (0.9%).
+    Top 5 operations by project state cost
+    ...
+    The default plan removes 151 operations taking 9.204s (13.4%), and edits operations taking 0.412s (0.6%), counting database and project state time.
 
-It reports the total time, the slowest migrations (``--top N``, default 10), time by operation type and by app, and how much of the time is spent in operations that ``plan`` (with default options) would remove or edit.
-Operation times include rendering model states, which Django does lazily inside operations.
-``post_migrate`` signal handlers, such as creating content types and permissions, are not run: they are not part of the history.
+Time is split into:
+
+* **database**: inside each operation’s ``database_forwards()``, the schema change or data migration itself, including any rendering of models it triggers;
+* **project state**: updating Django’s in-memory model of the project for each operation, which ``migrate`` also has to do: the copy of the state Django takes before each operation, and the operation’s ``state_forwards()``, which re-renders the models it touches and every model related to them;
+* **other**: the rest of the executor’s work, such as transactions, recording applied migrations, and deferred SQL.
+
+On large projects the project state usually dominates: an operation on a model that many others relate to is expensive however small its SQL.
+The “by project state cost” table shows which operations, and so which models, those are.
+
+The tables show, per operation type, app and slowest migration, the count, database time, project state time and share of the total.
+The removable estimate counts both database and project state time of the operations the default ``plan`` would remove or fold away, and of those it edits.
+``pre_migrate`` is sent before migrating, as ``migrate`` does: handlers may prepare the database (a schema, an extension) or, like the content types app, add operations.
+``post_migrate`` handlers, such as creating content types and permissions, are not run: they come after the history, so they can’t change how it migrates, and what they create depends only on the final models, which the plan keeps.
 ``--json`` prints the same report as JSON.
 
 The scratch database uses the backend and settings of the ``default`` database, or of ``--database ALIAS``.
 For SQLite it is a temporary file; for PostgreSQL and MySQL a new database named ``cleanmig_<random>_<name>`` is created next to the real one, so the database user needs permission to create databases, as for running tests.
-While migrating, the alias is pointed at the scratch database, as Django’s test runner does, so data migrations that query the default database run against it.
-It is always dropped afterwards, also on errors and interrupts.
-The real database is never touched, but data migrations that explicitly use *another* database alias would still reach that database.
+
+While migrating, *every* configured database alias is pointed at a scratch database, as Django’s test runner does, so no project code can reach a real database:
+
+* the chosen alias, the aliases configured for the same database (same engine, host, port and name, such as a read replica alias), and test mirrors (``"TEST": {"MIRROR": ...}``) share one scratch database, so a replica sees what the history wrote;
+* every other database gets its own, empty scratch database: only the chosen alias is migrated, so a data migration that reads another database finds no tables there.
+  Multi-database projects that migrate several aliases are trialled and profiled one alias at a time;
+* aliases using the dummy backend are left alone; any alias on a backend that can’t have scratch databases (anything but SQLite, PostgreSQL and MySQL) makes the command refuse to run: remove it from ``DATABASES`` for the command.
+
+Every scratch database is dropped afterwards, after closing every connection, also on errors, Ctrl-C and ``SIGTERM``.
+The real databases are never touched.
+
+Each migrate run happens in a child process of its own (``os.fork()``), which ends with the run, so nothing it leaves in the process (module-level caches of historical models, changed field objects, registered handlers) can affect the next run or the analysis.
+Where ``os.fork()`` doesn’t exist (Windows), runs happen in-process, with a warning.
+
+Only a hard kill (``SIGKILL``, a crash of the machine) can leave a scratch database behind.
+``clean_migrations scratch`` lists any on the server (or, for SQLite, in the temporary directory), and ``--drop NAME`` or ``--drop-all`` drops them.
+Other trial or profile runs against the same server use scratch databases too, so only drop those you know are left over.
 
 Verifying your schema
 ---------------------

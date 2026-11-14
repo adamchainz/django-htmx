@@ -36,6 +36,7 @@ from django_clean_migrations.rewrite import (
     edited_operation,
     regeneration_problem,
     rewrite_source,
+    unchanged,
 )
 from django_clean_migrations.solver import (
     OPAQUE_POLICIES,
@@ -364,6 +365,7 @@ def plan(
     trial: bool = False,
     database: str = "default",
     trial_max_runs: int = 8,
+    trial_single_baseline: bool = False,
     progress: Any = None,
 ) -> Result:
     """
@@ -387,7 +389,11 @@ def plan(
         from django_clean_migrations.trial import run_trial
 
         result: Result = run_trial(
-            analysis, alias=database, max_runs=trial_max_runs, progress=progress
+            analysis,
+            alias=database,
+            max_runs=trial_max_runs,
+            progress=progress,
+            single_baseline=trial_single_baseline,
         )
         return result
     solution = analysis.solve()
@@ -395,6 +401,9 @@ def plan(
 
 
 MAX_ROUNDS = 10
+FOLD_PREFIX = "fold:"
+"""Prefix of fold units' keys: folds are tried in trials like scan-blocked
+removals (their names in the database depend on more than the state)."""
 
 
 @dataclass(frozen=True)
@@ -410,6 +419,11 @@ class UnitInfo:
     names: frozenset[str]
     at_risk: frozenset[tuple[int, int]]
     """(plan index, index on disk) of opaque operations it relies on."""
+    app: str = ""
+    fields: frozenset[str] = frozenset()
+    """Names and columns of the fields it removes or changes (lower case)."""
+    models: frozenset[str] = frozenset()
+    """Names of the models it removes (lower case)."""
 
 
 @dataclass
@@ -446,10 +460,15 @@ class Analysis:
         *,
         aggressive: bool = False,
         trial_blocked: Mapping[str, str] | None = None,
+        base: Solution | None = None,
     ) -> Solution:
         """
         Solve, then fold, then solve the folded history again (folds can make
         more things dead, and enable each other) until nothing changes.
+
+        ``base``: a solution to start from (its edits are kept, and solving
+        goes on from the history they make), so the result contains all of
+        it. Trials start from the static plan, so they never do worse.
         """
         history, timeline = self.history, self.timeline
         operations: dict[int, list[Operation]] = {}
@@ -458,6 +477,15 @@ class Analysis:
         units: list[UnitInfo] = []
         folded: set[tuple[int, int]] = set()
         rounds = 0
+        if base is not None and base.operations:
+            operations = dict(base.operations)
+            origins = dict(base.origins)
+            removals = list(base.removals)
+            units = list(base.units)
+            folded = set(base.folded)
+            history = derive_history(self.history, operations, origins)
+            timeline = Timeline(history)
+            timeline.replay()
         while True:
             rounds += 1
             solver = Solver(
@@ -638,6 +666,10 @@ def make_result(analysis: Analysis, solution: Solution, built: Built) -> Result:
                 if (index, rec.index) in solution.folded:
                     folded_count += 1
                 continue
+            if unchanged(rec.op, new):
+                # E.g. an AlterField that set the definition the AddField
+                # already had: the AddField stays as written.
+                continue
             op_edits.append(derive_op_edit(rec, new) or OpEdit(rec, replacement=new))
             edited.add((info.key, rec.index))
         if not op_edits:
@@ -725,15 +757,35 @@ def _collect_edits(solver: Solver) -> dict[int, dict[int, OpEdit]]:
     return edits
 
 
+def _field_names(life: Life) -> set[str]:
+    lives = (
+        [c for c in life.children if isinstance(c, FieldLife)]
+        if isinstance(life, ModelLife)
+        else [life]
+        if isinstance(life, FieldLife)
+        else []
+    )
+    names: set[str] = set()
+    for f in lives:
+        assert isinstance(f, FieldLife)
+        for n in f.names:
+            names.add(n.lower())
+            names.add(f"{n.lower()}_id")
+        names |= f.extra_names
+    return names
+
+
 def _units(solver: Solver) -> list[UnitInfo]:
     plan = solver.plan
     units: list[UnitInfo] = []
 
-    def add(unit: Unit, start: int, end: int | None, life: Life) -> None:
+    def add(
+        unit: Unit, start: int, end: int | None, life: Life, prefix: str = ""
+    ) -> None:
         model = life.model
         units.append(
             UnitInfo(
-                key=solver.unit_key(unit),
+                key=prefix + solver.unit_key(unit),
                 start=start,
                 end=end,
                 tables=frozenset(
@@ -745,6 +797,11 @@ def _units(solver: Solver) -> list[UnitInfo]:
                     (o.rec.migration.index, o.rec.original_index)
                     for o in solver.at_risk.get(unit, {}).values()
                 ),
+                app=model.app_label,
+                fields=frozenset(_field_names(life)),
+                models=frozenset(n.lower() for n in model.names)
+                if isinstance(life, ModelLife) and isinstance(unit, Life)
+                else frozenset(),
             )
         )
 
@@ -755,7 +812,7 @@ def _units(solver: Solver) -> list[UnitInfo]:
         assert e1.owner is not None
         add(e1, e1.pos[0], e2.pos[0], e1.owner)
     for f in plan.folds:
-        add(f.folded, f.target.pos[0], f.folded.pos[0], f.life)
+        add(f.folded, f.target.pos[0], f.folded.pos[0], f.life, FOLD_PREFIX)
     return units
 
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 from django.db.migrations.operations.base import Operation
@@ -47,7 +48,7 @@ def test_mention_without_effect_is_unlocked(project: Project) -> None:
     assert info["mode"] == "trial"
     assert info["vendor"] == "sqlite"
     assert info["unlocked"] == 1
-    assert info["passes"] == 1
+    assert info["runs"] == 3
     assert info["failures"] == []
 
 
@@ -72,7 +73,7 @@ def test_failure_harvested_and_blocked(project: Project) -> None:
         " resolve keyword 'legacy'"
     )
     info = result.verification
-    assert info["passes"] == 2
+    assert info["runs"] == 4
     assert info["trial_blocked"] == 1
     assert [f["harvested"] for f in info["failures"]] == [True]
 
@@ -208,8 +209,8 @@ def test_plan_file_round_trip(project: Project, tmp_path: Path) -> None:
     )
     plan_path = tmp_path / "plan.json"
     out, _ = project.command("plan", "--trial", "-o", str(plan_path))
-    assert "Trial: 2 migrate runs on sqlite in " in out
-    assert "unlocked 1 removal that the static scan blocks" in out
+    assert "Trial: 3 migrate runs on sqlite in " in out
+    assert "unlocked 1 removal of 1 that the static scan blocks" in out
     data = json.loads(plan_path.read_text())
     assert data["verification"]["mode"] == "trial"
     assert data["verification"]["unlocked"] == 1
@@ -261,3 +262,100 @@ def test_non_atomic_failure_ends_pass(project: Project) -> None:
     assert blocked(result)["shop.Item.legacy"][0].startswith(
         "trial migrate failed in shop.0002_add RunPython: FieldError"
     )
+
+
+def two_fields(project: Project, check: str) -> None:
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration(
+        "shop",
+        "0002_add",
+        """
+        migrations.AddField("item", "alpha", models.IntegerField(default=0)),
+        migrations.AddField("item", "beta", models.IntegerField(default=0)),
+        migrations.RunPython(check),
+        """,
+        extra=f"""
+        def check(apps, schema_editor):
+            names = {{f.name for f in apps.get_model("shop", "Item")._meta.fields}}
+            mentioned = ("alpha", "beta")
+            if {check!r} not in names and mentioned:
+                raise RuntimeError("boom")
+        """,
+    )
+    project.migration(
+        "shop",
+        "0003_remove",
+        """
+        migrations.RemoveField("item", "alpha"),
+        migrations.RemoveField("item", "beta"),
+        """,
+    )
+
+
+def test_vague_failure_bisected(project: Project) -> None:
+    two_fields(project, "alpha")
+    result = project.check_equivalence(trial=True)
+    # The first half of the suspects is blocked; the failure goes away, so
+    # the other half stays removed.
+    assert kinds(result) == [("field", "shop.Item.beta")]
+    assert list(blocked(result)) == ["shop.Item.alpha"]
+    assert result.verification["runs"] == 4
+
+
+def test_vague_failure_bisected_second_half(project: Project) -> None:
+    two_fields(project, "beta")
+    result = project.check_equivalence(trial=True)
+    # Blocking the first half didn't help: the failure came back, so the
+    # rest is blocked (the innocent first half stays blocked: conservative).
+    assert result.removals == []
+    assert sorted(blocked(result)) == ["shop.Item.alpha", "shop.Item.beta"]
+    assert result.verification["runs"] == 5
+
+
+def test_missing_names() -> None:
+    from django_clean_migrations.core import UnitInfo
+
+    def unit(key: str, **kwargs: Any) -> UnitInfo:
+        base: dict[str, Any] = {
+            "start": 0,
+            "end": None,
+            "tables": frozenset(),
+            "names": frozenset(),
+            "at_risk": frozenset(),
+        }
+        return UnitInfo(key, **(base | kwargs))
+
+    legacy = unit("f", fields=frozenset({"legacy", "legacy_id"}), app="shop")
+    coupon = unit(
+        "m", models=frozenset({"coupon"}), tables=frozenset({"shop_coupon"}), app="shop"
+    )
+    user = unit("u", fields=frozenset({"user"}), app="shop")
+    units = [legacy, coupon, user]
+    missing = trial_module._missing
+    assert missing(
+        "Cannot resolve keyword 'legacy' into field. Choices are: user", units
+    ) == [legacy]
+    assert missing("'User' object has no attribute 'legacy_id'", units) == [legacy]
+    assert missing('column "legacy" does not exist', units) == [legacy]
+    assert missing("App 'shop' doesn't have a 'Coupon' model.", units) == [coupon]
+    assert missing('relation "shop_coupon" does not exist', units) == [coupon]
+    assert missing("No installed app with label 'shop'.", units) == [coupon]
+    assert missing("Cannot resolve keyword 'legacy__in' into field", units) == [legacy]
+    assert missing("something else about User", units) == []
+    # The model, when named, narrows; folds never make anything missing.
+    team_user = unit("t", fields=frozenset({"user"}), tables=frozenset({"shop_team"}))
+    fold = unit("fold:x", fields=frozenset({"user"}))
+    both = [user, team_user, fold]
+    assert missing("Team has no field named 'user'", both) == [team_user]
+    assert missing("Cannot resolve keyword 'user' into field", both) == [
+        user,
+        team_user,
+    ]
+
+
+def test_shorten_error() -> None:
+    message = "Cannot resolve keyword 'x' into field. Choices are: " + "a, " * 200
+    assert trial_module.shorten_error(message) == (
+        "Cannot resolve keyword 'x' into field. (choices omitted)"
+    )
+    assert len(trial_module.shorten_error("y" * 500)) == 200

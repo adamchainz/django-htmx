@@ -15,7 +15,12 @@ from rich.table import Table
 from rich.text import Text
 
 from django_clean_migrations.core import CleanError, Removal, Result, load_plan, plan
-from django_clean_migrations.profile import Profile, profile
+from django_clean_migrations.profile import Profile, TypeStats, profile
+from django_clean_migrations.scratch import (
+    ScratchDatabaseError,
+    drop_leftover,
+    list_leftovers,
+)
 from django_clean_migrations.solver import KINDS, OPAQUE_POLICIES
 
 KIND_STYLES = {
@@ -48,7 +53,9 @@ class Command(RichCommand):
 
     def add_arguments(self, parser: ArgumentParser) -> None:
         subparsers = parser.add_subparsers(
-            dest="subcommand", metavar="{plan,apply,profile}", title="subcommands"
+            dest="subcommand",
+            metavar="{plan,apply,profile,scratch}",
+            title="subcommands",
         )
         plan_parser = subparsers.add_parser(
             "plan",
@@ -114,6 +121,33 @@ class Command(RichCommand):
             "--json", action="store_true", help="Print the report as JSON."
         )
         _add_common_arguments(profile_parser)
+        scratch_parser = subparsers.add_parser(
+            "scratch",
+            help="List (or drop) scratch databases left by interrupted runs.",
+            description="Trial and profile runs drop their scratch databases"
+            " (named cleanmig_...) when they end, even on Ctrl-C or SIGTERM."
+            " A killed process can leave one behind: list them, and drop those"
+            " that no running command is using.",
+        )
+        scratch_parser.add_argument(
+            "--database",
+            default="default",
+            help="Database alias whose server to look on (default: 'default').",
+        )
+        scratch_parser.add_argument(
+            "--drop",
+            action="append",
+            default=[],
+            metavar="NAME",
+            help="Drop this scratch database (repeatable).",
+        )
+        scratch_parser.add_argument(
+            "--drop-all",
+            action="store_true",
+            help="Drop every scratch database found. Only when no other"
+            " trial or profile run is going on against this server.",
+        )
+        _add_common_arguments(scratch_parser)
 
     def handle(self, *args: Any, **options: Any) -> None:
         subcommand = options.get("subcommand")
@@ -123,6 +157,9 @@ class Command(RichCommand):
         verbosity: int = options["verbosity"]
         if subcommand == "profile":
             self._profile(options, verbosity)
+            return
+        if subcommand == "scratch":
+            self._scratch(options)
             return
         show_blocked = options["show_blocked"] or verbosity >= 2
         if subcommand == "apply" and options["plan_file"]:
@@ -162,13 +199,29 @@ class Command(RichCommand):
             except CleanError as exc:
                 raise CommandError(str(exc)) from exc
 
-    def _profile(self, options: dict[str, Any], verbosity: int) -> None:
-        count = [0]
+    def _scratch(self, options: dict[str, Any]) -> None:
+        alias = options["database"]
+        try:
+            found = list_leftovers(alias)
+            names = found if options["drop_all"] else options["drop"]
+            for name in names:
+                drop_leftover(name, alias)
+                self._print(f"Dropped {name}.")
+        except ScratchDatabaseError as exc:
+            raise CommandError(str(exc)) from exc
+        if not names:
+            if found:
+                for name in found:
+                    self._print(name)
+            else:
+                self._print("No scratch databases found.")
 
-        def progress(event: str, key: tuple[str, str] | None) -> None:
+    def _profile(self, options: dict[str, Any], verbosity: int) -> None:
+        def progress(
+            event: str, key: tuple[str, str] | None, done: int, total: int
+        ) -> None:
             if key is not None and status is not None:
-                count[0] += 1
-                status.update(f"Migrating {key[0]}.{key[1]} ({count[0]})...")
+                status.update(f"Migrating {key[0]}.{key[1]} ({done + 1}/{total})...")
 
         try:
             if verbosity > 0 and not options["json"]:
@@ -193,46 +246,68 @@ class Command(RichCommand):
         def pct(seconds: float) -> str:
             return f"{100 * seconds / total:.1f}%"
 
+        def table(title: str, first: str) -> Table:
+            t = Table(title=title, title_justify="left")
+            t.add_column(first)
+            for name in ("Count", "Database", "State", "Total", "Share"):
+                t.add_column(name, justify="right")
+            return t
+
+        def row(t: Table, name: str, stats: TypeStats) -> None:
+            t.add_row(
+                name,
+                str(stats.count),
+                f"{stats.seconds:.3f}",
+                f"{stats.state_seconds:.3f}",
+                f"{stats.total:.3f}",
+                pct(stats.total),
+            )
+
         self._print(
             Text(
                 f"Migrated {len(result.migrations)} migrations in"
-                f" {result.total:.2f}s on {result.vendor}"
-                f" ({result.operations_total:.2f}s inside operations).",
+                f" {result.total:.2f}s on {result.vendor}: {result.operations_total:.2f}s"
+                f" in the database, {result.state_total:.2f}s updating the"
+                f" project state, {result.overhead:.2f}s other.",
                 style="bold",
             )
         )
-        table = Table(title=f"Slowest {top} migrations", title_justify="left")
-        table.add_column("Migration")
-        table.add_column("Operations", justify="right")
-        table.add_column("Seconds", justify="right")
-        table.add_column("Share", justify="right")
+        t = Table(title=f"Slowest {top} migrations", title_justify="left")
+        t.add_column("Migration")
+        for name in ("Operations", "Database", "State", "Seconds", "Share"):
+            t.add_column(name, justify="right")
         for key, seconds in result.slowest(top):
-            table.add_row(
+            stats = result.by_migration.get(key, TypeStats())
+            t.add_row(
                 f"{key[0]}.{key[1]}",
                 str(result.migration_ops.get(key, 0)),
+                f"{stats.seconds:.3f}",
+                f"{stats.state_seconds:.3f}",
                 f"{seconds:.3f}",
                 pct(seconds),
             )
-        self.console.print(table)
-        table = Table(title="By operation type", title_justify="left")
-        table.add_column("Operation")
-        table.add_column("Count", justify="right")
-        table.add_column("Seconds", justify="right")
-        table.add_column("Share", justify="right")
-        for name, stats in sorted(
-            result.by_type.items(), key=lambda kv: -kv[1].seconds
-        ):
-            table.add_row(
-                name, str(stats.count), f"{stats.seconds:.3f}", pct(stats.seconds)
+        self._table(t)
+        t = table("By operation type", "Operation")
+        for name, stats in sorted(result.by_type.items(), key=lambda kv: -kv[1].total):
+            row(t, name, stats)
+        self._table(t)
+        t = table("By app", "App")
+        for app, stats in sorted(result.by_app.items(), key=lambda kv: -kv[1].total):
+            row(t, app, stats)
+        self._table(t)
+        t = Table(
+            title=f"Top {top} operations by project state cost",
+            title_justify="left",
+        )
+        for name in ("Migration", "Operation", "State"):
+            t.add_column(name, justify="right" if name == "State" else "left")
+        for op in result.top_state[:top]:
+            t.add_row(
+                f"{op.migration[0]}.{op.migration[1]} #{op.index + 1}",
+                op.operation,
+                f"{op.state_seconds:.3f}",
             )
-        self.console.print(table)
-        table = Table(title="By app", title_justify="left")
-        table.add_column("App")
-        table.add_column("Seconds", justify="right")
-        table.add_column("Share", justify="right")
-        for app, seconds in sorted(result.by_app.items(), key=lambda kv: -kv[1]):
-            table.add_row(app, f"{seconds:.3f}", pct(seconds))
-        self.console.print(table)
+        self._table(t)
         if result.removable is None:
             self._print(
                 Text(
@@ -247,7 +322,8 @@ class Command(RichCommand):
                     f"The default plan removes {_ops(result.removable_count)}"
                     f" taking {result.removable:.3f}s ({pct(result.removable)}),"
                     f" and edits operations taking {result.editable:.3f}s"
-                    f" ({pct(result.editable)}).",
+                    f" ({pct(result.editable)}), counting database and project"
+                    " state time.",
                     style="bold green",
                 )
             )
@@ -265,7 +341,14 @@ class Command(RichCommand):
                 with self.console.status(
                     "Analysing migrations...", spinner="dots"
                 ) as status:
-                    return self._plan(options, lambda message: status.update(message))
+
+                    def progress(message: str, note: bool = False) -> None:
+                        if note:
+                            self._print(Text(message, style="dim"))
+                        else:
+                            status.update(message)
+
+                    return self._plan(options, progress)
             return self._plan(options, None)
         except CleanError as exc:
             raise CommandError(str(exc)) from exc
@@ -282,6 +365,7 @@ class Command(RichCommand):
             trial=options["trial"],
             database=options["database"],
             trial_max_runs=options["trial_max_runs"],
+            trial_single_baseline=options["trial_single_baseline"],
             progress=progress,
         )
 
@@ -290,10 +374,10 @@ class Command(RichCommand):
         if info.get("mode") != "trial":
             return
         line = (
-            f"Trial: {_count(info['passes'] + 1, 'migrate run')} on"
+            f"Trial: {_count(info['runs'], 'migrate run')} on"
             f" {info['vendor']} in {info['seconds']:.1f}s;"
-            f" unlocked {_count(info['unlocked'], 'removal')} that the static"
-            " scan blocks"
+            f" unlocked {_count(info['unlocked'], 'removal')} of"
+            f" {info['at_risk']} that the static scan blocks"
         )
         if info["trial_blocked"]:
             line += f", blocked {info['trial_blocked']} on evidence"
@@ -306,11 +390,25 @@ class Command(RichCommand):
                     style="yellow",
                 )
             )
-        for table in info["nondeterministic_tables"]:
+        if info["vendor"] == "sqlite":
             self._print(
                 Text(
-                    f"Data in {table} differs between runs of the original"
-                    " history (random or time-based values?); not compared.",
+                    "SQLite trials can't compare constraint names or column"
+                    " order; if production doesn't run on SQLite, trial on its"
+                    " backend with --database.",
+                    style="yellow",
+                )
+            )
+        masked = list(info["nondeterministic_tables"]) + [
+            f"{table}.{column}"
+            for table, columns in info.get("nondeterministic_columns", {}).items()
+            for column in columns
+        ]
+        if masked:
+            self._print(
+                Text(
+                    "Differs between runs of the original history (random or"
+                    " time-based values?), so not compared: " + ", ".join(masked) + ".",
                     style="yellow",
                 )
             )
@@ -334,6 +432,16 @@ class Command(RichCommand):
         return Console(
             file=options.get("stderr") or sys.stderr, force_terminal=force_terminal
         )
+
+    def _table(self, table: Table) -> None:
+        # Not on a terminal (a pipe, a file, CI logs), rich would assume 80
+        # columns and cut the tables: let them take the room they need.
+        if self.console.is_terminal:
+            self.console.print(table)
+        else:
+            Console(file=self.console.file, width=1000, color_system=None).print(
+                table, crop=False
+            )
 
     def _print(self, text: Text | str, **kwargs: Any) -> None:
         self.console.print(text, soft_wrap=True, highlight=False, **kwargs)
@@ -486,8 +594,12 @@ def _add_common_arguments(parser: ArgumentParser) -> None:
         default=argparse.SUPPRESS,
         help="Verbosity level; 0=minimal output, 1=normal output, 2=verbose output.",
     )
-    for flag in ("--traceback", "--no-color", "--force-color"):
+    for flag in ("--traceback", "--no-color", "--force-color", "--skip-checks"):
         parser.add_argument(flag, action="store_true", default=argparse.SUPPRESS)
+    # Read by manage.py before parsing; accepted here so they can follow the
+    # subcommand too.
+    for flag in ("--settings", "--pythonpath"):
+        parser.add_argument(flag, default=argparse.SUPPRESS)
 
 
 def _add_trial_arguments(parser: ArgumentParser) -> None:
@@ -510,6 +622,13 @@ def _add_trial_arguments(parser: ArgumentParser) -> None:
         metavar="N",
         help="Trial runs of candidate plans before falling back to the"
         " static plan (default 8).",
+    )
+    parser.add_argument(
+        "--trial-single-baseline",
+        action="store_true",
+        help="Migrate the original history once, not twice: saves a run, but"
+        " random or time-based data it creates is then only recognised late,"
+        " and may block removals.",
     )
 
 

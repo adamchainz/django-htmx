@@ -5,6 +5,7 @@ plan without analysing the history again.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 from dataclasses import asdict
@@ -33,30 +34,33 @@ def tool_version() -> str:
         return "unknown"
 
 
-def _display_path(path: Path) -> str:
-    """Relative to the current directory when inside it, else absolute."""
+def _relative_path(path: Path, base: Path) -> str:
+    """Relative to the plan file's directory (POSIX separators), so the plan
+    can be applied from any directory."""
     try:
-        return str(path.resolve().relative_to(Path.cwd().resolve()))
-    except ValueError:
+        return Path(os.path.relpath(path.resolve(), base.resolve())).as_posix()
+    except ValueError:  # pragma: no cover - another drive on Windows
         return str(path.resolve())
 
 
-def _location_dict(loc: Location) -> dict[str, Any]:
+def _location_dict(loc: Location, base: Path) -> dict[str, Any]:
     return {
         "migration": list(loc.migration),
-        "path": _display_path(loc.path) if loc.path is not None else None,
+        "path": _relative_path(loc.path, base) if loc.path is not None else None,
         "line": loc.line,
         "operation": loc.operation,
         "detail": loc.detail,
     }
 
 
-def plan_data(result: Result) -> dict[str, Any]:
+def plan_data(result: Result, base: Path) -> dict[str, Any]:
+    """The plan as JSON data; paths relative to ``base``, the directory the
+    plan file is saved in."""
     removals = []
     for removal in result.removals:
         data = asdict(removal)
-        data["elements"] = [_location_dict(loc) for loc in removal.elements]
-        data["targets"] = [_location_dict(loc) for loc in removal.targets]
+        data["elements"] = [_location_dict(loc, base) for loc in removal.elements]
+        data["targets"] = [_location_dict(loc, base) for loc in removal.targets]
         removals.append(data)
     return {
         "format": FORMAT,
@@ -75,7 +79,7 @@ def plan_data(result: Result) -> dict[str, Any]:
         "blocked": [asdict(b) for b in result.blocked],
         "files": [
             {
-                "path": _display_path(change.path),
+                "path": _relative_path(change.path, base),
                 "migration": list(change.migration),
                 "module": change.module,
                 "sha256_before": change.sha256_before,
@@ -88,21 +92,33 @@ def plan_data(result: Result) -> dict[str, Any]:
 
 
 def save_plan(result: Result, path: Path) -> None:
-    text = json.dumps(plan_data(result), indent=2, ensure_ascii=False) + "\n"
+    data = plan_data(result, path.resolve().parent)
+    text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
     tmp = path.with_name(f".{path.name}.tmp")
     tmp.write_text(text, encoding="utf-8")
     os.replace(tmp, path)
 
 
-def _resolve(path: str) -> Path:
+def _resolve(path: str, base: Path) -> Path:
     p = Path(path)
-    return p if p.is_absolute() else Path.cwd() / p
+    return p if p.is_absolute() else base / p
 
 
-def _location(loc: dict[str, Any]) -> Location:
+def _module_file(module: str) -> Path | None:
+    """Where the migration module is now, as Python would import it."""
+    try:
+        spec = importlib.util.find_spec(module)
+    except (ImportError, ValueError):
+        return None
+    if spec is None or not spec.origin or not os.path.isfile(spec.origin):
+        return None
+    return Path(spec.origin)
+
+
+def _location(loc: dict[str, Any], base: Path) -> Location:
     return Location(
         migration=(loc["migration"][0], loc["migration"][1]),
-        path=_resolve(loc["path"]) if loc["path"] else None,
+        path=_resolve(loc["path"], base) if loc["path"] else None,
         line=loc["line"],
         operation=loc["operation"],
         detail=loc["detail"],
@@ -121,16 +137,19 @@ def load_plan(path: Path) -> Result:
             f"{path} uses plan format version {data.get('version')!r}; this"
             f" version of django-clean-migrations reads version {FORMAT_VERSION}."
         )
+    base = path.resolve().parent
     try:
         files = []
         for f in data["files"]:
-            file_path = _resolve(f["path"])
+            # The migration module, as imported now, wins: the plan may have
+            # been moved since; the hash check below catches any mix-up.
+            relative = _resolve(f["path"], base)
+            file_path = _module_file(f["module"]) or relative
             try:
                 original = _read_text(file_path)
             except OSError as exc:
                 raise CleanError(
                     f"Migration file {f['path']} from the plan is missing ({exc})."
-                    " Run apply from the directory the plan was made in."
                 ) from exc
             files.append(
                 FileChange(
@@ -147,8 +166,10 @@ def load_plan(path: Path) -> Result:
             Removal(
                 **{
                     **r,
-                    "elements": tuple(_location(loc) for loc in r["elements"]),
-                    "targets": tuple(_location(loc) for loc in r.get("targets", [])),
+                    "elements": tuple(_location(loc, base) for loc in r["elements"]),
+                    "targets": tuple(
+                        _location(loc, base) for loc in r.get("targets", [])
+                    ),
                 }
             )
             for r in data["removals"]

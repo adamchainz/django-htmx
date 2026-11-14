@@ -117,6 +117,7 @@ class FileEdit:
         self.deleted: set[int] = set()
         self.replace: dict[int, str] = {}
         self.insert_after: dict[int, str] = {}
+        self.imports_added: set[str] = set()
 
     def container(self, node: ast.expr) -> Container:
         container = self.source.container(node)
@@ -236,7 +237,10 @@ class FileEdit:
             anchor = _import_anchor(self.source)
             if anchor is None:
                 raise RewriteError("no top-level imports to add imports after")
-            added = "".join(line + newline for line in missing)
+            # Several regenerated operations in a file may need the same one.
+            fresh = [line for line in missing if line not in self.imports_added]
+            self.imports_added.update(fresh)
+            added = "".join(line + newline for line in fresh)
             self.insert_after[anchor] = self.insert_after.get(anchor, "") + added
 
     def render(self) -> str:
@@ -528,3 +532,13 @@ def derive_op_edit(rec: OpRecord, new: Operation) -> OpEdit | None:
             return None
         return OpEdit(rec, entries=before - after)
     return None
+
+
+def unchanged(old: Operation, new: Operation) -> bool:
+    """Whether ``new`` would be written exactly as ``old`` would."""
+    if type(old) is not type(new):
+        return False
+    try:
+        return serialize_operation(old) == serialize_operation(new)
+    except Exception:
+        return False

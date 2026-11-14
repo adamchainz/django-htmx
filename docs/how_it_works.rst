@@ -226,6 +226,7 @@ An ``AlterField`` is removed when the next ``AlterField`` or ``RemoveField`` on 
 * The definitions before and after the ``AlterField`` hold the same things.
   Without the ``AlterField``, the earlier definition stays in force until the replacing operation, so anything it occupies or points to that the newer one gave up could be reused or removed meanwhile, which the project state can’t show.
   So both must agree on the column (``db_column``, and whether it is a foreign key column), ``to_fields``, ``from_fields``, ``through``, ``db_table``, ``db_tablespace``, primary key status, and everything the definition refers to: the target model and field, and fields named in expressions.
+* Every definition in the chain agrees on ``unique`` and on whether, and how, the field has a check constraint, and no foreign key points at the field: otherwise the database objects would get different names (see `Folding`_).
 
 **AlterModelOptions.**
 Removed if a later ``AlterModelOptions`` on the same model replaces it, if the earlier one doesn’t change ``managed``, and if the scan is clean.
@@ -300,7 +301,17 @@ Conditions for every fold:
 * Nothing is released later than before: whatever the old definition referred to and the new one doesn’t must not be needed meanwhile.
   The exception is a foreign key that just points at a different model, when the new model already exists at P; the old one then becomes unreferenced, and may in turn become removable.
 * Nothing that stays between P and E refers to the field being changed.
-* Every field and model the folded definition names has the same name at P as at E: no ``RenameField`` or ``RenameModel`` of them in between.
+* Every field and model the folded definition names has the same name at P as at E: no ``RenameField``, ``RenameModel`` or ``AlterModelTable`` of them in between.
+* Every database object gets the name it got in the original history.
+  Django’s schema editor names some objects differently when it creates them with the table than when it adds them later, so these folds are not made:
+
+  - a field that gains ``unique=True`` from an ``AlterField`` gets a hashed ``..._uniq`` constraint, while a unique column created with the table (``CREATE TABLE`` or ``AddField``) gets the database’s own name (``..._key`` on PostgreSQL);
+  - likewise, a check constraint added by an ``AlterField`` (``PositiveIntegerField``, ``JSONField`` on some backends, custom fields with ``db_check()``) is named ``..._check`` by Django, while an inline one is named by the database: so an ``AlterField`` is only folded or superseded when the definitions involved agree on ``unique`` and on the kind of field that decides the check;
+  - when an ``AlterField`` changes a field’s type, Django drops and recreates the foreign keys pointing at it with a ``..._fk`` suffix, instead of the usual ``..._fk_<table>_<column>``: so no foreign key or many-to-many field is folded, or created by a fold, before an ``AlterField`` of the field it points at, a field that foreign keys point at is never superseded or folded, and an ``AddField`` is only folded into a ``CreateModel`` when no such ``AlterField`` falls between.
+  - a field whose class doesn’t come from ``django.db.models`` (``HStoreField``, a custom field) may need something a ``RunSQL`` or custom operation sets up, such as an extension or a type: it isn’t folded across any opaque operation other than ``RunPython``, since its column would then be created first.
+
+  Index, foreign key and ``unique_together`` names come from the same functions either way, from the table and column names; those must not change in the window, which the rule above ensures.
+  These rules were derived from Django’s ``BaseDatabaseSchemaEditor`` (``_iter_column_sql``, ``_alter_field``) and checked by comparing ``pg_dump --schema-only`` of databases migrated with the original and the folded histories of large projects.
 * Fields, indexes and constraints keep their order: they are folded in the order they were added, stopping at the first that can’t be.
   A model with ``order_with_respect_to`` is left alone.
 * The opaque operations in the window pass the name scan (for the field and its model, the model, the index or constraint name and, for anything enforced such as a constraint, the model), or, with ``--trial``, the trial runs.
@@ -331,13 +342,19 @@ Data is compared as a multiset of rows per table, with date and time values mask
 
 A candidate run substitutes the edited operation lists on a private ``MigrationLoader`` and runs Django’s ``MigrationExecutor``, so the files on disk are untouched.
 Opaque operations that don’t change the project state are wrapped: an exception inside one rolls back to a savepoint and is recorded, and the run continues as if it did nothing.
-Any other failure ends the run, and is blamed on the removals whose lifetime includes that migration.
+Any other failure ends the run.
+Failures are attributed as described in the usage guide: by the field, model, table or app the error says is missing, else by the opaque operation’s mentions or the failing migration’s window, half at a time.
 A run with failures isn’t compared to the baseline, since the skipped operations explain any difference.
 
 Each round blocks more removals, then solves again (blocking can cascade through references), until a run is clean and identical to the baseline.
 That final run is what the plan reports.
 
-Scratch databases are created with the backend’s own machinery and named ``cleanmig_<random>_<name>`` (a temporary file on SQLite); the alias is pointed at them for the run, as the test runner does, and they are always dropped.
+Scratch databases are created with the backend’s own machinery and named ``cleanmig_<random>_<name>`` (a temporary file on SQLite); every alias is pointed at one for the run, as the test runner does, and they are always dropped.
+Each run happens in a forked child process; the parent creates and drops the databases, and gets back the failures and the snapshot.
+
+The baseline is migrated twice: values that differ between the two runs (per column, else per table, and any schema object) are masked in every later comparison, so they are never blamed on a removal.
+Data is compared by column name, not position.
+Candidates are solved starting from the history as the default plan leaves it, so they contain all of it; at the end, every operation the default plan removes must be removed, or the default plan, trialled too, is used.
 
 Limitations
 -----------

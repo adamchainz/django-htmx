@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from django_clean_migrations.core import Result
 from tests.project import Project
 from tests.test_clean import ITEM, blocked, kinds
@@ -551,3 +553,244 @@ def test_names_must_be_stable_across_window(project: Project) -> None:
     # Each of these names "title", which was "name" when the model was
     # created; the slug index can't jump the queue of indexes either.
     assert folds(result) == []
+
+
+class TestDatabaseNames:
+    """Folds that would change the names of database objects are refused."""
+
+    def test_unique_added_by_alter_field(self, project: Project) -> None:
+        # Inline UNIQUE gets the database's name, AlterField a hashed _uniq.
+        project.migration("shop", "0001_initial", ITEM)
+        project.migration(
+            "shop",
+            "0002_unique",
+            'migrations.AlterField("item", "name", models.CharField(max_length=10, unique=True)),',
+        )
+        assert folds(project.check_equivalence(**FOLD)) == []
+
+    def test_check_added_by_alter_field(self, project: Project) -> None:
+        project.migration(
+            "shop",
+            "0001_initial",
+            """
+            migrations.CreateModel(
+                name="Item",
+                fields=[
+                    ("id", models.AutoField(primary_key=True)),
+                    ("qty", models.IntegerField()),
+                ],
+            ),
+            """,
+        )
+        project.migration(
+            "shop",
+            "0002_positive",
+            'migrations.AlterField("item", "qty", models.PositiveIntegerField()),',
+        )
+        assert folds(project.check_equivalence(**FOLD)) == []
+
+    @pytest.mark.parametrize("custom", [True, False])
+    def test_custom_field_not_folded_across_setup(
+        self, project: Project, custom: bool
+    ) -> None:
+        # A RunSQL may create what a custom column type needs (CREATE
+        # EXTENSION hstore): the column can't move before it.
+        project.migration("shop", "0001_initial", ITEM)
+        (project.path("shop").parent / "fields.py").write_text(
+            "from django.db import models\n\n\nclass Tagged(models.TextField):\n"
+            "    pass\n"
+        )
+        field = "Tagged" if custom else "models.TextField"
+        project.migration(
+            "shop",
+            "0002_tags",
+            f"""
+            migrations.RunSQL("SELECT 1"),
+            migrations.AddField("item", "tags", {field}(default="")),
+            """,
+            extra=f"from {project.package}.shop.fields import Tagged",
+        )
+        assert bool(folds(project.check_equivalence(**FOLD))) is not custom
+
+    def test_same_check_folds(self, project: Project) -> None:
+        project.migration("shop", "0001_initial", ITEM)
+        project.migration(
+            "shop",
+            "0002_qty",
+            'migrations.AddField("item", "qty", models.PositiveIntegerField(default=1)),',
+        )
+        project.migration(
+            "shop",
+            "0003_qty",
+            'migrations.AlterField("item", "qty", models.PositiveIntegerField(default=2)),',
+        )
+        assert project.check_equivalence(**FOLD).folded_operations == 2
+
+    def test_m2m_before_pk_alter(self, project: Project) -> None:
+        # The through table's foreign keys would exist when the pk changes
+        # type, and be recreated as "..._fk".
+        project.migration(
+            "shop",
+            "0001_initial",
+            """
+            migrations.CreateModel(name="Tag", fields=[("id", models.AutoField(primary_key=True))]),
+            """
+            + ITEM,
+        )
+        project.migration(
+            "shop",
+            "0002_bigint",
+            'migrations.AlterField("tag", "id", models.BigAutoField(primary_key=True)),',
+        )
+        project.migration(
+            "shop",
+            "0003_tags",
+            'migrations.AddField("item", "tags", models.ManyToManyField("shop.tag")),',
+        )
+        assert folds(project.check_equivalence(**FOLD)) == []
+
+    def test_fk_target_altered_in_window(self, project: Project) -> None:
+        project.migration(
+            "shop",
+            "0001_initial",
+            """
+            migrations.CreateModel(name="Tag", fields=[("id", models.AutoField(primary_key=True))]),
+            """
+            + ITEM,
+        )
+        project.migration(
+            "shop",
+            "0002_bigint",
+            'migrations.AlterField("tag", "id", models.BigAutoField(primary_key=True)),',
+        )
+        project.migration(
+            "shop",
+            "0003_tag",
+            'migrations.AddField("item", "tag", models.ForeignKey("shop.tag", models.CASCADE, null=True)),',
+        )
+        assert folds(project.check_equivalence(**FOLD)) == []
+
+    def test_table_renamed_in_window(self, project: Project) -> None:
+        project.migration("shop", "0001_initial", ITEM)
+        project.migration(
+            "shop", "0002_table", 'migrations.AlterModelTable("item", "things"),'
+        )
+        project.migration(
+            "shop",
+            "0003_qty",
+            'migrations.AddField("item", "qty", models.IntegerField(default=1, unique=True)),',
+        )
+        assert folds(project.check_equivalence(**FOLD)) == []
+
+    def test_superseded_unique_variation(self, project: Project) -> None:
+        project.migration("shop", "0001_initial", ITEM)
+        project.migration(
+            "shop",
+            "0002_a",
+            'migrations.AlterField("item", "name", models.CharField(max_length=10, unique=True)),',
+        )
+        project.migration(
+            "shop",
+            "0003_b",
+            'migrations.AlterField("item", "name", models.CharField(max_length=20, unique=True)),',
+        )
+        result = project.check_equivalence(skip_kinds=["fold"])
+        assert result.removals == []
+
+    def test_to_field_target_not_altered_by_fold(self, project: Project) -> None:
+        project.migration(
+            "shop",
+            "0001_initial",
+            """
+            migrations.CreateModel(
+                name="Item",
+                fields=[
+                    ("id", models.AutoField(primary_key=True)),
+                    ("code", models.CharField(max_length=10, unique=True)),
+                ],
+            ),
+            migrations.CreateModel(
+                name="Line",
+                fields=[
+                    ("id", models.AutoField(primary_key=True)),
+                    ("item", models.ForeignKey("shop.item", models.CASCADE, to_field="code")),
+                ],
+            ),
+            """,
+        )
+        project.migration(
+            "shop",
+            "0002_code",
+            'migrations.AlterField("item", "code", models.CharField(max_length=20, unique=True)),',
+        )
+        result = project.check_equivalence(**FOLD)
+        assert not any(label == "shop.Item.code" for label, _ in folds(result))
+
+
+def test_duplicate_imports_not_added(project: Project) -> None:
+    project.migration(
+        "shop",
+        "0001_initial",
+        source="""
+        from django.db import migrations, models
+
+
+        class Migration(migrations.Migration):
+            operations = [
+                migrations.CreateModel(name="Tag", fields=[("id", models.AutoField(primary_key=True))]),
+                migrations.CreateModel(name="Item", fields=[("id", models.AutoField(primary_key=True))]),
+                migrations.CreateModel(name="Line", fields=[("id", models.AutoField(primary_key=True))]),
+            ]
+        """,
+    )
+    project.migration(
+        "shop",
+        "0002_fks",
+        """
+        migrations.AddField("item", "tag", models.ForeignKey("shop.tag", models.CASCADE)),
+        migrations.AddField("line", "tag", models.ForeignKey("shop.tag", models.CASCADE)),
+        """,
+        deps=[("shop", "0001_initial")],
+    )
+    project.check_equivalence(**FOLD)
+    assert (
+        project.read("shop", "0001_initial").count("import django.db.models.deletion")
+        == 1
+    )
+
+
+def test_unchanged_operation_not_regenerated(project: Project) -> None:
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration(
+        "shop",
+        "0002_qty",
+        source="""
+        from django.db import migrations, models
+
+
+        class Migration(migrations.Migration):
+            dependencies = [("shop", "0001_initial"), ("other", "0001_initial")]
+            operations = [
+                migrations.AddField("item", "qty", models.IntegerField(default=1)),  # keep me
+            ]
+        """,
+    )
+    # A RunSQL mentioning the model keeps the AddField out of the CreateModel.
+    project.migration(
+        "other",
+        "0001_initial",
+        "migrations.RunSQL(\"SELECT 'item'\"),",
+        deps=[("shop", "0001_initial")],
+    )
+    project.migration(
+        "shop",
+        "0003_qty",
+        'migrations.AlterField("item", "qty", models.IntegerField(default=1)),',
+        deps=[("shop", "0002_qty")],
+    )
+    result = project.check_equivalence(**FOLD)
+    assert result.folded_operations == 1
+    assert (
+        'migrations.AddField("item", "qty", models.IntegerField(default=1)),  # keep me'
+        in project.read("shop", "0002_qty")
+    )

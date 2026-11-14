@@ -10,15 +10,18 @@ stay untouched.
 
 from __future__ import annotations
 
+import io
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, cast
 
+from django.core.management.sql import emit_pre_migrate_signal
 from django.db.backends.base.base import BaseDatabaseWrapper
 from django.db.migrations.executor import MigrationExecutor
 from django.db.migrations.migration import Migration
 from django.db.migrations.operations.base import Operation
+from django.db.migrations.state import ProjectState
 
 from django_clean_migrations.history import Key, generate_plan
 from django_clean_migrations.ops import isolated
@@ -27,8 +30,9 @@ DatabaseForwards = Callable[..., Any]
 OpHook = Callable[[Key, int, Operation, DatabaseForwards], DatabaseForwards]
 """Given (migration, index, operation, database_forwards), return a wrapper."""
 
-Progress = Callable[[str, Key | None], None]
-"""Called with ("migration", key) before each migration, ("done", None) at the end."""
+Progress = Callable[[str, Key | None, int, int], None]
+"""Called with ("migration", key, done, total) before each migration and
+("done", None, done, total) at the end."""
 
 
 class RunError(Exception):
@@ -36,13 +40,26 @@ class RunError(Exception):
         super().__init__(message)
         self.migration = migration
 
+    def __reduce__(self) -> Any:
+        return (RunError, (str(self), self.migration))
 
-@dataclass(frozen=True)
+
+@dataclass
 class OpTiming:
     migration: Key
     index: int
     operation: str
-    seconds: float
+    seconds: float = 0.0
+    """In database_forwards: the schema change or data migration itself,
+    including any model rendering it triggers."""
+    state_seconds: float = 0.0
+    """Updating the project state for it: Migration.apply()'s clone of the
+    state before the operation, plus state_forwards() (which re-renders the
+    affected models once they have been rendered)."""
+
+    @property
+    def total(self) -> float:
+        return self.seconds + self.state_seconds
 
 
 @dataclass
@@ -51,7 +68,6 @@ class RunReport:
     migrations: dict[Key, float] = field(default_factory=dict)
     """Wall time per migration, from start to recorded as applied."""
     operations: list[OpTiming] = field(default_factory=list)
-    """database_forwards time per operation, including any state rendering."""
     render: float = 0.0
     """Time spent pre-rendering model states before the first migration."""
     total: float = 0.0
@@ -69,11 +85,16 @@ def run_history(
     migration and operation. ``operations`` replaces the operation lists of
     some migrations, on a private loader only. Failures raise RunError naming
     the migration.
+
+    pre_migrate is sent first, as ``migrate`` does. post_migrate isn't: it
+    runs after the history, so it can't change how the history migrates,
+    and what its handlers create depends only on the final project state.
     """
     report = RunReport()
     current: list[Key | None] = [None]
     started: list[float] = [0.0]
     render_started: list[float] = [0.0]
+    done = [0]
 
     def callback(
         action: str, migration: Migration | None = None, fake: bool = False
@@ -88,11 +109,12 @@ def run_history(
             current[0] = key
             started[0] = now
             if progress is not None:
-                progress("migration", key)
+                progress("migration", key, done[0], len(report.plan))
         elif action == "apply_success" and migration is not None:
             key = (migration.app_label, migration.name)
             report.migrations[key] = now - started[0]
             current[0] = None
+            done[0] += 1
 
     executor = MigrationExecutor(connection, progress_callback=cast(Any, callback))
     graph = executor.loader.graph
@@ -111,20 +133,53 @@ def run_history(
 
     patched: list[Operation] = []
     seen: set[int] = set()
+    clone_time = [0.0]
     for key in report.plan:
         for index, op in enumerate(graph.nodes[key].operations):
             if id(op) in seen:
                 continue
             seen.add(id(op))
-            original = op.database_forwards
-            timed = _timed(report, key, index, op, original)
+            timing = OpTiming(key, index, type(op).__name__)
+            report.operations.append(timing)
+            timed = _timed_db(timing, op.database_forwards)
             op.database_forwards = hook(key, index, op, timed) if hook else timed
+            op.state_forwards = _timed_state(timing, op.state_forwards, clone_time)
             patched.append(op)
 
-    begin = time.perf_counter()
+    original_clone = ProjectState.clone
+
+    def clone(self: ProjectState) -> ProjectState:
+        # Migration.apply() clones the state before each operation; charged
+        # to the operation whose state_forwards() comes next.
+        begin = time.perf_counter()
+        try:
+            return original_clone(self)
+        finally:
+            clone_time[0] += time.perf_counter() - begin
+
+    targets = graph.leaf_nodes()
+    migration_plan = executor.migration_plan(targets)
     try:
-        targets = graph.leaf_nodes()
-        executor.migrate(targets, plan=executor.migration_plan(targets))
+        # As migrate does: handlers may prepare the database (create a
+        # schema, an extension...) or, like contenttypes, add operations.
+        emit_pre_migrate_signal(
+            0,
+            False,
+            connection.alias,
+            stdout=io.StringIO(),
+            apps=cast(Any, executor)
+            ._create_project_state(with_applied_migrations=True)
+            .apps,
+            plan=migration_plan,
+        )
+    except Exception as exc:
+        raise RunError(
+            f"A pre_migrate signal handler failed: {type(exc).__name__}: {exc}"
+        ) from exc
+    begin = time.perf_counter()
+    ProjectState.clone = clone  # type: ignore[method-assign]
+    try:
+        executor.migrate(targets, plan=migration_plan)
     except RunError:
         raise
     except Exception as exc:
@@ -134,28 +189,37 @@ def run_history(
             f"Migrating{where} failed: {type(exc).__name__}: {exc}", failed
         ) from exc
     finally:
+        ProjectState.clone = original_clone  # type: ignore[method-assign]
         report.total = time.perf_counter() - begin
         for op in patched:
             op.__dict__.pop("database_forwards", None)
+            op.__dict__.pop("state_forwards", None)
         if progress is not None:
-            progress("done", None)
+            progress("done", None, done[0], len(report.plan))
     return report
 
 
-def _timed(
-    report: RunReport,
-    key: Key,
-    index: int,
-    op: Operation,
-    original: DatabaseForwards,
-) -> DatabaseForwards:
+def _timed_db(timing: OpTiming, original: DatabaseForwards) -> DatabaseForwards:
     def database_forwards(*args: Any, **kwargs: Any) -> Any:
         begin = time.perf_counter()
         try:
             return original(*args, **kwargs)
         finally:
-            report.operations.append(
-                OpTiming(key, index, type(op).__name__, time.perf_counter() - begin)
-            )
+            timing.seconds += time.perf_counter() - begin
 
     return database_forwards
+
+
+def _timed_state(
+    timing: OpTiming, original: Callable[..., Any], clone_time: list[float]
+) -> Callable[..., Any]:
+    def state_forwards(*args: Any, **kwargs: Any) -> Any:
+        timing.state_seconds += clone_time[0]
+        clone_time[0] = 0.0
+        begin = time.perf_counter()
+        try:
+            return original(*args, **kwargs)
+        finally:
+            timing.state_seconds += time.perf_counter() - begin
+
+    return state_forwards

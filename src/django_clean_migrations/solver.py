@@ -9,7 +9,14 @@ from typing import Any
 from django.db.migrations import operations as m
 from django.db.migrations.operations.base import Operation
 
-from django_clean_migrations.fold import FOLD_KINDS, Fold, Folder, RegenerationCheck
+from django_clean_migrations.fold import (
+    FOLD_KINDS,
+    Fold,
+    Folder,
+    RegenerationCheck,
+    referenced_by_fields,
+    same_named_objects,
+)
 from django_clean_migrations.history import History
 from django_clean_migrations.opaque import OpaqueIndex, OpaqueOp, Pos, TextBuilder
 from django_clean_migrations.timeline import (
@@ -622,6 +629,15 @@ class Solver:
         if any(getattr(d, "many_to_many", False) for d in field_defs):
             return False
         if len({bool(getattr(d, "primary_key", False)) for d in field_defs}) > 1:
+            return False
+        # Without E1, E2 makes the transition from d0: a UNIQUE or CHECK that
+        # E1 added (or dropped and E2 re-added) would end up with another
+        # name, and foreign keys pointing here would not be recreated (and
+        # renamed) when E1 changes the field's type.
+        if any(
+            not same_named_objects(a, b)
+            for a, b in zip(field_defs, field_defs[1:], strict=False)
+        ) or referenced_by_fields(life):
             return False
         if d2 is not None and not (
             _same_kind(d0, t0, d1, t1) or _same_kind(d1, t1, d2, t2)
