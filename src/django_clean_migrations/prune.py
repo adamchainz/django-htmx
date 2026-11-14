@@ -78,6 +78,11 @@ def plan_prune(
         replaced.update(tuple(r) for r in getattr(migration, "replaces", ()) or ())
         for target in getattr(migration, "run_before", ()) or ():
             run_before_targets[(target[0], target[1])] = key
+        if key not in by_key:
+            # Not in the graph (replaced by a squashed migration), but the
+            # loader still resolves its dependencies: it would lose one.
+            for dep in migration.dependencies:
+                run_before_targets.setdefault((dep[0], dep[1]), key)
     mentions = _MentionIndex(history)
 
     for info in candidates:
@@ -229,7 +234,7 @@ def _static_block(
         return "it has run_before"
     if info.key in run_before_targets:
         other = run_before_targets[info.key]
-        return f"{other[0]}.{other[1]} names it in run_before"
+        return f"{other[0]}.{other[1]} (run_before, or replaced) refers to it"
     if info.source.tree is None:
         return "its source can't be parsed"
     return None

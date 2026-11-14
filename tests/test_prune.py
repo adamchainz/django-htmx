@@ -204,7 +204,7 @@ def test_run_before_blocks(project: Project) -> None:
     result = project.check_equivalence(**PRUNE)
     assert pruned(result) == ["shop.0002_add"]
     assert prune_blocks(result)["shop.0003_remove"] == (
-        "other.0001_initial names it in run_before"
+        "other.0001_initial (run_before, or replaced) refers to it"
     )
 
 
@@ -225,6 +225,32 @@ def test_mentioned_module_blocks(project: Project) -> None:
     result = project.clean(**PRUNE)
     assert pruned(result) == ["shop.0003_remove"]
     assert "mentioned" in prune_blocks(result)["shop.0002_add"]
+
+
+def test_dependency_of_replaced_migration_blocks(project: Project) -> None:
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration("shop", "0002_add", LEGACY)
+    project.migration("shop", "0003_remove", REMOVE)
+    project.migration("shop", "0004_a", QTY)
+    project.migration("shop", "0005_b", 'migrations.RunSQL("SELECT 1"),')
+    path = project.migration(
+        "shop",
+        "0004_a_squashed_0005_b",
+        QTY + '\nmigrations.RunSQL("SELECT 1"),',
+        deps=[("shop", "0003_remove")],
+    )
+    path.write_text(
+        path.read_text().replace(
+            "    operations = [",
+            '    replaces = [("shop", "0004_a"), ("shop", "0005_b")]\n\n'
+            "    operations = [",
+        )
+    )
+    result = project.clean(**PRUNE)
+    # 0004_a isn't in the graph (the squash replaces it), but the loader
+    # still resolves its dependency on 0003_remove.
+    assert "shop.0003_remove" not in pruned(result)
+    assert "replaced" in prune_blocks(result)["shop.0003_remove"]
 
 
 def test_squash_blocks(project: Project) -> None:
