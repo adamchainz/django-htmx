@@ -66,6 +66,9 @@ def plan_data(result: Result, base: Path) -> dict[str, Any]:
         "format": FORMAT,
         "version": FORMAT_VERSION,
         "tool_version": tool_version(),
+        # Which copy of the tool made the plan: an installed or older copy
+        # on the path can shadow the one meant.
+        "tool_path": str(Path(__file__).resolve().parent),
         "options": result.options,
         "verification": result.verification,
         "summary": {

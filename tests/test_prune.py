@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import json
 from pathlib import Path
 from typing import Any
@@ -515,3 +516,63 @@ def test_trial_never_ends_with_nothing(
     assert result.removals
     assert any("NOT verified" in w for w in result.warnings)
     assert result.verification["dropped"][-1].startswith("the trial itself")
+
+
+def same_app_shape(project: Project) -> None:
+    """pretalx's common app: 0004 depended on the pruned 0003 and on
+    another app that already runs after shop.0001."""
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration(
+        "other",
+        "0001_initial",
+        'migrations.RunSQL("SELECT 1"),',
+        deps=[("shop", "0001_initial")],
+    )
+    project.migration("shop", "0002_add", LEGACY)
+    project.migration("shop", "0003_remove", REMOVE)
+    project.migration("shop", "0004_qty", QTY, extra_deps=[("other", "0001_initial")])
+
+
+def test_broken_rewiring_rolled_back(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    same_app_shape(project)
+    before = project.files()
+    result = project.clean(**PRUNE)
+
+    # Only the files are wrong (the plan itself is right): the check on a
+    # loader that reads them back must catch it, as migrate would.
+    result.files = [
+        dataclasses.replace(
+            c, new=c.new.replace('        ("shop", "0001_initial"),\n', "")
+        )
+        for c in result.files
+    ]
+    with project.db_blocker.unblock(), pytest.raises(CleanError) as info:
+        result.write()
+    assert "conflicting migrations" in str(info.value)
+    assert project.files() == before
+
+
+def test_same_app_shape_under_order_check(project: Project) -> None:
+    # The aa/bb/cc part makes the first plan change migrate's order, so
+    # pruning goes one migration at a time; the shop part must still keep
+    # its same-app dependency.
+    sql = 'migrations.RunSQL("SELECT 1"),'
+    project.migration("cc", "0001_initial", sql)
+    project.migration("cc", "0002_more", sql)
+    project.migration("bb", "0001_initial", sql)
+    project.migration("aa", "0001_initial", sql)
+    project.migration("aa", "0002_empty", "", extra_deps=[("cc", "0002_more")])
+    project.migration("aa", "0003_more", sql, extra_deps=[("bb", "0001_initial")])
+    same_app_shape(project)
+    project.activate()
+    before_order = plan_order(project)
+    before = leaves_and_roots(project)
+    result = project.check_equivalence(**PRUNE)
+    assert "order" in prune_blocks(result)["aa.0002_empty"]
+    assert pruned(result) == ["shop.0002_add", "shop.0003_remove"]
+    assert '("shop", "0001_initial")' in project.read("shop", "0004_qty")
+    assert leaves_and_roots(project) == before
+    gone = {("shop", "0002_add"), ("shop", "0003_remove")}
+    assert plan_order(project) == [k for k in before_order if k not in gone]
