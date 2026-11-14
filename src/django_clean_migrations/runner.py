@@ -28,7 +28,12 @@ from django.db.migrations.state import ProjectState
 
 from django_clean_migrations.history import Key, generate_plan
 from django_clean_migrations.ops import isolated
-from django_clean_migrations.prune import PrunePlan, pruned_graph
+from django_clean_migrations.prune import (
+    PruneError,
+    PrunePlan,
+    check_ends,
+    pruned_graph,
+)
 
 DatabaseForwards = Callable[..., Any]
 OpHook = Callable[[Key, int, Operation, DatabaseForwards], DatabaseForwards]
@@ -127,8 +132,14 @@ def run_history(
 
     executor = MigrationExecutor(connection, progress_callback=cast(Any, callback))
     if prune:
-        # Pruned migrations deleted, their dependants rewired.
-        executor.loader.graph = pruned_graph(executor.loader.graph, prune)
+        # Pruned migrations deleted, their dependants rewired; checked as
+        # migrate checks for conflicts (several latest migrations in an app).
+        old_graph = executor.loader.graph
+        executor.loader.graph = pruned_graph(old_graph, prune)
+        try:
+            check_ends(old_graph, executor.loader.graph, prune.pruned)
+        except PruneError as exc:
+            raise RunError(f"The pruned migration graph is wrong: {exc}") from exc
     graph = executor.loader.graph
     if executor.loader.applied_migrations:
         raise RunError("The scratch database already has applied migrations.")

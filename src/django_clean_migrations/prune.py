@@ -190,7 +190,15 @@ def _rewire(
                 continue
             for q, via in _effective_parents(p, graph, pruned):
                 index = by_key[q].index
-                if covered >> index & 1:
+                # Django finds an app's first and latest migrations by
+                # same-app edges only (root_nodes(), leaf_nodes(), conflict
+                # detection): a migration that depended on a pruned one of
+                # its app keeps a dependency on each nearest surviving one,
+                # even when it already runs after it through other apps.
+                same_app = p[0] == child_key[0] == q[0]
+                if q in kept or q in added:
+                    continue
+                if covered >> index & 1 and not same_app:
                     continue
                 if q not in (literals(via) or {}):
                     plan.blocked[via] = (
@@ -379,7 +387,14 @@ def rewrite_dependencies(
 
 
 def check_ancestors(history: History, plan: PrunePlan) -> None:
-    """Every survivor's ancestors must be the old ones minus the pruned."""
+    """
+    Every survivor's ancestors must be the old ones minus the pruned, and
+    every app's first and latest migrations (by same-app edges, as Django
+    sees them) the old ones minus the pruned.
+    """
+    check_ends(
+        history.loader.graph, pruned_graph(history.loader.graph, plan), plan.pruned
+    )
     graph = history.loader.graph
     pruned = set(plan.pruned)
     pruned_mask = 0
@@ -450,3 +465,37 @@ def pruned_graph(graph: MigrationGraph, plan: PrunePlan) -> MigrationGraph:
             new.add_dependency(None, key, parent, skip_validation=True)
     new.validate_consistency()
     return new
+
+
+def app_ends(graph: MigrationGraph) -> dict[str, tuple[frozenset[Key], frozenset[Key]]]:
+    """Per app, its root and leaf migrations as Django finds them."""
+    apps = {key[0] for key in graph.nodes}
+    return {
+        app: (frozenset(graph.root_nodes(app)), frozenset(graph.leaf_nodes(app)))
+        for app in apps
+    }
+
+
+def check_ends(
+    old: MigrationGraph | Mapping[str, tuple[frozenset[Key], frozenset[Key]]],
+    new: MigrationGraph,
+    pruned: Iterable[Key],
+) -> None:
+    """Roots and leaves of every app must be unchanged, minus the pruned (no
+    new "conflicting migrations", no app losing its initial migration)."""
+    gone = set(pruned)
+    before = app_ends(old) if isinstance(old, MigrationGraph) else old
+    after = app_ends(new)
+    for app in sorted(before.keys() | after.keys()):
+        roots, leaves = before.get(app, (frozenset(), frozenset()))
+        new_roots, new_leaves = after.get(app, (frozenset(), frozenset()))
+        if new_leaves != leaves - gone:
+            raise PruneError(
+                f"pruning would change the latest migrations of {app}:"
+                f" {sorted(k[1] for k in new_leaves)}"
+            )
+        if new_roots != roots - gone:
+            raise PruneError(
+                f"pruning would change the first migrations of {app}:"
+                f" {sorted(k[1] for k in new_roots)}"
+            )

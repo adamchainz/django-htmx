@@ -239,6 +239,7 @@ def verify_on_disk(
     expected_ops: Mapping[Key, Sequence[str]],
     pruned: AbstractSet[Key] = frozenset(),
     ancestors: Mapping[Key, AbstractSet[Key]] | None = None,
+    ends: Mapping[str, tuple[frozenset[Key], frozenset[Key]]] | None = None,
 ) -> None:
     """
     Reload the migrations from disk and check them. With ``pruned``
@@ -268,6 +269,13 @@ def verify_on_disk(
                         f"after pruning, {key[0]}.{key[1]} doesn't run after the"
                         " same migrations as before"
                     )
+        if ends is not None:
+            from django_clean_migrations.prune import PruneError, check_ends
+
+            try:
+                check_ends(ends, loader.graph, pruned)
+            except PruneError as exc:
+                raise VerificationError(str(exc)) from exc
         for app in {k[0] for k in pruned}:
             before = {k for k in original_plan if k[0] == app and k not in pruned}
             if before and not loader.graph.leaf_nodes(app):

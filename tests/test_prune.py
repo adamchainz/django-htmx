@@ -359,3 +359,60 @@ def test_flag_with_plan_file(project: Project, tmp_path: Path) -> None:
     project.command("plan", "-o", str(plan_path))
     with pytest.raises(CommandError, match="--plan can't be combined"):
         project.command("apply", "--plan", str(plan_path), "--prune")
+
+
+def leaves_and_roots(project: Project) -> dict[str, Any]:
+    project.purge()
+    with project.db_blocker.unblock():
+        loader = MigrationLoader(None, ignore_no_migrations=True)
+    assert loader.detect_conflicts() == {}
+    return {
+        app: (
+            sorted(loader.graph.root_nodes(app)),
+            sorted(loader.graph.leaf_nodes(app)),
+        )
+        for app in ("shop", "other")
+    }
+
+
+def test_same_app_dependency_kept(project: Project) -> None:
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration(
+        "other",
+        "0001_initial",
+        'migrations.RunSQL("SELECT 1"),',
+        deps=[("shop", "0001_initial")],
+    )
+    project.migration("shop", "0002_add", LEGACY)
+    project.migration("shop", "0003_remove", REMOVE)
+    project.migration("shop", "0004_qty", QTY, extra_deps=[("other", "0001_initial")])
+    project.activate()
+    before = leaves_and_roots(project)
+    result = project.check_equivalence(**PRUNE)
+    assert pruned(result) == ["shop.0002_add", "shop.0003_remove"]
+    # shop.0001 already runs before shop.0004 through other.0001, but
+    # Django finds an app's latest migrations by same-app edges only.
+    assert '("shop", "0001_initial")' in project.read("shop", "0004_qty")
+    assert leaves_and_roots(project) == before
+
+
+def test_pruned_merge_migration(project: Project) -> None:
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration("shop", "0002_a", QTY)
+    project.migration(
+        "shop",
+        "0002_b",
+        'migrations.AddField("item", "size", models.IntegerField(default=1)),',
+        deps=[("shop", "0001_initial")],
+    )
+    project.migration(
+        "shop", "0003_merge", "", deps=[("shop", "0002_a"), ("shop", "0002_b")]
+    )
+    project.migration("shop", "0004_more", 'migrations.RunSQL("SELECT 1"),')
+    project.activate()
+    before = leaves_and_roots(project)
+    result = project.check_equivalence(**PRUNE)
+    assert pruned(result) == ["shop.0003_merge"]
+    text = project.read("shop", "0004_more")
+    assert '("shop", "0002_a")' in text and '("shop", "0002_b")' in text
+    assert leaves_and_roots(project) == before

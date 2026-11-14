@@ -366,6 +366,8 @@ Pruning
 
 With ``--prune``, after everything else, migrations left with no operations are deleted (the rules for what is kept are in the usage guide).
 For a deleted migration P, every surviving migration that depended on it gets P’s dependencies instead, following chains of deleted migrations, except those it already runs after through its other dependencies.
+The exception is a dependency within the same app: Django finds an app’s first and latest migrations, and conflicting branches, through same-app dependencies only, so a migration that depended on a deleted migration of its own app always gets that migration’s nearest surviving same-app dependencies (both branches of a deleted merge migration), even when it already runs after them through another app.
+The roots and leaves of every app (as ``migrate`` sees them when it checks for conflicts) must be the original ones minus the deleted migrations: this is checked on the planned graph, in trial runs, and on the graph loaded from the rewritten files.
 So the set of migrations every surviving migration runs after (its ancestors in the graph) is exactly the original set minus the deleted migrations: no ordering constraint between the migrations that do something is lost or added.
 This invariant is checked on the planned graph, and again on the graph loaded from the rewritten files, which must also contain exactly the surviving migrations and be consistent.
 

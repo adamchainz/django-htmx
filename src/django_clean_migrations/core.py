@@ -34,6 +34,7 @@ from django_clean_migrations.prune import (
     PruneError,
     PrunePlan,
     ancestor_sets,
+    app_ends,
     plan_prune,
     rewrite_dependencies,
 )
@@ -215,6 +216,7 @@ class Result:
             plan_keys, final_state = self._plan_keys, self._final_state
         pruned = {c.migration for c in self.files if c.deleted}
         ancestors = None
+        ends = None
         if pruned:
             # The key invariant of pruning: every surviving migration runs
             # after exactly the same migrations as before, minus the pruned.
@@ -227,6 +229,7 @@ class Result:
                 k: frozenset(v - pruned)
                 for k, v in ancestor_sets(loader.graph, survivors).items()
             }
+            ends = app_ends(loader.graph)
         expected = {
             c.migration: list(c.operations_after) for c in self.files if not c.deleted
         }
@@ -241,7 +244,7 @@ class Result:
                 else:
                     _write_text(change.path, change.new)
             _forget(self.files)
-            verify_on_disk(plan_keys, final_state, expected, pruned, ancestors)
+            verify_on_disk(plan_keys, final_state, expected, pruned, ancestors, ends)
         except BaseException as exc:
             unrestored: list[str] = []
             for change in touched:
