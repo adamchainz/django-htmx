@@ -22,8 +22,9 @@
 
     if (isHtmx4) {
       // htmx 4 swaps error responses into their request's target by default,
-      // so opt back out of that and handle them ourselves instead.
-      htmx.config.noSwap.push("4xx", "5xx");
+      // so opt back out for the statuses we handle below. Others, like 422 for
+      // form errors, keep swapping as they would with DEBUG off.
+      htmx.config.noSwap.push(400, 403, 404, 500);
 
       document.addEventListener("htmx:response:error", function (event) {
         const status = event.detail.ctx.response.status;
