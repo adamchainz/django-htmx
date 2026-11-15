@@ -11,6 +11,9 @@ Unreleased
 
 * Fix handling of a malformed ``HX-Current-Url`` header to not crash when given an incorrect IPv6 literal host.
 
+* Fix the :func:`~django_htmx.http.ptag` decorator to not set the ``HX-PTag`` header on error responses.
+  Previously, an error response from a polled view stayed on the page until the tag changed, since later polls got a 304.
+
 1.29.0 (2026-08-06)
 -------------------
 

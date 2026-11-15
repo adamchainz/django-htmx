@@ -120,8 +120,13 @@ def ptag(ptag_func: Callable[..., str | None]) -> Callable[[_View], _View]:
             request: HttpRequest, response: HttpResponseBase, res_ptag: str | None
         ) -> None:
             # Set the header on the response if it doesn't already exist and
-            # if the request method is safe.
-            if request.method in ("GET", "HEAD") and res_ptag is not None:
+            # if the request method is safe. Skip error responses, otherwise
+            # the client keeps the error content as long as the tag matches.
+            if (
+                request.method in ("GET", "HEAD")
+                and res_ptag is not None
+                and response.status_code < 400
+            ):
                 response.headers.setdefault("HX-PTag", res_ptag)
 
         if iscoroutinefunction(func):

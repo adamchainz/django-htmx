@@ -123,6 +123,11 @@ class PtagTests(SimpleTestCase):
 
     @staticmethod
     @ptag(lambda request: "abc123")
+    def error_view(request: HttpRequest) -> HttpResponse:
+        return HttpResponse("unavailable", status=503)
+
+    @staticmethod
+    @ptag(lambda request: "abc123")
     async def async_abc_view(request: HttpRequest) -> HttpResponse:
         return HttpResponse("content")
 
@@ -169,6 +174,14 @@ class PtagTests(SimpleTestCase):
 
         assert response.status_code == 200
         assert response.content == b"content"
+        assert "HX-PTag" not in response
+
+    def test_error_response_no_tag(self):
+        request = self.request_factory.get("/")
+
+        response = self.error_view(request)
+
+        assert response.status_code == 503
         assert "HX-PTag" not in response
 
     def test_success_view_set_header_preserved(self):
