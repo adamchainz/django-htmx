@@ -54,6 +54,11 @@ class HtmxDetails:
         return value
 
     def __bool__(self) -> bool:
+        return self._is_htmx
+
+    # Cached since views and templates often check `if request.htmx` many times.
+    @cached_property
+    def _is_htmx(self) -> bool:
         return self._get_header_value("HX-Request") == "true"
 
     @cached_property

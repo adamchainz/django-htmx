@@ -11,6 +11,8 @@ Unreleased
 
 * Fix handling of a malformed ``HX-Current-Url`` header to not crash when given an incorrect IPv6 literal host.
 
+* Cache the result of ``bool(request.htmx)``, like the other ``request.htmx`` attributes, rather than reading the headers on every check.
+
 1.29.0 (2026-08-06)
 -------------------
 
