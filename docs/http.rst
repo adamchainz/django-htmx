@@ -367,7 +367,7 @@ View decorators
 
    The decorator compares the computed tag with the ``HX-PTag`` request header, sent by the extension with the value from the previous response.
    If they match, the decorator returns a 304 (Not Modified) response without calling the view, and htmx skips the swap.
-   Otherwise, it calls the view and adds the ``HX-PTag`` header to the response, if the header isn’t already set.
+   Otherwise, it calls the view and adds the ``HX-PTag`` header to the response, if the header isn’t already set and the response isn’t an error (status 400 or above).
    Like Django’s ``condition`` decorator, this behaviour only applies to safe request methods, GET and HEAD.
 
    Both synchronous and asynchronous view functions are supported.
