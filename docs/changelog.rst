@@ -11,6 +11,9 @@ Unreleased
 
 * Fix handling of a malformed ``HX-Current-Url`` header to not crash when given an incorrect IPv6 literal host.
 
+* Fix the debug script with htmx 4 to only stop swapping for the 400, 403, 404, and 500 responses it handles.
+  Previously it stopped all 4xx and 5xx swaps, so responses like 422 for form errors were silently dropped in debug mode.
+
 1.29.0 (2026-08-06)
 -------------------
 
