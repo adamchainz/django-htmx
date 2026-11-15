@@ -11,6 +11,8 @@ Unreleased
 
 * Fix handling of a malformed ``HX-Current-Url`` header to not crash when given an incorrect IPv6 literal host.
 
+* Make the :func:`~django_htmx.http.ptag` decorator skip calling its tag function for requests other than ``GET`` and ``HEAD``, where the tag is unused.
+
 1.29.0 (2026-08-06)
 -------------------
 

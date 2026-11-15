@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from unittest import mock
 from uuid import UUID
 
 import pytest
@@ -170,6 +171,17 @@ class PtagTests(SimpleTestCase):
         assert response.status_code == 200
         assert response.content == b"content"
         assert "HX-PTag" not in response
+
+    def test_unsafe_method_skips_ptag_func(self):
+        ptag_func = mock.Mock(return_value="abc123")
+
+        @ptag(ptag_func)
+        def view(request: HttpRequest) -> HttpResponse:
+            return HttpResponse("content")
+
+        view(self.request_factory.post("/"))
+
+        ptag_func.assert_not_called()
 
     def test_success_view_set_header_preserved(self):
         request = self.request_factory.get("/")
