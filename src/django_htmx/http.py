@@ -105,14 +105,13 @@ def ptag(ptag_func: Callable[..., str | None]) -> Callable[[_View], _View]:
         def _pre_process_request(
             request: HttpRequest, *args: Any, **kwargs: Any
         ) -> tuple[HttpResponseBase | None, str | None]:
+            # The tag is only used for safe methods, so don't compute it otherwise.
+            if request.method not in ("GET", "HEAD"):
+                return None, None
             # Compute the polling tag (if any) for the requested content.
             res_ptag = ptag_func(request, *args, **kwargs)
             response: HttpResponseBase | None = None
-            if (
-                request.method in ("GET", "HEAD")
-                and res_ptag is not None
-                and request.headers.get("HX-PTag") == res_ptag
-            ):
+            if res_ptag is not None and request.headers.get("HX-PTag") == res_ptag:
                 response = HttpResponseNotModified()
             return response, res_ptag
 
