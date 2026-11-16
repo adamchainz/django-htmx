@@ -25,12 +25,23 @@ def _pattern(name: str) -> re.Pattern[str]:
     return re.compile(rf"(?<![^\W_]){re.escape(name)}(?![^\W_])")
 
 
+GENERIC = re.compile(
+    r"(?<![^\W_])(create_permissions|create_contenttypes|emit_post_migrate_signal"
+    r"|get_for_models?|update_contenttypes)(?![^\W_])"
+)
+"""Calls that act on every model the app registry holds (content types and
+permissions, whose ids follow the models that existed when they ran)."""
+
+
 class Text:
     """Lower-cased text an opaque operation may act on, with cached matching."""
 
     def __init__(self, text: str, match_all: bool) -> None:
         self.text = text.lower()
-        self.match_all = match_all
+        found = GENERIC.search(self.text)
+        self.generic = found.group() if found is not None else None
+        """A call that acts on every model there is, without naming them."""
+        self.match_all = match_all or found is not None
         self._cache: dict[str, bool] = {}
 
     def mentions(self, name: str) -> bool:

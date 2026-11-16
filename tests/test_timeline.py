@@ -508,3 +508,86 @@ def test_deconstructible_without_eq(project):
     project.migration("shop", "0002_drop", 'migrations.RemoveField("item", "legacy"),')
     result = project.check_equivalence()
     assert kinds(result) == [("field", "shop.Item.legacy")]
+
+
+# Models whose schema changes Django skips (safety review A3)
+
+
+def test_managed_flip_locks_the_model(project):
+    project.migration(
+        "shop",
+        "0001_initial",
+        ITEM
+        + """
+        migrations.CreateModel("Legacy", [("id", models.AutoField(primary_key=True))]),
+        migrations.AddField("item", "old_code", models.IntegerField(default=0)),
+        """,
+    )
+    project.migration(
+        "shop",
+        "0002_hand_over",
+        """
+        migrations.AlterModelOptions("legacy", {"managed": False}),
+        migrations.AlterModelOptions("item", {"managed": False}),
+        """,
+    )
+    project.migration(
+        "shop",
+        "0003_forget",
+        """
+        migrations.DeleteModel("Legacy"),
+        migrations.RemoveField("item", "old_code"),
+        """,
+    )
+    result = project.compact()
+    assert kinds(result) == []
+    reasons = {b.label: b.reasons for b in result.blocked}
+    assert reasons["shop.Legacy"] == ("it is switched between managed and unmanaged",)
+    assert reasons["shop.Item.old_code"] == (
+        "its model is switched between managed and unmanaged",
+    )
+
+
+def test_unmanaged_throughout_removable(project):
+    project.migration(
+        "shop",
+        "0001_initial",
+        'migrations.CreateModel("View", [("id", models.AutoField(primary_key=True))],'
+        ' options={"managed": False}),',
+    )
+    project.migration("shop", "0002_drop", 'migrations.DeleteModel("View"),')
+    assert kinds(project.compact()) == [("model", "shop.View")]
+
+
+def test_proxy_locked(project):
+    project.migration(
+        "shop",
+        "0001_initial",
+        ITEM + 'migrations.CreateModel("Special", [], options={"proxy": True},'
+        ' bases=("shop.item",)),',
+    )
+    project.migration("shop", "0002_drop", 'migrations.DeleteModel("Special"),')
+    result = project.compact()
+    assert kinds(result) == []
+    assert {b.label: b.reasons for b in result.blocked}["shop.Special"] == (
+        "it is a proxy model, without a table of its own",
+    )
+
+
+def test_swapped_out_locked(project, settings):
+    settings.SHOP_ITEM_MODEL = "auth.User"
+    project.migration(
+        "shop",
+        "0001_initial",
+        'migrations.CreateModel("Item", [("id", models.AutoField(primary_key=True))],'
+        ' options={"swappable": "SHOP_ITEM_MODEL"}),',
+    )
+    project.migration("shop", "0002_drop", 'migrations.DeleteModel("Item"),')
+    result = project.compact()
+    assert kinds(result) == []
+    assert {b.label: b.reasons for b in result.blocked}["shop.Item"] == (
+        "it is swapped out for auth.User (SHOP_ITEM_MODEL)",
+    )
+    for setting in ("shop.Item", None):
+        settings.SHOP_ITEM_MODEL = setting
+        assert kinds(project.compact()) == [("model", "shop.Item")]

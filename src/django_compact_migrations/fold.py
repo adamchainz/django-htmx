@@ -37,6 +37,7 @@ from django_compact_migrations.timeline import (
     lasting_foreign_key,
     option_field_names,
 )
+from django_compact_migrations.verify import same_value
 
 if TYPE_CHECKING:
     from django_compact_migrations.solver import Solver
@@ -401,7 +402,14 @@ class Folder:
             return
         if not self._quiet(life.scan_names() | model.scan_names(), p, e, model):
             return
-        self._commit("field", p, e, life, self._alter_into(p, e))
+        folded = self._alter_into(p, e)
+        # Rows written before P would get the folded definition's default
+        # instead of going through P's and then E's.
+        if not _same_for_rows(dp, folded) and not solver.rows_unchanged(
+            model, p.pos, e
+        ):
+            return
+        self._commit("field", p, e, life, folded)
 
     def _alter_into(self, p: Element, e: Element) -> Operation:
         alter = e.rec.op
@@ -867,10 +875,7 @@ class Folder:
         op = e.rec.op
         if isinstance(op, m.AlterModelOptions):
             keys = m.AlterModelOptions.ALTER_OPTION_KEYS
-            if bool(op.options.get("managed", True)) != bool(
-                current.options.get("managed", True)
-            ):
-                return
+            # (A model switching between managed and unmanaged is locked.)
             options = {**current.options, **op.options}
             for key in keys:
                 if key not in op.options:
@@ -1021,4 +1026,21 @@ def referenced_by_fields(life: FieldLife) -> bool:
     return any(
         type(e.rec.op) in (m.AddField, m.AlterField, m.CreateModel) and not e.opaque
         for e in life.referenced_by
+    )
+
+
+def _same_for_rows(before: Any, folded: Operation) -> bool:
+    """Whether rows that exist when the column is added get the same value
+    from the folded operation as from the original one (same type, same
+    defaults). Into a CreateModel, there are no rows yet."""
+    if not isinstance(folded, m.AddField):
+        return True
+    after = folded.field
+    return (
+        type(before) is type(after)
+        and same_value(before.default, after.default)
+        and same_value(
+            getattr(before, "db_default", NOT_PROVIDED),
+            getattr(after, "db_default", NOT_PROVIDED),
+        )
     )

@@ -462,3 +462,139 @@ COUPON = """
         ],
     ),
 """
+
+
+# Data migrations and what removals change for their rows (safety review)
+
+
+def test_superseded_alter_field_after_seeded_rows(project):
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration(
+        "shop",
+        "0002_seed",
+        "migrations.RunPython(seed),",
+        extra="""
+        def seed(apps, schema_editor):
+            alias = schema_editor.connection.alias
+            apps.get_model("shop", "Item").objects.using(alias).create(name="a")
+        """,
+    )
+    project.migration(
+        "shop",
+        "0003_level",
+        """
+        migrations.AddField("item", "level", models.IntegerField(null=True)),
+        migrations.AlterField("item", "level", models.IntegerField(default=1)),
+        migrations.AlterField("item", "level", models.IntegerField(null=True, default=2)),
+        migrations.AlterField("item", "level", models.IntegerField(null=True, default=3)),
+        """,
+    )
+    # The first AlterField fills the seeded row's NULL with 1: kept. The
+    # second only changes the default: superseded.
+    result = project.compact(skip_kinds=["fold"])
+    assert kinds(result) == [("superseded", "shop.Item.level")]
+    assert result.removed_positions == {(("shop", "0003_level"), 2)}
+
+
+UNIQUE_SEED = """
+def seed(apps, schema_editor):
+    alias = schema_editor.connection.alias
+    Item = apps.get_model("shop", "Item")
+    Item.objects.using(alias).bulk_create(
+        [Item(name="a"), Item(name="a")], ignore_conflicts=True
+    )
+"""
+
+
+@pytest.mark.parametrize(
+    "add, remove",
+    [
+        (
+            'migrations.AddConstraint("item", models.UniqueConstraint('
+            'fields=["name"], name="uniq_name")),',
+            'migrations.RemoveConstraint("item", "uniq_name"),',
+        ),
+        (
+            'migrations.AlterUniqueTogether("item", {("name", "id")}),',
+            'migrations.AlterUniqueTogether("item", set()),',
+        ),
+    ],
+)
+def test_enforced_constraint_kept_for_data_migrations(project, add, remove):
+    project.migration("shop", "0001_initial", ITEM + add)
+    project.migration(
+        "shop", "0002_seed", "migrations.RunPython(seed),", extra=UNIQUE_SEED
+    )
+    project.migration("shop", "0003_drop", remove)
+    result = project.compact(skip_kinds=["fold"])
+    assert kinds(result) == []
+    (reasons,) = blocked(result).values()
+    assert reasons == ("RunPython in shop.0002_seed mentions 'item'",)
+
+
+def test_enforced_constraint_trial_unlocks(project):
+    project.migration(
+        "shop",
+        "0001_initial",
+        ITEM + 'migrations.AddConstraint("item", models.UniqueConstraint('
+        'fields=["name"], name="uniq_name")),',
+    )
+    project.migration(
+        "shop",
+        "0002_count",
+        "migrations.RunPython(count),",
+        extra="""
+        def count(apps, schema_editor):
+            alias = schema_editor.connection.alias
+            apps.get_model("shop", "Item").objects.using(alias).count()
+        """,
+    )
+    project.migration(
+        "shop", "0003_drop", 'migrations.RemoveConstraint("item", "uniq_name"),'
+    )
+    assert kinds(project.compact(skip_kinds=["fold"])) == []
+    assert kinds(project.compact(trial=True, skip_kinds=["fold"])) == [
+        ("constraint", "shop.Item")
+    ]
+
+
+def test_permissions_for_every_model_block(project):
+    project.migration(
+        "shop",
+        "0001_initial",
+        ITEM
+        + 'migrations.CreateModel("Coupon", [("id", models.AutoField(primary_key=True))]),',
+    )
+    project.migration(
+        "shop",
+        "0002_permissions",
+        "migrations.RunPython(create_all, elidable=True),",
+        extra="""
+        def create_all(apps, schema_editor):
+            from django.contrib.auth.management import create_permissions
+
+            for app_config in apps.get_app_configs():
+                create_permissions(app_config, apps=apps, verbosity=0)
+        """,
+    )
+    project.migration("shop", "0003_drop", 'migrations.DeleteModel("Coupon"),')
+    result = project.compact()
+    assert kinds(result) == []
+    assert blocked(result)["shop.Coupon"] == (
+        "RunPython in shop.0002_permissions acts on every model (create_permissions)",
+    )
+
+
+def test_superseded_alter_field_window_mentioned(project):
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration(
+        "shop",
+        "0002_level",
+        """
+        migrations.AddField("item", "level", models.IntegerField(null=True)),
+        migrations.AlterField("item", "level", models.IntegerField(null=True, default=1)),
+        migrations.RunSQL("SELECT level FROM shop_item"),
+        migrations.AlterField("item", "level", models.IntegerField(null=True, default=2)),
+        """,
+    )
+    assert kinds(project.compact(skip_kinds=["fold"])) == []

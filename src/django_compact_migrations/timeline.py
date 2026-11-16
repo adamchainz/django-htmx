@@ -12,6 +12,7 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
+from django.conf import settings
 from django.db import models
 from django.db.migrations import operations as m
 from django.db.migrations.operations.base import Operation
@@ -128,6 +129,14 @@ class ModelLife(Life):
         """Relation fields (of any model) that ever pointed at this model."""
         self.child_models: set[ModelLife] = set()
         """Models that ever listed this one in their bases."""
+        self.managed: set[bool] = set()
+        """The values its ``managed`` option took."""
+        self.no_ddl: str | None = None
+        """Why Django skips this model's schema changes (proxy, swapped)."""
+
+    def note_managed(self, options: Any) -> None:
+        # AlterModelOptions sets every alterable option: no "managed" is True.
+        self.managed.add(bool(options.get("managed", True)))
 
     def note_options(self, options: Any) -> None:
         table = options.get("db_table")
@@ -456,6 +465,28 @@ class Timeline:
                 rec = next(ops, None)
             if self.tracker.missing:
                 self.dangling[info.index] = frozenset(self.tracker.missing)
+        self._lock_skipped_ddl()
+
+    def _lock_skipped_ddl(self) -> None:
+        """
+        Django skips the schema changes of unmanaged, proxy and swapped-out
+        models: a table or column it left behind, or never created, must
+        stay so. Removing or folding operations of a model that changes
+        between managed and unmanaged would move that line, so nothing of
+        it is touched; nor of proxy or swapped-out models.
+        """
+        for life in self.lives:
+            if not isinstance(life, ModelLife):
+                continue
+            reason = life.no_ddl
+            if reason is None and len(life.managed) > 1:
+                reason = "switched between managed and unmanaged"
+            if reason is None:
+                continue
+            for sub in life.subtree():
+                sub.poison(
+                    f"its model is {reason}" if sub is not life else f"it is {reason}"
+                )
 
     def _state_forwards(self, op: Operation, app_label: str, rec: OpRecord) -> None:
         try:
@@ -699,6 +730,14 @@ class Timeline:
             model.poison(f"model name reused without DeleteModel in {rec.describe()}")
         self.models[key] = model
         model.note_options(op.options)
+        model.note_managed(op.options)
+        if op.options.get("proxy"):
+            model.no_ddl = "a proxy model, without a table of its own"
+        swappable = op.options.get("swappable")
+        if swappable:
+            setting = getattr(settings, swappable, None)
+            if isinstance(setting, str) and setting.lower() != f"{key[0]}.{key[1]}":
+                model.no_ddl = f"swapped out for {setting} ({swappable})"
         for name, _ in op.fields:
             life = FieldLife(model, name)
             sub_el = self._element(rec, ("field", name), None, ctx)
@@ -834,10 +873,8 @@ class Timeline:
         ctx: Element | None,
     ) -> None:
         model, element = self._model_op(rec, op, app_label, ctx)
-        if element is not ctx:
-            options = self.state.models[model.key].options
-            element.info["managed_before"] = options.get("managed", True)
         model.note_options(op.options)
+        model.note_managed(op.options)
         self._set_ordering(element, model, op.options, rec)
 
     def _on_AlterModelManagers(

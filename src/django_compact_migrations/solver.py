@@ -23,6 +23,7 @@ from django_compact_migrations.fold import (
 from django_compact_migrations.history import History
 from django_compact_migrations.opaque import OpaqueIndex, OpaqueOp, Pos, TextBuilder
 from django_compact_migrations.timeline import (
+    ConstraintLife,
     Element,
     FieldLife,
     Life,
@@ -266,6 +267,8 @@ class Solver:
                 and hits is not None
                 and end is not None
                 and self._strictly_inside(o.pos, start, end)
+                # One acting on every model isn't about this entity.
+                and not self.opaque.text(o).generic
             ):
                 reason = o.rec.not_editable_reason()
                 if reason is None and self.scope.app_excluded(
@@ -290,6 +293,9 @@ class Solver:
                 self.at_risk.setdefault(unit, {})[o.rec.seq] = o
                 continue
             if self.policy == "scan" or (o.elidable and self.policy == "block"):
+                generic = self.opaque.text(o).generic
+                if generic is not None:
+                    return f"{o.rec.describe()} acts on every model ({generic})"
                 return f"{o.rec.describe()} mentions {name!r}"
         if self.policy == "block" and not record:
             blocking = self.opaque.first_blocking(start, end, known_from)
@@ -355,7 +361,7 @@ class Solver:
         if reason is None:
             hits: list[tuple[OpaqueOp, str]] = []
             reason = self._opaque_block(
-                life.scan_names(),
+                _removal_names(life),
                 life.start_pos,
                 life.end_pos,
                 hits,
@@ -614,6 +620,21 @@ class Solver:
             self._opaque_block(names, e1.pos, e2.pos, None, life.start_pos, e1) is None
         )
 
+    def rows_unchanged(self, model: ModelLife, pos: Pos, unit: Unit) -> bool:
+        """
+        Whether no data migration may have written rows of ``model`` before
+        ``pos`` (since the model was created): existing rows go through an
+        AlterField (a new default fills NULLs, a type change converts), so
+        an AlterField folded or dropped at ``pos`` would give them other
+        values.
+        """
+        return (
+            self._opaque_block(
+                model.scan_names(), model.start_pos, pos, None, model.start_pos, unit
+            )
+            is None
+        )
+
     def _superseded_fields(self, life: FieldLife) -> None:
         if life.ever_pk:
             return
@@ -693,7 +714,14 @@ class Solver:
             if not self.removed(e) and self.between(e.pos, e1.pos, e2.pos):
                 return False
         names = life.scan_names() | life.model.scan_names()
-        return self._window_clear(names, e1, e2, life)
+        if not self._window_clear(names, e1, e2, life):
+            return False
+        # E1 rewrites existing rows (NULLs filled with its default, values
+        # converted to a new type): rows written before it must not exist.
+        rewrites = type(d0) is not type(d1) or (
+            getattr(d0, "null", False) and not getattr(d1, "null", False)
+        )
+        return not rewrites or self.rows_unchanged(life.model, e1.pos, e1)
 
     def _superseded_model(self, model: ModelLife) -> None:
         own = sorted(
@@ -726,9 +754,8 @@ class Solver:
             return False
         op = e1.rec.op
         if type(op) is m.AlterModelOptions:
+            # (A model switching between managed and unmanaged is locked.)
             if not set(op.options) <= set(m.AlterModelOptions.ALTER_OPTION_KEYS):
-                return False
-            if bool(op.options.get("managed", True)) != bool(e1.info["managed_before"]):
                 return False
         elif type(op) is m.AlterModelTableComment:
             for life in model.subtree():
@@ -769,3 +796,25 @@ def kinds_from(
     if unknown:
         raise SelectionError(f"Unknown kind(s): {', '.join(sorted(unknown))}")
     return frozenset(kinds or KINDS) - frozenset(skip)
+
+
+def _removal_names(life: Life) -> set[str]:
+    """
+    The names whose mention by a data migration within ``life`` blocks its
+    removal. A constraint or ``unique_together`` entry is enforced: a data
+    migration writing the table may rely on it (``ignore_conflicts``, an
+    IntegrityError caught) without naming it, so the model and the fields
+    count too.
+    """
+    names = life.scan_names()
+    if isinstance(life, ConstraintLife):
+        assert life.creation is not None  # a candidate
+        fields = [r for r in life.creation.refs if isinstance(r, FieldLife)]
+    elif isinstance(life, TogetherLife) and life.option == "unique_together":
+        fields = list(life.fields)
+    else:
+        return names
+    names |= life.model.scan_names()
+    for fld in fields:
+        names |= fld.scan_names()
+    return names

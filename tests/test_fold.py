@@ -1360,8 +1360,10 @@ class TestGuards:
         [
             ("", '"t"', True),
             ("", "None", False),
+            # (An AlterModelOptions would make it managed: the model is
+            # then locked.)
             (
-                'migrations.AlterModelOptions("item", {"verbose_name": "x"}),',
+                'migrations.AlterModelManagers("item", [("objects", models.Manager())]),',
                 '"t"',
                 False,
             ),
@@ -1397,3 +1399,84 @@ class TestGuards:
 
 def test_mentions_unserializable():
     assert _mentions({"x": object()}, "name") is True
+
+
+# Rows written by data migrations before the fold point (safety review A1)
+
+SEED = """
+def seed(apps, schema_editor):
+    alias = schema_editor.connection.alias
+    apps.get_model("shop", "Item").objects.using(alias).create(name="a")
+"""
+
+
+def seeded(project: Project, add: str, alter: str) -> None:
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration("shop", "0002_seed", "migrations.RunPython(seed),", extra=SEED)
+    project.migration("shop", "0003_add", f'migrations.AddField("item", "qty", {add}),')
+    project.migration(
+        "shop", "0004_alter", f'migrations.AlterField("item", "qty", {alter}),'
+    )
+
+
+def test_seeded_rows_keep_their_default(project):
+    seeded(project, "models.IntegerField(default=0)", "models.IntegerField(default=5)")
+    result = project.compact()
+    assert folds(result) == []
+    # A trial runs it and sees the seeded row get 5 instead of 0.
+    assert folds(project.compact(trial=True)) == []
+
+
+def test_seeded_rows_same_default_folds(project):
+    # Without a new default, existing rows get the same value either way.
+    seeded(project, "models.IntegerField(default=0)", "models.IntegerField(null=True)")
+    assert folds(project.check_equivalence()) == [
+        ("shop.Item.qty", "AlterField in 0004_alter folded into AddField in 0003_add")
+    ]
+
+
+def test_seeded_rows_trial(project):
+    seeded(
+        project,
+        "models.IntegerField(null=True)",
+        "models.IntegerField(null=True, default=5)",
+    )
+    assert folds(project.compact()) == []
+    # The seeded row stays NULL; added with the default, it would get 5.
+    assert folds(project.compact(trial=True)) == []
+
+
+def test_rows_not_written_trial_unlocks(project):
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration(
+        "shop",
+        "0002_count",
+        "migrations.RunPython(count),",
+        extra="""
+        def count(apps, schema_editor):
+            alias = schema_editor.connection.alias
+            apps.get_model("shop", "Item").objects.using(alias).count()
+        """,
+    )
+    project.migration(
+        "shop",
+        "0003_add",
+        'migrations.AddField("item", "qty", models.IntegerField(default=0)),',
+    )
+    project.migration(
+        "shop",
+        "0004_alter",
+        'migrations.AlterField("item", "qty", models.IntegerField(default=5)),',
+    )
+    assert folds(project.compact()) == []
+    # Even into the CreateModel, across the data migration.
+    assert folds(project.compact(trial=True)) == [
+        (
+            "shop.Item.qty",
+            "AddField in 0003_add folded into CreateModel in 0001_initial",
+        ),
+        (
+            "shop.Item.qty",
+            "AlterField in 0004_alter folded into CreateModel in 0001_initial",
+        ),
+    ]

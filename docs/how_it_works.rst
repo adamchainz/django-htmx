@@ -124,6 +124,11 @@ A common case is a ``SeparateDatabaseAndState`` that removes a field from the st
 
 The command then resynchronises its picture of the history with the state, so later operations still resolve correctly.
 
+Django also skips the schema changes of some models: unmanaged ones (``managed=False``), proxy models, and models swapped out by a setting (``swappable``).
+A table or column it left behind, or never created, must stay that way.
+So a model whose ``managed`` option changes during its life, a proxy model, and a swapped-out model are poisoned, with everything they hold: nothing of them is removed, superseded or folded.
+A model that is unmanaged throughout its life can still be removed, since neither its creation nor its deletion touches the database.
+
 The name scan
 ~~~~~~~~~~~~~
 
@@ -163,6 +168,10 @@ The names that are looked for are:
 * For a field: every name it had, ``db_column``, ``related_name``, ``related_query_name``, and a many-to-many field’s ``db_table``.
   A relation field also matches the default reverse names: every name its own model had (the default related query name, and ``<model>_set``) and that model’s ``default_related_name``.
 * For an index or constraint: every name it had.
+  A constraint or ``unique_together`` entry is enforced, so a data migration writing the table may rely on it without naming it (``bulk_create(..., ignore_conflicts=True)``, a caught ``IntegrityError``): its model’s names and the names of its fields are looked for too.
+
+An operation that calls ``create_permissions``, ``create_contenttypes``, ``update_contenttypes``, ``emit_post_migrate_signal``, ``get_for_model`` or ``get_for_models`` acts on every model that exists when it runs, without naming them: content type and permission rows, whose ids follow the models that existed.
+It counts as mentioning every name, and an elidable one is never removed alongside something it mentions.
 
 Matching ignores case.
 A name matches where it is not touching other letters or digits (in any script, so non-ASCII names work), so underscores count as boundaries.
@@ -217,6 +226,7 @@ An ``AlterField`` is removed when the next ``AlterField`` or ``RemoveField`` on 
 * Nothing between them refers to the field, and no ``RenameField`` falls between.
 * The scan of opaque operations between them, for both the field’s and its model’s names, finds nothing.
   Models are scanned too, since a data migration may use the field through the model.
+* If the ``AlterField`` rewrites existing rows (it makes the field ``NOT NULL``, so Django fills ``NULL`` with its default, or it changes the field class), no data migration mentioning the model may run between the model’s creation and the ``AlterField`` (or, with ``--trial``, the trial runs pass): rows written by one would keep their old values.
 * The field is not many-to-many, and was never a primary key.
   The primary key flag can’t change between the definitions involved.
 * The type change is safe.
@@ -327,6 +337,8 @@ Conditions for every fold:
 * Fields, indexes and constraints keep their order: they are folded in the order they were added, stopping at the first that can’t be.
   A model with ``order_with_respect_to`` is left alone.
 * The opaque operations in the window pass the name scan (for the field and its model, the model, the index or constraint name and, for anything enforced such as a constraint, the model), or, with ``--trial``, the trial runs.
+* An ``AlterField`` folded into an earlier ``AddField`` gives rows that already exist when the column is added the folded definition’s default instead of the ``AddField``’s.
+  Unless the type and defaults are the same, no data migration mentioning the model may run between the model’s creation and the ``AddField`` (or, with ``--trial``, the trial runs pass).
 * P can be rewritten: Django’s migration writer must be able to serialize it, every import it needs must be a normal module path that doesn’t clash with a name the file already binds to something else, and the written source must load back to an operation with the same effect.
   For example, an ``AlterModelManagers`` setting just the default manager can’t be folded, since a ``CreateModel`` can’t state that.
 
