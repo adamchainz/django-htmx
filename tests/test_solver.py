@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from tests.project import Project
-from tests.test_clean import ITEM, blocked, kinds
+from tests.test_compact import ITEM, blocked, kinds
 
 ADD = 'migrations.AddField("item", "legacy", models.IntegerField(default=0)),'
 INDEX = 'migrations.AddIndex("item", models.Index(fields=["legacy"], name="l_idx")),'
@@ -41,7 +41,7 @@ def test_unrequired_requirement_restored(project: Project) -> None:
         """,
     )
     # The field can't go, so neither goes the index it required.
-    result = project.clean(kinds=["field"])
+    result = project.compact(kinds=["field"])
     assert result.removals == []
     assert list(blocked(result)) == ["shop.Item.legacy"]
 
@@ -56,7 +56,7 @@ def test_elidable_hit_dropped_once(project: Project) -> None:
     project.migration(
         "shop", "0003_remove", 'migrations.RemoveField("item", "legacy"),'
     )
-    result = project.clean(elidable=True)
+    result = project.compact(elidable=True)
     assert ("field", "shop.Item.legacy") in kinds(result)
     assert [k for k, _ in kinds(result)].count("elidable") == 1
 
@@ -77,7 +77,7 @@ def test_elidable_in_excluded_app(project: Project, policy: str) -> None:
         'migrations.RemoveField("item", "legacy"),',
         extra_deps=[("other", "0001_initial")],
     )
-    result = project.clean(exclude=["other"], opaque=policy)
+    result = project.compact(exclude=["other"], opaque=policy)
     if policy == "ignore":
         assert ("field", "shop.Item.legacy") in kinds(result)
     else:
@@ -107,7 +107,7 @@ def test_poisoned_together_blocks_model(project: Project) -> None:
         migrations.DeleteModel("Coupon"),
         """,
     )
-    (reason,) = blocked(project.clean(opaque="ignore"))["shop.Coupon"]
+    (reason,) = blocked(project.compact(opaque="ignore"))["shop.Coupon"]
     assert reason.startswith("its together shop.Coupon unique_together (id, code) was")
 
 
@@ -129,7 +129,7 @@ def test_alter_field_in_unparseable_migration(project: Project) -> None:
         "0003_b",
         'migrations.AlterField("item", "name", models.CharField(max_length=30)),',
     )
-    assert superseded(project.clean()) == []
+    assert superseded(project.compact()) == []
 
 
 @pytest.mark.parametrize(
@@ -153,7 +153,7 @@ def test_unordered(project: Project, first: str, second: str) -> None:
     project.migration(
         "shop", "0003_merge", deps=[("shop", "0002_a"), ("shop", "0002_b")]
     )
-    assert superseded(project.clean()) == []
+    assert superseded(project.compact()) == []
 
 
 def test_many_to_many_alters_kept(project: Project) -> None:
@@ -173,7 +173,7 @@ def test_many_to_many_alters_kept(project: Project) -> None:
         "0003_b",
         'migrations.AlterField("item", "links", models.ManyToManyField("shop.item")),',
     )
-    assert superseded(project.clean()) == []
+    assert superseded(project.compact()) == []
 
 
 def test_internal_type_differs(project: Project) -> None:
@@ -207,7 +207,7 @@ def test_internal_type_differs(project: Project) -> None:
         extra=extra,
     )
     # The second change makes the same change of type from the start.
-    assert superseded(project.clean()) == ["shop.Item.f"]
+    assert superseded(project.compact()) == ["shop.Item.f"]
 
 
 # Superseded model options
@@ -225,7 +225,7 @@ def test_options_outside_alter_keys(project: Project) -> None:
         "0003_b",
         'migrations.AlterModelOptions("item", {"verbose_name": "b"}),',
     )
-    assert superseded(project.clean()) == []
+    assert superseded(project.compact()) == []
 
 
 def test_options_in_unparseable_migration(project: Project) -> None:
@@ -243,7 +243,7 @@ def test_options_in_unparseable_migration(project: Project) -> None:
         "0003_b",
         'migrations.AlterModelOptions("item", {"verbose_name": "b"}),',
     )
-    assert superseded(project.clean()) == []
+    assert superseded(project.compact()) == []
 
 
 def test_index_on_two_dead_fields(project: Project) -> None:

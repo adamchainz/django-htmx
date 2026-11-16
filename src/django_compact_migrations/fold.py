@@ -20,10 +20,10 @@ from django.db.migrations import operations as m
 from django.db.migrations.operations.base import Operation
 from django.db.models import NOT_PROVIDED
 
-from django_clean_migrations import backends
-from django_clean_migrations.locate import normalize_together
-from django_clean_migrations.ops import POSTGRES_MODULE, classify
-from django_clean_migrations.timeline import (
+from django_compact_migrations import backends
+from django_compact_migrations.locate import normalize_together
+from django_compact_migrations.ops import POSTGRES_MODULE, classify
+from django_compact_migrations.timeline import (
     ConstraintLife,
     Element,
     FieldLife,
@@ -37,11 +37,11 @@ from django_clean_migrations.timeline import (
 )
 
 if TYPE_CHECKING:
-    from django_clean_migrations.solver import Solver
+    from django_compact_migrations.solver import Solver
 
 
 def _occupied(fld: Any) -> tuple[Any, ...]:
-    from django_clean_migrations.solver import _occupied as occupied
+    from django_compact_migrations.solver import _occupied as occupied
 
     return occupied(fld)
 
@@ -864,7 +864,7 @@ class Folder:
             for key in keys:
                 if key not in op.options:
                     options.pop(key, None)
-            from django_clean_migrations.timeline import _option_field_names
+            from django_compact_migrations.timeline import _option_field_names
 
             for name in _option_field_names(op.options):
                 life = model.fields.get(name) or next(

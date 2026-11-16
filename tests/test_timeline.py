@@ -8,8 +8,8 @@ import pytest
 from django.db import migrations, models
 from django.db.models import F, Q
 
-from django_clean_migrations.core import CleanError, analyse
-from django_clean_migrations.timeline import (
+from django_compact_migrations.core import CompactError, analyse
+from django_compact_migrations.timeline import (
     Element,
     FieldLife,
     ModelLife,
@@ -20,7 +20,7 @@ from django_clean_migrations.timeline import (
     mentioned_names,
 )
 from tests.project import Project
-from tests.test_clean import ITEM
+from tests.test_compact import ITEM
 
 STATE_OPS = "from tests.state_ops import Change"
 
@@ -158,8 +158,8 @@ def test_unknown_names(project: Project) -> None:
 )
 def test_unknown_field(project: Project, operation: str) -> None:
     project.migration("shop", "0001_initial", ITEM + operation + ",")
-    with pytest.raises(CleanError, match="refers to the field shop.Item.nope"):
-        project.clean()
+    with pytest.raises(CompactError, match="refers to the field shop.Item.nope"):
+        project.compact()
 
 
 @pytest.mark.skipif(
@@ -472,8 +472,8 @@ def test_opaque_state_inside_run_sql(project: Project) -> None:
 
 def test_opaque_state_failure(project: Project) -> None:
     project.migration("shop", "0001_initial", ITEM + 'Change("fail"),', extra=STATE_OPS)
-    with pytest.raises(CleanError, match="Could not apply Change"):
-        project.clean()
+    with pytest.raises(CompactError, match="Could not apply Change"):
+        project.compact()
 
 
 def test_opaque_element_reason(project: Project) -> None:

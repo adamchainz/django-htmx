@@ -6,17 +6,17 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any
 
-from django_clean_migrations.core import CleanError, Result, plan
-from django_clean_migrations.history import Key
-from django_clean_migrations.isolate import ChildError, Send, run_isolated
-from django_clean_migrations.runner import (
+from django_compact_migrations.core import CompactError, Result, plan
+from django_compact_migrations.history import Key
+from django_compact_migrations.isolate import ChildError, Send, run_isolated
+from django_compact_migrations.runner import (
     OpTiming,
     Progress,
     RunError,
     RunReport,
     run_history,
 )
-from django_clean_migrations.scratch import ScratchDatabaseError, scratch_database
+from django_compact_migrations.scratch import ScratchDatabaseError, scratch_database
 
 
 @dataclass
@@ -130,7 +130,7 @@ def profile(alias: str = "default", progress: Progress | None = None) -> Profile
     try:
         static: Result | None = plan()
         plan_error = None
-    except CleanError as exc:
+    except CompactError as exc:
         static, plan_error = None, str(exc)
     try:
         with scratch_database(alias) as connection:
@@ -146,7 +146,7 @@ def profile(alias: str = "default", progress: Progress | None = None) -> Profile
                 child, (lambda message: progress(*message)) if progress else None
             )
     except (ScratchDatabaseError, RunError, ChildError) as exc:
-        raise CleanError(str(exc)) from exc
+        raise CompactError(str(exc)) from exc
 
     by_type: dict[str, TypeStats] = defaultdict(TypeStats)
     by_app: dict[str, TypeStats] = defaultdict(TypeStats)

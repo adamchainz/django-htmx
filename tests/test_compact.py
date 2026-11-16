@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from django_clean_migrations.core import CleanError, Result
+from django_compact_migrations.core import CompactError, Result
 from tests.project import Project
 
 ITEM = """
@@ -116,7 +116,7 @@ class TestModel:
 
     def test_live_model_untouched(self, project: Project) -> None:
         project.migration("shop", "0001_initial", ITEM)
-        result = project.clean()
+        result = project.compact()
         assert result.removals == []
         assert not result.changed
 
@@ -198,7 +198,7 @@ class TestField:
             migrations.RemoveField("item", "code"),
             """,
         )
-        result = project.clean()
+        result = project.compact()
         assert result.removals == []
         assert blocked(result) == {"shop.Item.code": ("it is or was a primary key",)}
 
@@ -217,7 +217,7 @@ class TestField:
         project.migration(
             "shop", "0003_remove", 'migrations.RemoveField("item", "legacy"),'
         )
-        result = project.clean()
+        result = project.compact()
         assert result.removals == []
         assert blocked(result)["shop.Item.legacy"] == (
             "referenced by AddIndex in shop.0002_add",
@@ -276,7 +276,7 @@ class TestField:
         project.migration(
             "shop", "0003_remove", 'migrations.RemoveField("item", "price"),'
         )
-        result = project.clean("shop.Item.price")
+        result = project.compact("shop.Item.price")
         assert result.removals == []
         assert blocked(result)["shop.Item.price"] == (
             "referenced by AddField in shop.0002_add",
@@ -438,13 +438,13 @@ class TestIndexAndConstraint:
             """,
         )
         # The constraint is not a selected kind but is required by the field.
-        result = project.clean("shop.Item.qty", kinds=["field"])
+        result = project.compact("shop.Item.qty", kinds=["field"])
         assert sorted(kinds(result)) == [
             ("constraint", "shop.Item"),
             ("field", "shop.Item.qty"),
         ]
         # Only constraints selected: the field stays, the constraint goes.
-        result = project.clean(kinds=["constraint"])
+        result = project.compact(kinds=["constraint"])
         assert kinds(result) == [("constraint", "shop.Item")]
 
 
@@ -563,7 +563,7 @@ class TestTogether:
         project.migration(
             "shop", "0003_remove", 'migrations.RemoveField("item", "code"),'
         )
-        result = project.clean()
+        result = project.compact()
         assert result.removals == []
         assert blocked(result)["shop.Item.code"][0].startswith(
             "referenced by AlterUniqueTogether"
@@ -640,7 +640,7 @@ class TestRelations:
             'migrations.DeleteModel("Author"),',
             extra_deps=[("shop", "0002_drop_author")],
         )
-        result = project.clean("library", exclude=["shop"])
+        result = project.compact("library", exclude=["shop"])
         assert result.removals == []
         assert blocked(result) == {
             "library.Author": (
@@ -669,7 +669,7 @@ class TestRelations:
             'migrations.DeleteModel("Author"),',
             extra_deps=[("shop", "0001_initial")],
         )
-        result = project.clean()
+        result = project.compact()
         assert result.removals == []
         assert blocked(result)["library.Author"] == (
             "referenced by AddField in shop.0001_initial",
@@ -704,7 +704,7 @@ class TestRelations:
             migrations.RemoveField("item", "code"),
             """,
         )
-        result = project.clean("shop.Item.code")
+        result = project.compact("shop.Item.code")
         assert result.removals == []
         assert blocked(result)["shop.Item.code"] == (
             "referenced by CreateModel in shop.0001_initial (field 'item')",
@@ -806,7 +806,7 @@ class TestRelations:
             migrations.DeleteModel("Credit"),
             """,
         )
-        result = project.clean()
+        result = project.compact()
         assert result.removals == []
         assert blocked(result)["shop.Credit"] == (
             "referenced by AddField in shop.0001_initial",
@@ -858,7 +858,7 @@ class TestRelations:
             """,
         )
         project.migration("shop", "0002_drop", 'migrations.DeleteModel("Base"),')
-        result = project.clean()
+        result = project.compact()
         assert blocked(result)["shop.Base"] == (
             "referenced by CreateModel in shop.0001_initial",
         )
@@ -909,7 +909,7 @@ class TestRelations:
             migrations.DeleteModel("Item"),
             """,
         )
-        result = project.clean("shop.Item", kinds=["model"])
+        result = project.compact("shop.Item", kinds=["model"])
         assert kinds(result) == [
             ("field", "shop.Line.item"),
             ("model", "shop.Item"),
@@ -920,7 +920,7 @@ class TestRelations:
             'migrations.DeleteModel("Item"),',
             deps=[("shop", "0001_initial")],
         )
-        result = project.clean("shop.Item")
+        result = project.compact("shop.Item")
         assert blocked(result)["shop.Item"] == (
             "referenced by CreateModel in shop.0001_initial (field 'item')",
         )
@@ -963,7 +963,7 @@ class TestSuperseded:
             "0003_b",
             'migrations.AlterField("item", "name", models.IntegerField(null=True)),',
         )
-        result = project.clean()
+        result = project.compact()
         assert result.removals == []
 
     def test_alter_field_type_guard_one_side(self, project: Project) -> None:
@@ -996,7 +996,7 @@ class TestSuperseded:
         project.migration("shop", "0004_b", 'migrations.RemoveField("item", "name"),')
         # The index keeps the (dead) field; the AlterField is still superseded
         # by RemoveField but the index refers to the field meanwhile.
-        result = project.clean()
+        result = project.compact()
         assert result.removals == []
         assert "shop.Item.name" in blocked(result)
 
@@ -1011,7 +1011,7 @@ class TestSuperseded:
             migrations.AlterField("item", "title", models.CharField(max_length=30)),
             """,
         )
-        assert project.clean().removals == []
+        assert project.compact().removals == []
 
     def test_alter_model_options(self, project: Project) -> None:
         project.migration("shop", "0001_initial", ITEM)
@@ -1042,7 +1042,7 @@ class TestSuperseded:
             "0003_b",
             'migrations.AlterModelOptions("item", {}),',
         )
-        assert project.clean().removals == []
+        assert project.compact().removals == []
 
     def test_alter_model_managers(self, project: Project) -> None:
         project.migration("shop", "0001_initial", ITEM)
@@ -1104,7 +1104,7 @@ class TestSuperseded:
             migrations.AlterModelTableComment("item", "b"),
             """,
         )
-        assert project.clean().removals == []
+        assert project.compact().removals == []
 
     def test_kind_filter(self, project: Project) -> None:
         project.migration("shop", "0001_initial", ITEM)
@@ -1114,11 +1114,11 @@ class TestSuperseded:
         project.migration(
             "shop", "0003_b", 'migrations.AlterModelTableComment("item", "b"),'
         )
-        assert project.clean(kinds=["model", "field"]).removals == []
-        assert len(project.clean(kinds=["superseded"]).removals) == 1
-        assert len(project.clean("shop.Item").removals) == 1
-        assert project.clean("shop.Item.name").removals == []
-        assert project.clean(exclude=["shop.item"]).removals == []
+        assert project.compact(kinds=["model", "field"]).removals == []
+        assert len(project.compact(kinds=["superseded"]).removals) == 1
+        assert len(project.compact("shop.Item").removals) == 1
+        assert project.compact("shop.Item.name").removals == []
+        assert project.compact(exclude=["shop.item"]).removals == []
 
 
 class TestOpaque:
@@ -1157,7 +1157,7 @@ class TestOpaque:
 
     def test_scan_ignore(self, project: Project) -> None:
         self._history(project, "migrations.RunPython(forwards),\n")
-        result = project.clean(opaque="ignore")
+        result = project.compact(opaque="ignore")
         assert kinds(result) == [("field", "shop.Item.legacy")]
 
     def test_scan_miss(self, project: Project) -> None:
@@ -1173,7 +1173,7 @@ class TestOpaque:
         )
         result = project.check_equivalence()
         assert kinds(result) == [("field", "shop.Item.legacy")]
-        result_block = project.clean(opaque="block")
+        result_block = project.compact(opaque="block")
         assert result_block.removals == []
 
     def test_window(self, project: Project) -> None:
@@ -1215,7 +1215,7 @@ class TestOpaque:
         project.migration(
             "shop", "0003_remove", 'migrations.RemoveField("item", "legacy"),'
         )
-        result = project.clean()
+        result = project.compact()
         assert blocked(result)["shop.Item.legacy"] == (
             "RunPython in shop.0002_add mentions 'legacy'",
         )
@@ -1233,7 +1233,7 @@ class TestOpaque:
         project.migration(
             "shop", "0003_remove", 'migrations.RemoveField("item", "legacy"),'
         )
-        result = project.clean()
+        result = project.compact()
         assert "mentions 'legacy'" in blocked(result)["shop.Item.legacy"][0]
 
     def test_noop_and_partial(self, project: Project) -> None:
@@ -1276,7 +1276,7 @@ class TestOpaque:
             migrations.RemoveField("item", "rank"),
             """,
         )
-        result = project.clean("shop.Item.rank")
+        result = project.compact("shop.Item.rank")
         assert result.removals == []
         assert "orders by it" in blocked(result)["shop.Item.rank"][0]
         # Without the data migration the soft reference doesn't block.
@@ -1322,7 +1322,7 @@ class TestElidable:
             "0001_initial",
             ITEM + "migrations.RunSQL('SELECT 1', elidable=True),",
         )
-        assert not project.clean().changed
+        assert not project.compact().changed
         result = project.check_equivalence(elidable=True)
         assert kinds(result) == [("elidable", "shop")]
 
@@ -1360,7 +1360,7 @@ class TestElidable:
             'migrations.DeleteModel("Coupon"),',
             deps=[("shop", "0002_sql")],
         )
-        result = project.clean()
+        result = project.compact()
         assert result.removals == []
         (reason,) = blocked(result)["shop.Coupon"]
         assert reason == (
@@ -1387,7 +1387,7 @@ class TestElidable:
         project.migration(
             "shop", "0003_remove", 'migrations.RemoveField("item", "legacy"),'
         )
-        result = project.clean(elidable=True)
+        result = project.compact(elidable=True)
         assert result.removals == []
         assert blocked(result)["shop.Item.legacy"] == (
             "created by RunSQL in shop.0002_sql",
@@ -1425,7 +1425,7 @@ class TestPoisoning:
         )
         result = project.check_equivalence()
         assert kinds(result) == [("field", "shop.Item.legacy")]
-        assert blocked(project.clean())["shop.Ghost"] == (
+        assert blocked(project.compact())["shop.Ghost"] == (
             "created by SeparateDatabaseAndState in shop.0002_sdas",
         )
 
@@ -1450,7 +1450,7 @@ class TestPoisoning:
         project.migration(
             "shop", "0004_drop", 'migrations.RemoveField("item", "legacy"),'
         )
-        result = project.clean()
+        result = project.compact()
         assert result.removals == []
         assert blocked(result)["shop.Item.legacy"] == (
             "changed by SeparateDatabaseAndState in shop.0003_sdas",
@@ -1490,7 +1490,7 @@ class TestPoisoning:
             """,
         )
         project.migration("shop", "0003_drop", 'migrations.DeleteModel("Thing"),')
-        result = project.clean()
+        result = project.compact()
         assert result.removals == []
         assert blocked(result) == {
             "shop.Item": ("changed by MyRename in shop.0002_rename",),
@@ -1521,7 +1521,7 @@ class TestEditability:
             'migrations.RemoveField("item", "legacy"),',
             deps=[("shop", "0002_add")],
         )
-        result = project.clean()
+        result = project.compact()
         assert result.removals == []
         assert blocked(result)["shop.Item.legacy"] == (
             "operations list in shop.0002_add could not be parsed (cannot match AddField in source)",
@@ -1552,7 +1552,7 @@ class TestEditability:
             'migrations.RemoveField("item", "legacy"),',
             deps=[("shop", "0001_initial")],
         )
-        result = project.clean()
+        result = project.compact()
         assert blocked(result)["shop.Item.legacy"] == (
             "fields is not a literal in CreateModel in shop.0001_initial",
         )
@@ -1560,7 +1560,7 @@ class TestEditability:
     def test_non_editable(
         self, project: Project, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from django_clean_migrations import history
+        from django_compact_migrations import history
 
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
@@ -1574,7 +1574,7 @@ class TestEditability:
         monkeypatch.setattr(
             history, "is_editable_path", lambda path: path.name != "0002_add.py"
         )
-        result = project.clean()
+        result = project.compact()
         assert blocked(result)["shop.Item.legacy"] == (
             "shop.0002_add is not editable (installed package)",
         )
@@ -1583,20 +1583,20 @@ class TestEditability:
 class TestOptions:
     def test_unknown_app(self, project: Project) -> None:
         project.migration("shop", "0001_initial", ITEM)
-        with pytest.raises(CleanError, match="No installed app with label 'nope'"):
-            project.clean("nope")
+        with pytest.raises(CompactError, match="No installed app with label 'nope'"):
+            project.compact("nope")
 
     def test_bad_target(self, project: Project) -> None:
         project.migration("shop", "0001_initial", ITEM)
-        with pytest.raises(CleanError, match="Invalid target"):
-            project.clean("shop.a.b.c")
+        with pytest.raises(CompactError, match="Invalid target"):
+            project.compact("shop.a.b.c")
 
     def test_bad_kind_and_policy(self, project: Project) -> None:
         project.migration("shop", "0001_initial", ITEM)
-        with pytest.raises(CleanError, match="Unknown kind"):
-            project.clean(kinds=["nope"])
-        with pytest.raises(CleanError, match="Unknown opaque policy"):
-            project.clean(opaque="nope")
+        with pytest.raises(CompactError, match="Unknown kind"):
+            project.compact(kinds=["nope"])
+        with pytest.raises(CompactError, match="Unknown opaque policy"):
+            project.compact(opaque="nope")
 
     def test_target_matches_any_name(self, project: Project) -> None:
         project.migration("shop", "0001_initial", ITEM)
@@ -1612,10 +1612,10 @@ class TestOptions:
         project.migration(
             "shop", "0003_drop", 'migrations.RemoveField("product", "older"),'
         )
-        assert len(project.clean("SHOP.item.LEGACY").removals) == 1
-        assert len(project.clean("shop.Product.older").removals) == 1
-        assert project.clean("shop.Product.name").removals == []
-        assert project.clean("shop", exclude=["shop.Item.legacy"]).removals == []
+        assert len(project.compact("SHOP.item.LEGACY").removals) == 1
+        assert len(project.compact("shop.Product.older").removals) == 1
+        assert project.compact("shop.Product.name").removals == []
+        assert project.compact("shop", exclude=["shop.Item.legacy"]).removals == []
 
     def test_replaced_migrations_warning(self, project: Project) -> None:
         project.migration("shop", "0001_initial", ITEM)
@@ -1644,7 +1644,7 @@ class TestOptions:
                 ]
             """,
         )
-        result = project.clean()
+        result = project.compact()
         assert result.warnings == [
             "2 migration(s) replaced by squashed migrations were skipped:"
             " shop.0001_initial, shop.0002_a"
@@ -1652,8 +1652,8 @@ class TestOptions:
 
     def test_broken_history(self, project: Project) -> None:
         project.migration("shop", "0001_initial", 'migrations.DeleteModel("Nope"),')
-        with pytest.raises(CleanError, match="refers to the model shop.Nope"):
-            project.clean()
+        with pytest.raises(CompactError, match="refers to the model shop.Nope"):
+            project.compact()
 
 
 class TestMore:
@@ -1674,7 +1674,7 @@ class TestMore:
             'migrations.RunSQL("UPDATE shop_item SET legacy = 1"),',
             deps=[("shop", "0001_initial")],
         )
-        result = project.clean()
+        result = project.compact()
         assert blocked(result)["shop.Item.legacy"] == (
             "RunSQL in other.0001_initial mentions 'legacy'",
         )
@@ -1747,7 +1747,7 @@ class TestMore:
             migrations.RemoveField("line", "item"),
             """,
         )
-        result = project.clean("shop.Line.item")
+        result = project.compact("shop.Line.item")
         assert blocked(result)["shop.Line.item"] == (
             "referenced by AlterOrderWithRespectTo in shop.0001_initial",
         )
@@ -1765,7 +1765,7 @@ class TestMore:
             """,
         )
         project.migration("shop", "0002_drop", 'migrations.DeleteModel("Thing"),')
-        result = project.clean()
+        result = project.compact()
         assert blocked(result)["shop.Thing"] == (
             "unknown index 'nope' in RemoveIndex in shop.0001_initial",
         )
@@ -1824,7 +1824,7 @@ class TestMore:
             "shop", "0003_b", 'migrations.RemoveConstraint("item", "uniq_name"),'
         )
         # A field target doesn't select constraints.
-        assert project.clean("shop.Item.name").removals == []
+        assert project.compact("shop.Item.name").removals == []
         assert kinds(project.check_equivalence("shop.Item")) == [
             ("constraint", "shop.Item")
         ]

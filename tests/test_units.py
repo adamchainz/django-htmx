@@ -17,24 +17,24 @@ from django.db import connections
 from django.db.models.signals import post_migrate, pre_migrate
 from tokenize_rt import src_to_tokens  # type: ignore[import-untyped]
 
-from django_clean_migrations import isolate, planfile, profile
-from django_clean_migrations.core import CleanError
-from django_clean_migrations.isolate import ChildError, run_isolated
-from django_clean_migrations.noop import (
+from django_compact_migrations import isolate, planfile, profile
+from django_compact_migrations.core import CompactError
+from django_compact_migrations.isolate import ChildError, run_isolated
+from django_compact_migrations.noop import (
     Observation,
     classify,
     observe,
     source_concern,
 )
-from django_clean_migrations.ops import INERT, OPAQUE
-from django_clean_migrations.ops import classify as classify_op
-from django_clean_migrations.patch import PatchError, apply_diff, make_diff
-from django_clean_migrations.runner import RunError, run_history
-from django_clean_migrations.scratch import scratch_database
-from django_clean_migrations.tokens import container_for_node
+from django_compact_migrations.ops import INERT, OPAQUE
+from django_compact_migrations.ops import classify as classify_op
+from django_compact_migrations.patch import PatchError, apply_diff, make_diff
+from django_compact_migrations.runner import RunError, run_history
+from django_compact_migrations.scratch import scratch_database
+from django_compact_migrations.tokens import container_for_node
 from tests import noop_samples as samples
 from tests.project import Project
-from tests.test_clean import ITEM
+from tests.test_compact import ITEM
 
 # isolate
 
@@ -215,7 +215,7 @@ def test_plan_file_with_missing_migration(project: Project, tmp_path: Path) -> N
     project.command("plan", "-o", str(plan_path))
     project.path("shop", "0002_add").unlink()
     project.purge()
-    with pytest.raises(CleanError, match="can't be read"):
+    with pytest.raises(CompactError, match="can't be read"):
         planfile.load_plan(plan_path)
 
 
@@ -229,7 +229,7 @@ def test_profile_without_plan(
     project.activate()
 
     def fail(*args: Any, **kwargs: Any) -> None:
-        raise CleanError("no plan")
+        raise CompactError("no plan")
 
     monkeypatch.setattr(profile, "plan", fail)
     with project.db_blocker.unblock():

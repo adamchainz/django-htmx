@@ -17,9 +17,9 @@ from typing import Any
 
 import tomli_w
 
-from django_clean_migrations.core import (
+from django_compact_migrations.core import (
     Blocked,
-    CleanError,
+    CompactError,
     FileChange,
     Location,
     Removal,
@@ -27,15 +27,15 @@ from django_clean_migrations.core import (
     _read_text,
     sha256_text,
 )
-from django_clean_migrations.patch import PatchError, apply_diff, make_diff
+from django_compact_migrations.patch import PatchError, apply_diff, make_diff
 
-FORMAT = "django-clean-migrations-plan"
+FORMAT = "django-compact-migrations-plan"
 FORMAT_VERSION = 2
 
 
 def tool_version() -> str:
     try:
-        return version("django-clean-migrations")
+        return version("django-compact-migrations")
     except PackageNotFoundError:
         return "unknown"
 
@@ -217,12 +217,12 @@ def _file_change(f: dict[str, Any], base: Path, deleted: bool) -> FileChange:
     try:
         original, encoding = _read_text(file_path)
     except (OSError, UnicodeDecodeError, SyntaxError, LookupError) as exc:
-        raise CleanError(
+        raise CompactError(
             f"Migration file {f['path']} from the plan can't be read ({exc})."
         ) from exc
     migration = (f["migration"][0], f["migration"][1])
     if sha256_text(original, encoding) != f["sha256_before"]:
-        raise CleanError(
+        raise CompactError(
             f"{file_path} changed since the plan was made, so nothing was"
             " written. Make a new plan."
         )
@@ -231,12 +231,12 @@ def _file_change(f: dict[str, Any], base: Path, deleted: bool) -> FileChange:
         try:
             new = apply_diff(original, f["diff"])
         except PatchError as exc:
-            raise CleanError(
+            raise CompactError(
                 f"The plan's diff for {f['path']} doesn't apply ({exc}): the"
                 " plan was edited or is damaged. Make a new plan."
             ) from exc
         if sha256_text(new, encoding) != f["sha256_after"]:
-            raise CleanError(
+            raise CompactError(
                 f"The plan's diff for {f['path']} doesn't give the file it was"
                 " made for: the plan was edited or is damaged. Make a new plan."
             )
@@ -257,13 +257,13 @@ def load_plan(path: Path) -> Result:
     try:
         data = tomllib.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
-        raise CleanError(f"Could not read plan file {path}: {exc}") from exc
+        raise CompactError(f"Could not read plan file {path}: {exc}") from exc
     if data.get("format") != FORMAT:
-        raise CleanError(f"{path} is not a django-clean-migrations plan file.")
+        raise CompactError(f"{path} is not a django-compact-migrations plan file.")
     if data.get("version") != FORMAT_VERSION:
-        raise CleanError(
+        raise CompactError(
             f"{path} uses plan format version {data.get('version')!r}; this"
-            f" version of django-clean-migrations reads version {FORMAT_VERSION}."
+            f" version of django-compact-migrations reads version {FORMAT_VERSION}."
         )
     base = path.resolve().parent
     try:
@@ -311,4 +311,4 @@ def load_plan(path: Path) -> Result:
             verification=data["verification"],
         )
     except (KeyError, TypeError, ValueError, IndexError) as exc:
-        raise CleanError(f"Malformed plan file {path}: {exc!r}") from exc
+        raise CompactError(f"Malformed plan file {path}: {exc!r}") from exc

@@ -13,18 +13,18 @@ from typing import Any
 import pytest
 from django.db import connections
 
-from django_clean_migrations import backends
-from django_clean_migrations import scratch as scratch_module
-from django_clean_migrations.scratch import (
+from django_compact_migrations import backends
+from django_compact_migrations import scratch as scratch_module
+from django_compact_migrations.scratch import (
     ScratchDatabaseError,
     drop_leftover,
     list_leftovers,
     scratch_database,
 )
-from django_clean_migrations.snapshot import Mask, Snapshot, _value, take_snapshot
+from django_compact_migrations.snapshot import Mask, Snapshot, _value, take_snapshot
 from tests.conftest import SERVERS
 from tests.project import Project
-from tests.test_clean import ITEM, blocked
+from tests.test_compact import ITEM, blocked
 
 # Comparing snapshots
 
@@ -196,9 +196,9 @@ def test_drop_failure_reported() -> None:
                 return name
 
     with pytest.raises(ScratchDatabaseError, match="please drop it by hand"):
-        scratch_module._drop(Connection(), "cleanmig_x")
+        scratch_module._drop(Connection(), "compactmig_x")
     with pytest.raises(ScratchDatabaseError, match="Could not create"):
-        scratch_module._create(Connection(), "cleanmig_x")
+        scratch_module._create(Connection(), "compactmig_x")
 
 
 def test_leftovers_unsupported(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -212,7 +212,7 @@ def test_leftovers_unsupported(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_postgres_snapshot(pg: str) -> None:
     with scratch_database(pg) as connection:
-        assert connection.settings_dict["NAME"].startswith("cleanmig_")
+        assert connection.settings_dict["NAME"].startswith("compactmig_")
         with connection.cursor() as cursor:
             for sql in (
                 "CREATE TYPE mood AS ENUM ('a', 'b')",
@@ -248,7 +248,7 @@ def test_postgres_snapshot(pg: str) -> None:
     assert ("b'\\x00\\xff'", "1", "'a'", "1") in snapshot.data["t"]
     assert sum(snapshot.data["t"].values()) == 1
     assert list_leftovers(pg) == [] or all(
-        name.startswith("cleanmig_") for name in list_leftovers(pg)
+        name.startswith("compactmig_") for name in list_leftovers(pg)
     )
 
 
@@ -447,12 +447,12 @@ def test_mysql_trial(my: str, project: Project) -> None:
     project.migration(
         "shop", "0003_drop", 'migrations.AlterUniqueTogether("child", set()),'
     )
-    static = project.clean()
+    static = project.compact()
     assert static.options["backends"] == [SERVERS_KIND[my]]
     assert static.removals == []
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(backends, "configured", lambda: frozenset())
-        assert project.clean().removals
+        assert project.compact().removals
         result = project.check_equivalence(trial=True, database=my)
     assert result.removals == []
     (reason,) = blocked(result)["shop.Child unique_together (parent, x)"]

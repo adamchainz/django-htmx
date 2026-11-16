@@ -10,11 +10,11 @@ from typing import Any
 import pytest
 from django.db.migrations.operations.base import Operation
 
-from django_clean_migrations import trial as trial_module
-from django_clean_migrations.core import CleanError, UnitInfo, analyse
-from django_clean_migrations.snapshot import Difference, Snapshot
+from django_compact_migrations import trial as trial_module
+from django_compact_migrations.core import CompactError, UnitInfo, analyse
+from django_compact_migrations.snapshot import Difference, Snapshot
 from tests.project import Project
-from tests.test_clean import ITEM, blocked, kinds
+from tests.test_compact import ITEM, blocked, kinds
 
 LEGACY = 'migrations.AddField("item", "legacy", models.IntegerField(default=0)),'
 
@@ -44,7 +44,7 @@ def test_mention_without_effect_is_unlocked(project: Project) -> None:
             item.save()
         """,
     )
-    assert project.clean().removals == []
+    assert project.compact().removals == []
     result = project.check_equivalence(trial=True)
     assert kinds(result) == [("field", "shop.Item.legacy")]
     info = result.verification
@@ -198,8 +198,10 @@ def test_baseline_failure(project: Project) -> None:
     project.migration(
         "shop", "0001_initial", "migrations.RunSQL('SELECT * FROM nope'),"
     )
-    with pytest.raises(CleanError, match="original migration history doesn't migrate"):
-        project.clean(trial=True)
+    with pytest.raises(
+        CompactError, match="original migration history doesn't migrate"
+    ):
+        project.compact(trial=True)
 
 
 def test_plan_file_round_trip(project: Project, tmp_path: Path) -> None:
@@ -316,7 +318,7 @@ def test_vague_failure_bisected_second_half(project: Project) -> None:
 
 
 def test_missing_names() -> None:
-    from django_clean_migrations.core import UnitInfo
+    from django_compact_migrations.core import UnitInfo
 
     def unit(key: str, **kwargs: Any) -> UnitInfo:
         base: dict[str, Any] = {
@@ -384,15 +386,15 @@ def test_sqlite_column_order(project: Project) -> None:
         "0002_longer",
         'migrations.AlterField("item", "name", models.CharField(max_length=20)),',
     )
-    static = project.clean(skip_kinds=[])
+    static = project.compact(skip_kinds=[])
     assert [r.kind for r in static.removals] == ["fold"]
     # Folding keeps the column where CreateModel had it, while the
     # AlterField rebuilt the SQLite table with its field last.
-    result = project.clean(trial=True, skip_kinds=[])
+    result = project.compact(trial=True, skip_kinds=[])
     assert result.removals == []
     assert result.verification["trial_blocked"] == 1
     assert result.verification["unlocked"] <= result.verification["at_risk"]
-    loose = project.clean(trial=True, skip_kinds=[], trial_ignore_column_order=True)
+    loose = project.compact(trial=True, skip_kinds=[], trial_ignore_column_order=True)
     assert len(loose.removals) == 1
     out, _ = project.command("plan", "--kind", "fold")
     assert "physical order of columns" in out
@@ -420,7 +422,7 @@ def test_elidable_writer_kept(project: Project) -> None:
             apps.get_model("shop", "Item").objects.using(alias).create(name="x")
         """,
     )
-    static = project.clean()
+    static = project.compact()
     # The elidable operation goes with the model it mentions...
     assert [r.kind for r in static.removals] == ["elidable", "model"]
     # ...but it wrote a row on a fresh database: the trial keeps both.
@@ -464,9 +466,9 @@ def test_post_migrate_flag(project: Project) -> None:
     try:
         # The history leaves no row behind: without post_migrate, the
         # elidable operation's removal shows nowhere.
-        assert len(project.clean(trial=True).removals) == 2
+        assert len(project.compact(trial=True).removals) == 2
         # With it, the row post_migrate creates gets another id.
-        assert project.clean(trial=True, trial_post_migrate=True).removals == []
+        assert project.compact(trial=True, trial_post_migrate=True).removals == []
     finally:
         post_migrate.disconnect(dispatch_uid="test_post_migrate_flag")
 
@@ -522,7 +524,7 @@ def test_max_runs_reached(project: Project, monkeypatch: pytest.MonkeyPatch) -> 
         [([FAILURE], []), None],
         lambda self, solution, f, d, **kw: {legacy_key(solution): "x"},
     )
-    result = project.clean(trial=True, trial_max_runs=1)
+    result = project.compact(trial=True, trial_max_runs=1)
     assert result.verification["fallback"] is True
     assert kinds(result) == [("field", "shop.Item.dead")]
 
@@ -532,7 +534,7 @@ def test_nothing_new_to_blame(
 ) -> None:
     unlockable(project)
     script(monkeypatch, [([FAILURE], []), None], lambda *args, **kwargs: {})
-    result = project.clean(trial=True)
+    result = project.compact(trial=True)
     assert result.verification["fallback"] is True
 
 
@@ -553,7 +555,7 @@ def test_trial_plan_worse_than_static(
 
     monkeypatch.setattr(trial_module, "make_result", make_result)
     messages: list[str] = []
-    result = project.clean(
+    result = project.compact(
         trial=True, progress=lambda m, note=False: messages.append(m)
     )
     assert result.verification["fallback"] is True
@@ -574,7 +576,7 @@ def test_static_part_blamed(project: Project, monkeypatch: pytest.MonkeyPatch) -
         return {static_key(solution): "x", legacy_key(solution): "y"}
 
     keys = script(monkeypatch, [([FAILURE], []), None], attribute)
-    result = project.clean(trial=True)
+    result = project.compact(trial=True)
     assert ":dead" not in keys[-1]
     assert result.removals == []
 
@@ -589,7 +591,7 @@ def test_static_plan_blamed(project: Project, monkeypatch: pytest.MonkeyPatch) -
         return {static_key(solution): "x"}
 
     script(monkeypatch, [([FAILURE], []), None], attribute)
-    assert project.clean(trial=True).removals == []
+    assert project.compact(trial=True).removals == []
 
 
 def test_noop_layer_dropped(project: Project, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -602,13 +604,13 @@ def test_noop_layer_dropped(project: Project, monkeypatch: pytest.MonkeyPatch) -
         return {}
 
     script(monkeypatch, [([FAILURE], []), None], attribute)
-    result = project.clean(trial=True)
+    result = project.compact(trial=True)
     assert any(d.startswith("--noop-data") for d in result.verification["dropped"])
 
 
 def test_single_baseline(project: Project) -> None:
     history(project, MENTIONED)
-    result = project.clean(trial=True, trial_single_baseline=True)
+    result = project.compact(trial=True, trial_single_baseline=True)
     assert result.verification["runs"] == 2
     assert kinds(result) == [("field", "shop.Item.legacy")]
 
@@ -623,14 +625,14 @@ def test_second_baseline_fails(project: Project, tmp_path: Path) -> None:
         "    raise ValueError('second run')\n"
         "marker.write_text('')\n",
     )
-    with pytest.raises(CleanError, match="not a second time: .*second run"):
-        project.clean(trial=True)
+    with pytest.raises(CompactError, match="not a second time: .*second run"):
+        project.compact(trial=True)
 
 
 def test_scratch_database_failure(
     project: Project, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from django_clean_migrations.scratch import ScratchDatabaseError
+    from django_compact_migrations.scratch import ScratchDatabaseError
 
     history(project, MENTIONED)
 
@@ -638,8 +640,8 @@ def test_scratch_database_failure(
         raise ScratchDatabaseError("no room")
 
     monkeypatch.setattr(trial_module, "scratch_database", fail)
-    with pytest.raises(CleanError, match="no room"):
-        project.clean(trial=True)
+    with pytest.raises(CompactError, match="no room"):
+        project.compact(trial=True)
 
 
 def test_child_crash(project: Project, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -654,8 +656,8 @@ def test_child_crash(project: Project, monkeypatch: pytest.MonkeyPatch) -> None:
         raise Odd()
 
     monkeypatch.setattr(trial_module.Trial, "_migrate", migrate)
-    with pytest.raises(CleanError, match="crashed: Odd: odd"):
-        project.clean(trial=True)
+    with pytest.raises(CompactError, match="crashed: Odd: odd"):
+        project.compact(trial=True)
 
 
 # Attribution, directly
@@ -760,7 +762,7 @@ def test_elidable_in_excluded_app_at_risk(project: Project) -> None:
         'migrations.RemoveField("item", "legacy"),',
         extra_deps=[("other", "0001_initial")],
     )
-    result = project.clean(exclude=["other"], trial=True)
+    result = project.compact(exclude=["other"], trial=True)
     # Kept: removing the column breaks the UPDATE, which can't go.
     assert result.removals == []
     assert "no such column: legacy" in blocked(result)["shop.Item.legacy"][0]
@@ -784,7 +786,7 @@ def test_static_removal_blamed(project: Project) -> None:
         "    alias = schema_editor.connection.alias\n"
         "    apps.get_model('shop', 'Cou' + 'pon').objects.using(alias).count()\n",
     )
-    assert kinds(project.clean()) == [("model", "shop.Coupon")]
+    assert kinds(project.compact()) == [("model", "shop.Coupon")]
     result = project.check_equivalence(trial=True)
     assert result.removals == []
     (reason,) = blocked(result)["shop.Coupon"]
@@ -797,7 +799,7 @@ def test_no_plan_passes(project: Project, monkeypatch: pytest.MonkeyPatch) -> No
     project.migration("shop", "0003_dead", 'migrations.RemoveField("item", "dead"),')
     script(monkeypatch, [([FAILURE], [])], lambda *args, **kwargs: {})
     with pytest.raises(trial_module.TrialFailed, match="found no plan") as info:
-        project.clean(trial=True)
+        project.compact(trial=True)
     assert "boom" in str(info.value)
 
 

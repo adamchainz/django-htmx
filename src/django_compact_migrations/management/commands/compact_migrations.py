@@ -14,14 +14,20 @@ from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 
-from django_clean_migrations.core import CleanError, Removal, Result, load_plan, plan
-from django_clean_migrations.profile import Profile, TypeStats, profile
-from django_clean_migrations.scratch import (
+from django_compact_migrations.core import (
+    CompactError,
+    Removal,
+    Result,
+    load_plan,
+    plan,
+)
+from django_compact_migrations.profile import Profile, TypeStats, profile
+from django_compact_migrations.scratch import (
     ScratchDatabaseError,
     drop_leftover,
     list_leftovers,
 )
-from django_clean_migrations.solver import KINDS, OPAQUE_POLICIES
+from django_compact_migrations.solver import KINDS, OPAQUE_POLICIES
 
 KIND_STYLES = {
     "model": "red",
@@ -127,7 +133,7 @@ class Command(RichCommand):
             "scratch",
             help="List (or drop) scratch databases left by interrupted runs.",
             description="Trial and profile runs drop their scratch databases"
-            " (named cleanmig_...) when they end, even on Ctrl-C or SIGTERM."
+            " (named compactmig_...) when they end, even on Ctrl-C or SIGTERM."
             " A killed process can leave one behind: list them, and drop those"
             " that no running command is using.",
         )
@@ -168,7 +174,7 @@ class Command(RichCommand):
     def _handle(self, options: dict[str, Any]) -> None:
         subcommand = options.get("subcommand")
         if subcommand is None:
-            self.print_help("manage.py", "clean_migrations")
+            self.print_help("manage.py", "compact_migrations")
             return
         verbosity: int = options["verbosity"]
         if subcommand == "profile":
@@ -186,7 +192,7 @@ class Command(RichCommand):
                 )
             try:
                 result = load_plan(options["plan_file"])
-            except CleanError as exc:
+            except CompactError as exc:
                 raise CommandError(str(exc)) from exc
         else:
             result = self._analyse(options, verbosity)
@@ -198,13 +204,15 @@ class Command(RichCommand):
                     self._print(
                         Text(
                             f"Saved the plan to {options['output']}. Apply it with:"
-                            f" manage.py clean_migrations apply --plan"
+                            f" manage.py compact_migrations apply --plan"
                             f" {options['output']}",
                             style="dim",
                         )
                     )
             elif verbosity > 0 and result.changed:
-                self._print(Text("Run 'clean_migrations apply' to apply.", style="dim"))
+                self._print(
+                    Text("Run 'compact_migrations apply' to apply.", style="dim")
+                )
             if options["check"] and result.changed:
                 raise SystemExit(1)
             return
@@ -212,7 +220,7 @@ class Command(RichCommand):
         if result.changed:
             try:
                 result.write()
-            except CleanError as exc:
+            except CompactError as exc:
                 raise CommandError(str(exc)) from exc
 
     def _scratch(self, options: dict[str, Any]) -> None:
@@ -248,7 +256,7 @@ class Command(RichCommand):
             else:
                 status = None
                 result = profile(options["database"], progress)
-        except CleanError as exc:
+        except CompactError as exc:
             raise CommandError(str(exc)) from exc
         if options["json"]:
             self.stdout.write(json.dumps(result.as_dict(options["top"]), indent=2))
@@ -387,7 +395,7 @@ class Command(RichCommand):
 
                     return self._plan(options, progress)
             return self._plan(options, None)
-        except CleanError as exc:
+        except CompactError as exc:
             raise CommandError(str(exc)) from exc
 
     @staticmethod
@@ -607,7 +615,7 @@ def _add_selection_arguments(parser: ArgumentParser) -> None:
         "targets",
         nargs="*",
         metavar="target",
-        help="app_label, app_label.Model or app_label.Model.field to clean.",
+        help="app_label, app_label.Model or app_label.Model.field to compact.",
     )
     parser.add_argument(
         "--exclude",
@@ -653,7 +661,7 @@ def _add_selection_arguments(parser: ArgumentParser) -> None:
 def _add_common_arguments(parser: ArgumentParser) -> None:
     """
     Accept Django's display options after the subcommand too
-    (``clean_migrations plan -v 2``); SUPPRESS keeps the values given before
+    (``compact_migrations plan -v 2``); SUPPRESS keeps the values given before
     it when they aren't repeated.
     """
     parser.add_argument(

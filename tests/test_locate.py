@@ -7,8 +7,8 @@ from django.db import models
 from django.db.migrations.operations import AlterUniqueTogether, CreateModel
 from django.db.migrations.operations.base import Operation
 
-from django_clean_migrations.history import load_history
-from django_clean_migrations.locate import (
+from django_compact_migrations.history import load_history
+from django_compact_migrations.locate import (
     CreateModelLoc,
     TogetherLoc,
     locate_create_model,

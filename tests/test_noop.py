@@ -8,10 +8,10 @@ from typing import Any
 import pytest
 from django.core.management import CommandError
 
-from django_clean_migrations.noop import classify, source_concern, written_tables
+from django_compact_migrations.noop import classify, source_concern, written_tables
 from tests import noop_samples as samples
 from tests.project import Project, temp_database
-from tests.test_clean import ITEM, kinds
+from tests.test_compact import ITEM, kinds
 
 NOOP: dict[str, Any] = {"noop_data": True, "skip_kinds": ["fold"]}
 

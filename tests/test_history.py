@@ -11,8 +11,8 @@ from typing import Any
 
 import pytest
 
-from django_clean_migrations import history as history_module
-from django_clean_migrations.history import (
+from django_compact_migrations import history as history_module
+from django_compact_migrations.history import (
     SourceFile,
     _read_source,
     callee_name,
@@ -21,7 +21,7 @@ from django_clean_migrations.history import (
     migration_path,
 )
 from tests.project import Project, migration_source
-from tests.test_clean import ITEM, blocked, kinds
+from tests.test_compact import ITEM, blocked, kinds
 
 ADD = 'migrations.AddField("item", "legacy", models.IntegerField(default=0))'
 
@@ -40,7 +40,7 @@ def odd_history(project: Project, body: str, extra: str = "") -> Any:
     project.migration(
         "shop", "0003_remove", 'migrations.RemoveField("item", "legacy"),'
     )
-    return project.clean()
+    return project.compact()
 
 
 @pytest.mark.parametrize(

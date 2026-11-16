@@ -34,12 +34,12 @@ from django.db.backends.base.base import BaseDatabaseWrapper
 from django.db.migrations.operations import RunPython, RunSQL
 from django.db.migrations.operations.base import Operation
 
-from django_clean_migrations.core import (
+from django_compact_migrations.core import (
     FOLD_PREFIX,
     NOOP_PREFIX,
     Analysis,
     Built,
-    CleanError,
+    CompactError,
     Result,
     Solution,
     UnitInfo,
@@ -47,15 +47,15 @@ from django_clean_migrations.core import (
     make_result,
     prune_plan,
 )
-from django_clean_migrations.history import Key, OpRecord
-from django_clean_migrations.isolate import ChildError, Send, run_isolated
-from django_clean_migrations.noop import Observation, observe, source_concern
-from django_clean_migrations.opaque import OpaqueOp, Text
-from django_clean_migrations.ops import OPAQUE, classify
-from django_clean_migrations.prune import PrunePlan
-from django_clean_migrations.runner import DatabaseForwards, RunError, run_history
-from django_clean_migrations.scratch import ScratchDatabaseError, scratch_database
-from django_clean_migrations.snapshot import (
+from django_compact_migrations.history import Key, OpRecord
+from django_compact_migrations.isolate import ChildError, Send, run_isolated
+from django_compact_migrations.noop import Observation, observe, source_concern
+from django_compact_migrations.opaque import OpaqueOp, Text
+from django_compact_migrations.ops import OPAQUE, classify
+from django_compact_migrations.prune import PrunePlan
+from django_compact_migrations.runner import DatabaseForwards, RunError, run_history
+from django_compact_migrations.scratch import ScratchDatabaseError, scratch_database
+from django_compact_migrations.snapshot import (
     COLUMN_ORDER,
     Difference,
     Mask,
@@ -73,7 +73,7 @@ _candidate_hook: Callable[[dict[Key, list[Operation]], int], None] | None = None
 """Test hook: may alter a candidate's operations before pass ``n`` runs."""
 
 
-class TrialFailed(CleanError):
+class TrialFailed(CompactError):
     """No plan passes its trial run: nothing may be written."""
 
 
@@ -213,9 +213,9 @@ class Trial:
                     fork=self.isolate,
                 )
         except ScratchDatabaseError as exc:
-            raise CleanError(str(exc)) from exc
+            raise CompactError(str(exc)) from exc
         except ChildError as exc:
-            raise CleanError(
+            raise CompactError(
                 f"{label} crashed: {exc}\n{exc.child_traceback}{ENVIRONMENT_HINT}"
             ) from exc
 
@@ -400,7 +400,7 @@ class Trial:
         baseline_seconds = time.perf_counter() - baseline_begin
         if baseline.aborted or baseline.snapshot is None:
             failure = baseline.failures[0] if baseline.failures else None
-            raise CleanError(
+            raise CompactError(
                 "The original migration history doesn't migrate a fresh"
                 f" {self.server or 'scratch'} database, so it can't be trialled:"
                 + (
@@ -469,7 +469,7 @@ class Trial:
             again = self._run("Baseline, again", None)
             if again.snapshot is None:
                 failure = again.failures[0] if again.failures else None
-                raise CleanError(
+                raise CompactError(
                     "The original migration history migrated a fresh database"
                     " once, but not a second time"
                     + (f": {failure.error}" if failure else "")

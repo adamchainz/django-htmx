@@ -8,12 +8,12 @@ from typing import Any
 import pytest
 from django.core.management import CommandError
 
-from django_clean_migrations.core import load_plan
-from django_clean_migrations.management.commands.clean_migrations import (
+from django_compact_migrations.core import load_plan
+from django_compact_migrations.management.commands.compact_migrations import (
     sqlite_order_warning,
 )
 from tests.project import Project
-from tests.test_clean import ITEM
+from tests.test_compact import ITEM
 
 
 @pytest.fixture
@@ -65,7 +65,7 @@ def test_dry_run(history: Project) -> None:
     assert lines[3].startswith("    legacy")
     assert lines[4:] == [
         "Would remove 4 operations in 2 migration files.",
-        "Run 'clean_migrations apply' to apply.",
+        "Run 'compact_migrations apply' to apply.",
     ]
     assert err == ""
     assert history.files() == before
@@ -225,7 +225,7 @@ def test_plan_file_round_trip(history: Project, tmp_path: Path) -> None:
     assert f"Saved the plan to {plan_path}" in out
     assert history.files() == before
     data = tomllib.loads(plan_path.read_text())
-    assert data["format"] == "django-clean-migrations-plan"
+    assert data["format"] == "django-compact-migrations-plan"
     assert data["version"] == 2
     assert data["verification"] == {"mode": "static"}
     assert data["options"]["opaque"] == "scan"
@@ -265,12 +265,12 @@ def test_plan_file_invalid(history: Project, tmp_path: Path) -> None:
     with pytest.raises(CommandError, match="Could not read plan file"):
         history.command("apply", "--plan", str(bad))
     bad.write_text("")
-    with pytest.raises(CommandError, match="is not a django-clean-migrations plan"):
+    with pytest.raises(CommandError, match="is not a django-compact-migrations plan"):
         history.command("apply", "--plan", str(bad))
-    bad.write_text('format = "django-clean-migrations-plan"\nversion = 99\n')
+    bad.write_text('format = "django-compact-migrations-plan"\nversion = 99\n')
     with pytest.raises(CommandError, match="plan format version 99"):
         history.command("apply", "--plan", str(bad))
-    bad.write_text('format = "django-clean-migrations-plan"\nversion = 2\n')
+    bad.write_text('format = "django-compact-migrations-plan"\nversion = 2\n')
     with pytest.raises(CommandError, match="Malformed plan file"):
         history.command("apply", "--plan", str(bad))
     with pytest.raises(CommandError, match="Could not read plan file"):
@@ -278,7 +278,7 @@ def test_plan_file_invalid(history: Project, tmp_path: Path) -> None:
 
 
 def test_library_round_trip(history: Project, tmp_path: Path) -> None:
-    result = history.clean()
+    result = history.compact()
     result.save(tmp_path / "plan.toml", blocked=True)
     history.activate()
     loaded = load_plan(tmp_path / "plan.toml")
@@ -300,10 +300,10 @@ def test_library_round_trip(history: Project, tmp_path: Path) -> None:
 
 
 def test_apply_failure(history: Project, monkeypatch: pytest.MonkeyPatch) -> None:
-    from django_clean_migrations.core import CleanError, Result
+    from django_compact_migrations.core import CompactError, Result
 
     def fail(self: Result) -> None:
-        raise CleanError("cannot write")
+        raise CompactError("cannot write")
 
     monkeypatch.setattr(Result, "write", fail)
     with pytest.raises(CommandError, match="cannot write"):
@@ -381,7 +381,7 @@ def test_trial_report_postgres(project: Project, pg: str) -> None:
 def test_trial_fallback_report(
     history: Project, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from django_clean_migrations import trial
+    from django_compact_migrations import trial
 
     def candidate(self: Any, solution: Any, built: Any, reference: Any) -> Any:
         self.passes += 1
@@ -394,14 +394,14 @@ def test_trial_fallback_report(
 
 
 def test_sqlite_order_warning_other_alias(history: Project) -> None:
-    result = history.clean()
+    result = history.compact()
     assert sqlite_order_warning(result, "nope") is None
 
 
 def test_trial_failure_writes_nothing(
     history: Project, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    from django_clean_migrations import trial
+    from django_compact_migrations import trial
     from tests.test_trial import FAILURE
 
     def candidate(self: Any, solution: Any, built: Any, reference: Any) -> Any:

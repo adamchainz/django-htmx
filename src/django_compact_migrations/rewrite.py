@@ -13,15 +13,15 @@ from django.db.migrations.state import ModelState
 from django.db.migrations.writer import OperationWriter
 from tokenize_rt import UNIMPORTANT_WS, Token  # type: ignore[import-untyped]
 
-from django_clean_migrations.history import OpRecord, SourceFile
-from django_clean_migrations.locate import (
+from django_compact_migrations.history import OpRecord, SourceFile
+from django_compact_migrations.locate import (
     Entry,
     check_sub_elements,
     locate_create_model,
     locate_together_op,
     normalize_together,
 )
-from django_clean_migrations.tokens import Container, Segment
+from django_compact_migrations.tokens import Container, Segment
 
 _NEWLINES = ("NL", "NEWLINE")
 
@@ -438,7 +438,7 @@ def regeneration_problem(source: SourceFile | None, op: Operation) -> str | None
 
 def same_operation(a: Operation, b: Operation) -> bool:
     """Whether two operations have the same effect on the project state."""
-    from django_clean_migrations.verify import model_states_equal, same_value
+    from django_compact_migrations.verify import model_states_equal, same_value
 
     if type(a) is not type(b):
         return False

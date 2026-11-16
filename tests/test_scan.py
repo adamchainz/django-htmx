@@ -7,16 +7,16 @@ from typing import Any
 
 import pytest
 
-from django_clean_migrations import history as history_module
-from django_clean_migrations.core import analyse
-from django_clean_migrations.opaque import (
+from django_compact_migrations import history as history_module
+from django_compact_migrations.core import analyse
+from django_compact_migrations.opaque import (
     OpaqueIndex,
     Text,
     _metadata_statements,
     _migration_text,
 )
 from tests.project import Project
-from tests.test_clean import ITEM, blocked
+from tests.test_compact import ITEM, blocked
 
 
 def scanned(project: Project) -> Any:
@@ -92,7 +92,7 @@ def test_block_policy_names_the_operation(project: Project) -> None:
     project.migration(
         "shop", "0003_remove", 'migrations.RemoveField("item", "legacy"),'
     )
-    result = project.clean(opaque="block")
+    result = project.compact(opaque="block")
     assert blocked(result)["shop.Item.legacy"] == (
         "opaque RunSQL in shop.0002_add may run meanwhile",
     )

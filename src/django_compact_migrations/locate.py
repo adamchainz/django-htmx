@@ -17,7 +17,7 @@ from django.db.migrations.operations import (
     CreateModel,
 )
 
-from django_clean_migrations.history import OpRecord, SourceFile
+from django_compact_migrations.history import OpRecord, SourceFile
 
 TOGETHER_OPTIONS = ("unique_together", "index_together")
 

@@ -11,13 +11,13 @@ from django.conf import settings
 from django.core.management import CommandError
 from django.db import connections
 
-from django_clean_migrations import profile as profile_module
-from django_clean_migrations.core import CleanError
-from django_clean_migrations.runner import run_history
-from django_clean_migrations.scratch import ScratchDatabaseError, scratch_database
+from django_compact_migrations import profile as profile_module
+from django_compact_migrations.core import CompactError
+from django_compact_migrations.runner import run_history
+from django_compact_migrations.scratch import ScratchDatabaseError, scratch_database
 from tests.project import Project
-from tests.test_clean import ITEM
 from tests.test_command import history  # noqa: F401
+from tests.test_compact import ITEM
 
 
 def test_profile_report(history: Project) -> None:  # noqa: F811
@@ -82,7 +82,7 @@ def test_scratch_cleaned_up_on_interrupt(
     project.activate()
     err = StringIO()
     with project.db_blocker.unblock(), pytest.raises(SystemExit) as info:
-        call_command("clean_migrations", "profile", stdout=StringIO(), stderr=err)
+        call_command("compact_migrations", "profile", stdout=StringIO(), stderr=err)
     assert info.value.code == 130
     assert err.getvalue() == (
         "Interrupted: scratch databases were dropped and no migration file was"
@@ -139,7 +139,7 @@ def test_scratch_listing(
     monkeypatch.setattr(tempfile, "tempdir", str(temp))
     out, _ = project.command_db("scratch")
     assert out == "No scratch databases found.\n"
-    leftover = temp / "cleanmig_dead"
+    leftover = temp / "compactmig_dead"
     leftover.mkdir()
     out, _ = project.command_db("scratch")
     assert out == f"{leftover}\n"
@@ -181,7 +181,7 @@ def test_profile_quiet_and_without_plan(
     assert out == ""
 
     def fail(*args: Any, **kwargs: Any) -> None:
-        raise CleanError("no plan")
+        raise CompactError("no plan")
 
     monkeypatch.setattr(profile_module, "plan", fail)
     out, _ = project.command_db("profile", "--force-color")

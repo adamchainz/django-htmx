@@ -5,12 +5,12 @@ from typing import Any
 
 import pytest
 
-from django_clean_migrations import core
-from django_clean_migrations.core import CleanError
-from django_clean_migrations.rewrite import OpEdit
-from django_clean_migrations.solver import Solver
+from django_compact_migrations import core
+from django_compact_migrations.core import CompactError
+from django_compact_migrations.rewrite import OpEdit
+from django_compact_migrations.solver import Solver
 from tests.project import Project
-from tests.test_clean import ITEM
+from tests.test_compact import ITEM
 
 
 def dead_field(project: Project) -> None:
@@ -31,7 +31,7 @@ def dead_field(project: Project) -> None:
 def test_on_disk_rollback(project: Project) -> None:
     dead_field(project)
     before = project.files()
-    result = project.clean()
+    result = project.compact()
     # Simulate a rewriting bug: the written file also loses another operation.
     change = result.files[0]
     assert change.migration == ("shop", "0002_add")
@@ -39,22 +39,22 @@ def test_on_disk_rollback(project: Project) -> None:
         'migrations.AddField("item", "other", models.IntegerField(default=0)),', ""
     )
     result.files[0] = dataclasses.replace(change, new=bad)
-    with pytest.raises(CleanError, match="were restored.*has operations"):
+    with pytest.raises(CompactError, match="were restored.*has operations"):
         result.write()
     assert project.files() == before
     # The restored files load again.
-    assert len(project.clean().removals) == 1
+    assert len(project.compact().removals) == 1
 
 
 def test_on_disk_state_mismatch(project: Project) -> None:
     dead_field(project)
     before = project.files()
-    result = project.clean()
+    result = project.compact()
     change = result.files[0]
     bad = change.new.replace("default=0", "default=1")
     result.files[0] = dataclasses.replace(change, new=bad)
     with pytest.raises(
-        CleanError, match="produce a different state: model shop.item differs"
+        CompactError, match="produce a different state: model shop.item differs"
     ):
         result.write()
     assert project.files() == before
@@ -63,11 +63,11 @@ def test_on_disk_state_mismatch(project: Project) -> None:
 def test_on_disk_import_error(project: Project) -> None:
     dead_field(project)
     before = project.files()
-    result = project.clean()
+    result = project.compact()
     result.files[-1] = dataclasses.replace(
         result.files[-1], new="raise ValueError('x')\n"
     )
-    with pytest.raises(CleanError, match="restored: x"):
+    with pytest.raises(CompactError, match="restored: x"):
         result.write()
     assert project.files() == before
 
@@ -95,9 +95,9 @@ def test_in_memory_failure(project: Project, monkeypatch: pytest.MonkeyPatch) ->
     # from the start.
     monkeypatch.setattr(Solver, "blocker", lambda self, life: None)
     with pytest.raises(
-        CleanError, match="Internal error: .*missing model.*shop.author"
+        CompactError, match="Internal error: .*missing model.*shop.author"
     ):
-        project.clean()
+        project.compact()
 
 
 def test_in_memory_state_difference(
@@ -116,9 +116,9 @@ def test_in_memory_state_difference(
 
     monkeypatch.setattr(core, "_collect_edits", collect)
     with pytest.raises(
-        CleanError, match="ends in a different state: model shop.item differs"
+        CompactError, match="ends in a different state: model shop.item differs"
     ):
-        project.clean()
+        project.compact()
 
 
 # Direct checks
@@ -134,7 +134,7 @@ def test_in_memory_errors(project: Project) -> None:
     from django.db.migrations import operations as m
     from django.db.models import IntegerField
 
-    from django_clean_migrations.verify import VerificationError, verify_in_memory
+    from django_compact_migrations.verify import VerificationError, verify_in_memory
 
     dead_field(project)
     analysis = analysed(project)
@@ -183,7 +183,7 @@ def _replayed(history: Any, edited: dict[int, list[Any]]) -> Any:
 def test_first_difference() -> None:
     from django.db.migrations.state import ModelState
 
-    from django_clean_migrations.verify import first_difference
+    from django_compact_migrations.verify import first_difference
 
     a = ModelState("shop", "A", [])
     assert first_difference({("shop", "a"): a}, {}) == "model shop.a is missing"
@@ -191,7 +191,7 @@ def test_first_difference() -> None:
 
 
 def test_same_value_odd_objects() -> None:
-    from django_clean_migrations.verify import same_value
+    from django_compact_migrations.verify import same_value
 
     class NoEq:
         def __eq__(self, other: object) -> bool:
@@ -204,7 +204,7 @@ def test_relation_targets_unresolvable() -> None:
     from django.db.migrations.state import ModelState
     from django.db.models import ForeignKey
 
-    from django_clean_migrations.verify import _relation_targets
+    from django_compact_migrations.verify import _relation_targets
 
     field: Any = ForeignKey("shop.Other", on_delete=models_cascade())
     field.remote_field.model = 42  # neither a model nor a reference
@@ -223,7 +223,7 @@ def test_dangling_tracker_opaque_state_operation() -> None:
     from django.db.migrations.operations.base import Operation
     from django.db.migrations.state import ProjectState
 
-    from django_clean_migrations.verify import DanglingTracker
+    from django_compact_migrations.verify import DanglingTracker
 
     class Custom(Operation):
         pass
@@ -233,7 +233,7 @@ def test_dangling_tracker_opaque_state_operation() -> None:
 
 
 def test_on_disk_checks(project: Project) -> None:
-    from django_clean_migrations.verify import (
+    from django_compact_migrations.verify import (
         VerificationError,
         state_from_disk,
         verify_on_disk,
@@ -264,7 +264,7 @@ def test_on_disk_checks(project: Project) -> None:
 
 
 def test_on_disk_conflicts(project: Project) -> None:
-    from django_clean_migrations.verify import (
+    from django_compact_migrations.verify import (
         VerificationError,
         state_from_disk,
         verify_on_disk,

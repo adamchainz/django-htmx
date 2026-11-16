@@ -9,9 +9,9 @@ from django.db import models
 from django.db.models import F
 from django.db.models.functions import Lower
 
-from django_clean_migrations import backends
+from django_compact_migrations import backends
 from tests.project import Project
-from tests.test_clean import blocked, kinds
+from tests.test_compact import blocked, kinds
 from tests.test_fold import folds
 
 PARENT = (
@@ -49,7 +49,7 @@ def unique_together_pair(project: Project, entry: str) -> None:
 
 def test_together_on_foreign_key_kept(project: Project, server: str) -> None:
     unique_together_pair(project, '("parent", "x")')
-    result = project.clean()
+    result = project.compact()
     assert result.removals == []
     (reason,) = blocked(result)["shop.Child unique_together (parent, x)"]
     assert reason.startswith(
@@ -57,20 +57,20 @@ def test_together_on_foreign_key_kept(project: Project, server: str) -> None:
         " shop.Child.parent would get another name"
     )
     # Adding the entry folds into the CreateModel; dropping it doesn't.
-    assert [d for _, d in folds(project.clean(skip_kinds=[]))] == [
+    assert [d for _, d in folds(project.compact(skip_kinds=[]))] == [
         "AlterUniqueTogether in 0002_add folded into CreateModel in 0001_initial"
     ]
 
 
 def test_together_elsewhere_removed(project: Project, server: str) -> None:
     unique_together_pair(project, '("x", "parent")')
-    assert {k for k, _ in kinds(project.clean())} == {"together"}
+    assert {k for k, _ in kinds(project.compact())} == {"together"}
 
 
 def test_together_without_mysql(project: Project) -> None:
     unique_together_pair(project, '("parent", "x")')
-    assert {k for k, _ in kinds(project.clean())} == {"together"}
-    assert folds(project.clean(skip_kinds=[])) == []
+    assert {k for k, _ in kinds(project.compact())} == {"together"}
+    assert folds(project.compact(skip_kinds=[])) == []
 
 
 @pytest.mark.parametrize(
@@ -90,7 +90,7 @@ def test_index_on_foreign_key_kept(project: Project, server: str, index: str) ->
         extra="from django.db.models import F",
     )
     project.migration("shop", "0003_drop", 'migrations.RemoveIndex("child", "px"),')
-    assert list(blocked(project.clean())) == ["shop.Child index 'px'"]
+    assert list(blocked(project.compact())) == ["shop.Child index 'px'"]
 
 
 def test_constraint_on_foreign_key_dropped_later(project: Project, server: str) -> None:
@@ -118,7 +118,7 @@ def test_constraint_on_foreign_key_dropped_later(project: Project, server: str) 
         migrations.RemoveField("child", "parent"),
         """,
     )
-    assert kinds(project.clean(kinds=["constraint"])) == [
+    assert kinds(project.compact(kinds=["constraint"])) == [
         ("constraint", "shop.Child"),
         ("constraint", "shop.Child"),
     ]
@@ -147,7 +147,7 @@ def test_constraint_folded_past_another_dropped(project: Project, server: str) -
         ),
         """,
     )
-    result = project.clean(skip_kinds=[])
+    result = project.compact(skip_kinds=[])
     assert folds(result) == []
     assert result.removals == []
 
@@ -187,7 +187,7 @@ def test_alter_field_on_foreign_key(
         "0004_alter",
         f'migrations.AlterField("thing", "p", {then.replace("null=True", "null=True, blank=True")}),',
     )
-    result = project.clean(skip_kinds=[])
+    result = project.compact(skip_kinds=[])
     assert bool(folds(result)) is safe
     assert bool([r for r in result.removals if r.kind == "superseded"]) is safe
 
@@ -211,7 +211,7 @@ def test_text_default_folds(project: Project, server: str, field: str) -> None:
         "0003_alter",
         f'migrations.AlterField("thing", "t", {field.replace("(", "(blank=True, ")}),',
     )
-    folded = bool(folds(project.clean(skip_kinds=[])))
+    folded = bool(folds(project.compact(skip_kinds=[])))
     assert folded is (server == backends.MARIADB)
 
 
@@ -222,7 +222,7 @@ def test_empty_text_default_folds(project: Project, server: str) -> None:
         "0002_add",
         'migrations.AddField("thing", "t", models.TextField(default="")),',
     )
-    assert folds(project.clean(skip_kinds=[]))
+    assert folds(project.compact(skip_kinds=[]))
 
 
 def test_text_alters_on_mysql(project: Project, server: str) -> None:
@@ -241,7 +241,7 @@ def test_text_alters_on_mysql(project: Project, server: str) -> None:
         "0003_b",
         'migrations.AlterField("thing", "t", models.TextField(default="c")),',
     )
-    result = project.clean()
+    result = project.compact()
     assert bool(result.removals) is (server == backends.MARIADB)
 
 
@@ -263,7 +263,7 @@ def test_other_folds_and_removals(project: Project, server: str) -> None:
         """,
     )
     project.migration("shop", "0003_drop", 'migrations.RemoveField("child", "legacy"),')
-    result = project.clean(skip_kinds=[])
+    result = project.compact(skip_kinds=[])
     assert ("field", "shop.Child.legacy") in kinds(result)
     assert [d for _, d in folds(result)] == [
         "AlterUniqueTogether in 0002_more folded into CreateModel in 0001_initial"

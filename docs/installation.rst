@@ -15,15 +15,15 @@ Installation
 
    .. code-block:: sh
 
-       python -m pip install django-clean-migrations
+       python -m pip install django-compact-migrations
 
-2. Add django-clean-migrations to your ``INSTALLED_APPS``.
+2. Add django-compact-migrations to your ``INSTALLED_APPS``.
    Since it’s a development tool, you should only do so in your development settings:
 
    .. code-block:: python
 
        INSTALLED_APPS = [
            ...,
-           "django_clean_migrations",
+           "django_compact_migrations",
            ...,
        ]

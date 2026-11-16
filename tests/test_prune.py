@@ -14,19 +14,19 @@ from django.core.management import CommandError
 from django.db.migrations.graph import MigrationGraph
 from django.db.migrations.loader import MigrationLoader
 
-from django_clean_migrations import core
-from django_clean_migrations.core import CleanError, Result
-from django_clean_migrations.history import load_history
-from django_clean_migrations.prune import (
+from django_compact_migrations import core
+from django_compact_migrations.core import CompactError, Result
+from django_compact_migrations.history import load_history
+from django_compact_migrations.prune import (
     PruneError,
     PrunePlan,
     ancestor_sets,
     check_ancestors,
     check_ends,
 )
-from django_clean_migrations.verify import VerificationError
+from django_compact_migrations.verify import VerificationError
 from tests.project import Project
-from tests.test_clean import ITEM, blocked
+from tests.test_compact import ITEM, blocked
 
 PRUNE: dict[str, Any] = {"prune": True}
 LEGACY = 'migrations.AddField("item", "legacy", models.IntegerField(default=0)),'
@@ -235,7 +235,7 @@ def test_mentioned_module_blocks(project: Project) -> None:
             importlib.import_module("x.shop.migrations.0002_add")
         """,
     )
-    result = project.clean(**PRUNE)
+    result = project.compact(**PRUNE)
     assert pruned(result) == ["shop.0003_remove"]
     assert "mentioned" in prune_blocks(result)["shop.0002_add"]
 
@@ -259,7 +259,7 @@ def test_dependency_of_replaced_migration_blocks(project: Project) -> None:
             "    operations = [",
         )
     )
-    result = project.clean(**PRUNE)
+    result = project.compact(**PRUNE)
     # 0004_a isn't in the graph (the squash replaces it), but the loader
     # still resolves its dependency on 0003_remove.
     assert "shop.0003_remove" not in pruned(result)
@@ -277,7 +277,7 @@ def test_squash_blocks(project: Project) -> None:
         )
     )
     project.migration("shop", "0004_qty", QTY)
-    result = project.clean(**PRUNE)
+    result = project.compact(**PRUNE)
     assert pruned(result) == ["shop.0002_add"]
     assert prune_blocks(result)["shop.0003_remove"] == "it is a squashed migration"
 
@@ -303,7 +303,7 @@ def test_unselected_app_not_pruned(project: Project) -> None:
     result = project.check_equivalence("other", **PRUNE)
     assert pruned(result) == []
     assert prune_blocks(result)["shop.0002_nothing"] == "app 'shop' is not selected"
-    result = project.clean("shop.Item.qty", **PRUNE)
+    result = project.compact("shop.Item.qty", **PRUNE)
     assert pruned(result) == ["shop.0002_nothing"]
 
 
@@ -331,13 +331,13 @@ def test_failed_write_restores_deleted_files(
 ) -> None:
     dead_field(project)
     before = project.files()
-    result = project.clean(**PRUNE)
+    result = project.compact(**PRUNE)
 
     def fail(*args: Any) -> None:
         raise VerificationError("boom")
 
     monkeypatch.setattr(core, "verify_on_disk", fail)
-    with project.db_blocker.unblock(), pytest.raises(CleanError, match="restored"):
+    with project.db_blocker.unblock(), pytest.raises(CompactError, match="restored"):
         result.write()
     assert project.files() == before
 
@@ -467,7 +467,7 @@ def test_merge_with_branch_reached_through_other_app(project: Project) -> None:
 
 
 def plan_order(project: Project) -> list[tuple[str, str]]:
-    from django_clean_migrations.history import generate_plan
+    from django_compact_migrations.history import generate_plan
 
     project.purge()
     with project.db_blocker.unblock():
@@ -495,8 +495,8 @@ def test_order_preserved(project: Project) -> None:
 def test_trial_drops_prune_when_it_fails(
     project: Project, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from django_clean_migrations import runner
-    from django_clean_migrations.prune import PruneError
+    from django_compact_migrations import runner
+    from django_compact_migrations.prune import PruneError
 
     dead_field(project)
 
@@ -515,7 +515,7 @@ def test_trial_blames_until_a_plan_passes(
 ) -> None:
     from django.db import migrations
 
-    from django_clean_migrations import trial as trial_module
+    from django_compact_migrations import trial as trial_module
 
     dead_field(project)
 
@@ -525,7 +525,7 @@ def test_trial_blames_until_a_plan_passes(
 
     monkeypatch.setattr(trial_module, "_candidate_hook", sabotage)
     # Every edited migration fails: blamed until nothing is edited.
-    result = project.clean(trial=True, trial_max_runs=1, **PRUNE)
+    result = project.compact(trial=True, trial_max_runs=1, **PRUNE)
     assert result.removals == []
     assert result.verification["dropped"] == []
     assert "no such table: nowhere" in blocked(result)["shop.Item.legacy"][0]
@@ -551,7 +551,7 @@ def test_broken_rewiring_rolled_back(
 ) -> None:
     same_app_shape(project)
     before = project.files()
-    result = project.clean(**PRUNE)
+    result = project.compact(**PRUNE)
 
     # Only the files are wrong (the plan itself is right): the check on a
     # loader that reads them back must catch it, as migrate would.
@@ -561,7 +561,7 @@ def test_broken_rewiring_rolled_back(
         )
         for c in result.files
     ]
-    with project.db_blocker.unblock(), pytest.raises(CleanError) as info:
+    with project.db_blocker.unblock(), pytest.raises(CompactError) as info:
         result.write()
     assert "conflicting migrations" in str(info.value)
     assert project.files() == before
@@ -603,7 +603,7 @@ def source(dependencies: str, operations: str = "", head: str = "") -> str:
 
 
 def unreadable(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
-    from django_clean_migrations import history
+    from django_compact_migrations import history
 
     real = history._read_source
 
@@ -618,7 +618,7 @@ def test_dependant_not_editable(
 ) -> None:
     dead_field(project)
     unreadable(monkeypatch, "0004_qty")
-    result = project.clean(**PRUNE)
+    result = project.compact(**PRUNE)
     assert prune_blocks(result)["shop.0003_remove"] == (
         "shop.0004_qty depends on it and can't be edited"
     )
@@ -631,7 +631,7 @@ def test_empty_migration_not_editable(
     project.migration("shop", "0002_nothing")
     project.migration("shop", "0003_qty", QTY)
     unreadable(monkeypatch, "0002_nothing")
-    result = project.clean(**PRUNE)
+    result = project.compact(**PRUNE)
     assert prune_blocks(result)["shop.0002_nothing"] == (
         "it is not editable (installed package)"
     )
@@ -649,7 +649,7 @@ def test_own_run_before_blocks(project: Project) -> None:
         ),
     )
     project.migration("shop", "0003_qty", QTY)
-    result = project.clean(**PRUNE)
+    result = project.compact(**PRUNE)
     assert prune_blocks(result)["shop.0002_nothing"] == "it has run_before"
 
 
@@ -680,7 +680,7 @@ def test_unreadable_file_not_scanned(
 ) -> None:
     dead_field(project)
     unreadable(monkeypatch, "0001_initial")
-    result = project.clean(**PRUNE)
+    result = project.compact(**PRUNE)
     assert pruned(result) == ["shop.0002_add", "shop.0003_remove"]
 
 
@@ -698,7 +698,7 @@ def test_mentioned_by_module_without_class(project: Project) -> None:
         f'    {{"dependencies": [("shop", "0003_remove")], "operations": [{QTY}]}},\n'
         ")\n",
     )
-    result = project.clean(**PRUNE)
+    result = project.compact(**PRUNE)
     assert "mentioned" in prune_blocks(result)["shop.0003_remove"]
 
 
@@ -729,7 +729,7 @@ def test_dependency_forms(
             dependencies, QTY, head='DEPS = [("shop", "0003_" + "remove")]\n'
         ),
     )
-    result = project.clean(**PRUNE)
+    result = project.compact(**PRUNE)
     if rewritten is None:
         assert "can't be rewritten" in prune_blocks(result)["shop.0003_remove"]
     else:
@@ -804,7 +804,7 @@ settings.configure(
     DATABASES={"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memory:"}},
 )
 django.setup()
-from django_clean_migrations.core import plan
+from django_compact_migrations.core import plan
 
 result = plan(prune=True)
 print(json.dumps({

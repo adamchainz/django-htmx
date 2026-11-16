@@ -1,7 +1,7 @@
 """
 Temporary Django projects with inline migration sources, plus the end-to-end
 equivalence check: migrate a fresh SQLite database with the original and the
-cleaned migrations and compare the introspected schemas.
+compacted migrations and compare the introspected schemas.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from django.db import connections
 from django.db.migrations.executor import MigrationExecutor
 from django.test import override_settings
 
-from django_clean_migrations.core import Result, plan
+from django_compact_migrations.core import Result, plan
 
 IMPORTS = """\
 import django.db.models.deletion
@@ -32,9 +32,9 @@ from django.db import migrations, models
 _counter = itertools.count()
 
 # Most scenarios predate folding and assert exact plans without it. Set
-# CLEANMIG_TEST_FOLD=1 to run them all with folding too: equivalence checks
+# COMPACTMIG_TEST_FOLD=1 to run them all with folding too: equivalence checks
 # must still pass (expected plans then differ).
-FOLD_BY_DEFAULT = os.environ.get("CLEANMIG_TEST_FOLD") == "1"
+FOLD_BY_DEFAULT = os.environ.get("COMPACTMIG_TEST_FOLD") == "1"
 
 
 def migration_source(
@@ -56,7 +56,7 @@ def migration_source(
 
 class Project:
     def __init__(self, root: Path, db_blocker: Any) -> None:
-        self.package = f"cleanmig_{next(_counter)}"
+        self.package = f"compactmig_{next(_counter)}"
         self.root = root
         self.db_blocker = db_blocker
         (root / self.package).mkdir()
@@ -136,7 +136,7 @@ class Project:
         stack.enter_context(
             override_settings(
                 INSTALLED_APPS=[
-                    "django_clean_migrations",
+                    "django_compact_migrations",
                     *(f"{self.package}.{app}" for app in self.apps),
                 ]
             )
@@ -158,7 +158,7 @@ class Project:
 
     # Running
 
-    def clean(self, *targets: str, **options: Any) -> Result:
+    def compact(self, *targets: str, **options: Any) -> Result:
         self.activate()
         self.purge()
         if not FOLD_BY_DEFAULT and "kinds" not in options:
@@ -178,7 +178,7 @@ class Project:
             args = (args[0], "--skip-kind", "fold", *args[1:])
         out, err = StringIO(), StringIO()
         with self.db_blocker.unblock():
-            call_command("clean_migrations", *args, stdout=out, stderr=err, **options)
+            call_command("compact_migrations", *args, stdout=out, stderr=err, **options)
         return out.getvalue(), err.getvalue()
 
     def command_db(self, *args: str, **options: Any) -> tuple[str, str]:
@@ -198,11 +198,11 @@ class Project:
 
     def check_equivalence(self, *targets: str, **options: Any) -> Result:
         """
-        Clean and write, asserting the cleaned history migrates a fresh
+        Compact and write, asserting the compacted history migrates a fresh
         database to exactly the same schema as the original.
         """
         before = self.migrate_schema()
-        result = self.clean(*targets, **options)
+        result = self.compact(*targets, **options)
         result.write()
         after = self.migrate_schema()
         assert after == before

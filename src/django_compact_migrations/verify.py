@@ -17,12 +17,12 @@ from django.db.migrations.state import ModelState, ProjectState
 from django.db.migrations.utils import resolve_relation
 from django.db.migrations.writer import MigrationWriter
 
-from django_clean_migrations.history import Key, generate_plan
-from django_clean_migrations.locate import TOGETHER_OPTIONS, normalize_together
-from django_clean_migrations.ops import INERT, OPAQUE, classify, isolated
+from django_compact_migrations.history import Key, generate_plan
+from django_compact_migrations.locate import TOGETHER_OPTIONS, normalize_together
+from django_compact_migrations.ops import INERT, OPAQUE, classify, isolated
 
 if TYPE_CHECKING:
-    from django_clean_migrations.history import History
+    from django_compact_migrations.history import History
 
 _MODEL_NAME_OPS = frozenset(
     {
@@ -259,11 +259,11 @@ def verify_on_disk(
         if plan != list(original_plan):
             raise VerificationError("the migration graph changed after rewriting")
     else:
-        from django_clean_migrations.prune import ancestor_sets
+        from django_compact_migrations.prune import ancestor_sets
 
         loader.graph.validate_consistency()
         if ends is not None:
-            from django_clean_migrations.prune import PruneError, check_ends
+            from django_compact_migrations.prune import PruneError, check_ends
 
             # What migrate itself checks first, on a loader that just read
             # the rewritten files.

@@ -12,12 +12,12 @@ import pytest
 from django.db.models.signals import pre_migrate
 from django.db.utils import ConnectionHandler
 
-from django_clean_migrations import scratch as scratch_module
-from django_clean_migrations.core import Analysis, CleanError
-from django_clean_migrations.isolate import ChildError, run_isolated
-from django_clean_migrations.runner import RunError
+from django_compact_migrations import scratch as scratch_module
+from django_compact_migrations.core import Analysis, CompactError
+from django_compact_migrations.isolate import ChildError, run_isolated
+from django_compact_migrations.runner import RunError
 from tests.project import Project
-from tests.test_clean import ITEM, kinds
+from tests.test_compact import ITEM, kinds
 from tests.test_trial import history
 
 # Scratch databases
@@ -154,7 +154,7 @@ def test_pre_migrate_sent(project: Project) -> None:
         )
         # pre_migrate is only sent for apps with a models module.
         (project.path("shop").parent / "models.py").write_text("")
-        result = project.clean(trial=True)
+        result = project.compact(trial=True)
     finally:
         pre_migrate.disconnect(dispatch_uid="test_pre_migrate_sent")
     assert result.verification["failures"] == []
@@ -204,7 +204,7 @@ def test_never_worse_than_static(
         migrations.RemoveField("item", "spare"),
         """,
     )
-    static = project.clean()
+    static = project.compact()
     assert ("field", "shop.Item.spare") in kinds(static)
     original = Analysis.solve
 
@@ -218,7 +218,7 @@ def test_never_worse_than_static(
         return original(self, aggressive=aggressive, **kwargs)
 
     monkeypatch.setattr(Analysis, "solve", solve)
-    result = project.clean(trial=True)
+    result = project.compact(trial=True)
     # Candidates are solved on top of the static plan: whatever a trial
     # blocks, the static plan's removals stay.
     assert set(kinds(static)) <= set(kinds(result))
@@ -228,8 +228,8 @@ def test_baseline_error_explains(project: Project) -> None:
     project.migration(
         "shop", "0001_initial", "migrations.RunSQL('SELECT * FROM nope'),"
     )
-    with pytest.raises(CleanError, match="another database alias") as info:
-        project.clean(trial=True)
+    with pytest.raises(CompactError, match="another database alias") as info:
+        project.compact(trial=True)
     assert "nope" in str(info.value)
 
 

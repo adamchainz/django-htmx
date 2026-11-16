@@ -5,9 +5,9 @@ requires = [
 ]
 
 [project]
-name = "django-clean-migrations"
+name = "django-compact-migrations"
 version = "1.0.0"
-description = "Clean up your Django migration history by removing operations that cancel out."
+description = "Compact your Django migration history by removing operations that cancel out."
 readme = "README.rst"
 keywords = [
   "Django",
@@ -41,10 +41,10 @@ dependencies = [
   "tokenize-rt>=6.1",
   "tomli-w>=1.1",
 ]
-urls.Changelog = "https://django-clean-migrations.readthedocs.io/en/latest/changelog.html"
-urls.Documentation = "https://django-clean-migrations.readthedocs.io/"
+urls.Changelog = "https://django-compact-migrations.readthedocs.io/en/latest/changelog.html"
+urls.Documentation = "https://django-compact-migrations.readthedocs.io/"
 urls.Funding = "https://adamj.eu/books/"
-urls.Repository = "https://github.com/adamchainz/django-clean-migrations"
+urls.Repository = "https://github.com/adamchainz/django-compact-migrations"
 
 [dependency-groups]
 test = [
@@ -132,7 +132,7 @@ strict = true
 
 [tool.coverage]
 run.source = [
-  "django_clean_migrations",
+  "django_compact_migrations",
   "tests",
 ]
 # Functions the no-op scan reads but never runs.

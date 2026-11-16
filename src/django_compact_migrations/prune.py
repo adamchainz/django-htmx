@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING
 from django.db.migrations.graph import MigrationGraph
 from django.db.migrations.operations.base import Operation
 
-from django_clean_migrations.history import (
+from django_compact_migrations.history import (
     History,
     Key,
     MigrationInfo,
@@ -30,7 +30,7 @@ from django_clean_migrations.history import (
 )
 
 if TYPE_CHECKING:
-    from django_clean_migrations.solver import Scope
+    from django_compact_migrations.solver import Scope
 
 
 @dataclass

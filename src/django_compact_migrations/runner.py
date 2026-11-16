@@ -26,9 +26,9 @@ from django.db.migrations.migration import Migration
 from django.db.migrations.operations.base import Operation
 from django.db.migrations.state import ProjectState
 
-from django_clean_migrations.history import Key, generate_plan
-from django_clean_migrations.ops import isolated
-from django_clean_migrations.prune import (
+from django_compact_migrations.history import Key, generate_plan
+from django_compact_migrations.ops import isolated
+from django_compact_migrations.prune import (
     PruneError,
     PrunePlan,
     check_ends,

@@ -18,7 +18,7 @@ DATABASES: dict[str, dict[str, Any]] = {
 }
 
 INSTALLED_APPS = [
-    "django_clean_migrations",
+    "django_compact_migrations",
 ]
 
 USE_TZ = True

@@ -26,7 +26,7 @@ from django.conf import settings
 from django.db import connections
 from django.db.backends.base.base import BaseDatabaseWrapper
 
-PREFIX = "cleanmig_"
+PREFIX = "compactmig_"
 _CREATE_DATABASE_VENDORS = frozenset({"postgresql", "mysql"})
 _DUMMY_ENGINE = "django.db.backends.dummy"
 

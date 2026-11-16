@@ -8,8 +8,8 @@ from typing import Any
 import pytest
 from django.db import migrations, models
 
-from django_clean_migrations.history import OpRecord, SourceFile, load_history
-from django_clean_migrations.rewrite import (
+from django_compact_migrations.history import OpRecord, SourceFile, load_history
+from django_compact_migrations.rewrite import (
     FileEdit,
     OpEdit,
     RewriteError,

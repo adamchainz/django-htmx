@@ -20,7 +20,7 @@ from django.db.migrations.migration import Migration
 from django.db.migrations.operations.base import Operation
 from tokenize_rt import Token, src_to_tokens  # type: ignore[import-untyped]
 
-from django_clean_migrations import tokens as tk
+from django_compact_migrations import tokens as tk
 
 Key = tuple[str, str]
 

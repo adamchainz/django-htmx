@@ -1,10 +1,10 @@
 How it works
 ============
 
-This page explains how django-clean-migrations decides what is safe to remove.
+This page explains how django-compact-migrations decides what is safe to remove.
 You don’t need to read it to use the command, but it helps to understand why something was kept, or what the tool can’t know.
 
-The goal is simple: a fresh database migrated with the cleaned history must end up with exactly the same schema as one migrated with the original.
+The goal is simple: a fresh database migrated with the compacted history must end up with exactly the same schema as one migrated with the original.
 Everything below serves that goal, and when the command is unsure, it keeps the operation.
 
 Reading the history
@@ -15,8 +15,8 @@ It then replays every migration in the same order that ``migrate`` would run the
 
 Squashed migrations are applied as Django does: the squashed migration is used, and the migrations it replaces are skipped.
 If replaced migrations are still on disk, the command prints a warning saying how many it skipped.
-They are neither analysed nor edited: only the squashed migration is cleaned.
-That is fine as long as every database has the squashed migration recorded as applied, which is the usual precondition for deleting the replaced files anyway; delete them before or after cleaning.
+They are neither analysed nor edited: only the squashed migration is compacted.
+That is fine as long as every database has the squashed migration recorded as applied, which is the usual precondition for deleting the replaced files anyway; delete them before or after compacting.
 
 Which migrations are edited
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -266,7 +266,7 @@ Before reporting anything, it checks the plan:
 
 It then generates the new source of each file, and checks that it compiles.
 If any of these fail, the command stops with an “Internal error” message, and nothing is written.
-That is a bug in django-clean-migrations, and the message asks you to report it.
+That is a bug in django-compact-migrations, and the message asks you to report it.
 In the meantime you can work around it by excluding the thing involved with ``--exclude``.
 
 When applying, there is a second round after the files are written.
@@ -359,7 +359,7 @@ A run with failures isn’t compared to the baseline, since the skipped operatio
 Each round blocks more removals, then solves again (blocking can cascade through references), until a run is clean and identical to the baseline.
 That final run is what the plan reports.
 
-Scratch databases are created with the backend’s own machinery and named ``cleanmig_<random>_<name>`` (a temporary file on SQLite); every alias is pointed at one for the run, as the test runner does, and they are always dropped.
+Scratch databases are created with the backend’s own machinery and named ``compactmig_<random>_<name>`` (a temporary file on SQLite); every alias is pointed at one for the run, as the test runner does, and they are always dropped.
 Each run happens in a forked child process; the parent creates and drops the databases, and gets back the failures and the snapshot.
 
 The baseline is migrated twice: values that differ between the two runs (per column, else per table, and any schema object) are masked in every later comparison, so they are never blamed on a removal.
@@ -418,7 +418,7 @@ Limitations
 * **Squashed migrations that are still on disk are skipped.**
   Django uses the squashed migration, so that is the one the command processes.
   The migrations it replaces are neither scanned nor edited.
-  Delete them first, once the squash is fully applied everywhere, if you want them cleaned.
+  Delete them first, once the squash is fully applied everywhere, if you want them compacted.
 * **No folding of operations.**
   The command removes operations, but doesn’t merge them.
   An ``AddField`` followed by an ``AlterField`` stays as two operations.
@@ -429,12 +429,12 @@ Limitations
   A custom operation or ``SeparateDatabaseAndState`` that changes state keeps everything it touches.
 * **The name scan is a heuristic**, as described above.
   It can miss a use that is hidden in helpers, dynamic names, or raw SQL built at run time.
-  Review ``RunPython`` and ``RunSQL`` operations that survive near removed things, and test the cleaned history on a fresh database.
+  Review ``RunPython`` and ``RunSQL`` operations that survive near removed things, and test the compacted history on a fresh database.
 * **Equivalence is checked at project-state level.**
   Verification compares Django’s model of your schema, not the schema itself.
   Two histories with the same project state normally build the same database, but it’s possible for them to differ in ways that Django’s state can’t express.
   For example, a ``RunSQL`` that you rely on for its side effect, or database-specific details.
   Diff the schema before and after on a fresh database, as shown in :ref:`verifying-your-schema`.
 * **Existing databases must already be migrated.**
-  The cleaned history is for fresh databases.
+  The compacted history is for fresh databases.
   A database that is only part way through the original history may not end up with the same schema.

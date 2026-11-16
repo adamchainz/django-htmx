@@ -6,10 +6,10 @@ from typing import Any
 
 import pytest
 
-from django_clean_migrations.core import Result
-from django_clean_migrations.fold import _mentions
+from django_compact_migrations.core import Result
+from django_compact_migrations.fold import _mentions
 from tests.project import Project
-from tests.test_clean import ITEM, blocked, kinds
+from tests.test_compact import ITEM, blocked, kinds
 
 FOLD: dict[str, Any] = {"skip_kinds": []}
 
@@ -215,7 +215,7 @@ def test_opaque_scan_blocks_and_trial_unlocks(project: Project) -> None:
         "0003_qty",
         'migrations.AddField("item", "qty", models.IntegerField(default=1)),',
     )
-    assert folds(project.clean(**FOLD)) == []
+    assert folds(project.compact(**FOLD)) == []
     result = project.check_equivalence(trial=True, **FOLD)
     assert [label for label, _ in folds(result)] == ["shop.Item.qty"]
     assert result.verification["unlocked"] == 1
@@ -321,7 +321,7 @@ def test_constraint_scan_uses_model_names(project: Project) -> None:
         migrations.AddConstraint("item", models.CheckConstraint(condition=models.Q(name__gt=""), name="name_set")),
         """,
     )
-    assert folds(project.clean(**FOLD)) == []
+    assert folds(project.compact(**FOLD)) == []
 
 
 def test_index_name_collision(project: Project) -> None:
@@ -475,7 +475,7 @@ def test_blocked_reason_still_reported(project: Project) -> None:
         migrations.RemoveField("item", "legacy"),
         """,
     )
-    result = project.clean(**FOLD)
+    result = project.compact(**FOLD)
     assert "shop.Item.legacy" in blocked(result)
 
 
@@ -1031,7 +1031,7 @@ class TestGuards:
     ) -> None:
         project.migration("shop", "0001_initial", initial)
         unordered(project, first, second)
-        result = project.clean(**FOLD)
+        result = project.compact(**FOLD)
         assert not [d for _, d in folds(result) if "0002_a" in d]
 
     def test_unparseable_together(self, project: Project) -> None:
@@ -1046,7 +1046,7 @@ class TestGuards:
             '        migrations.AlterUniqueTogether("item", {("id", "name")}),\n'
             "    ]\n",
         )
-        assert folds(project.clean(**FOLD)) == []
+        assert folds(project.compact(**FOLD)) == []
 
     def test_model_created_with_removed_field(self, project: Project) -> None:
         # The CreateModel loses an entry: nothing else goes into it in that
@@ -1244,7 +1244,7 @@ class TestGuards:
         project.migration(
             "shop", "0003_alter", f'migrations.AlterField("item", "it", {altered}),'
         )
-        result = project.clean(**FOLD)
+        result = project.compact(**FOLD)
         assert not [d for _, d in folds(result) if d.startswith("AlterField")]
 
     def test_together_cleared(self, project: Project) -> None:
@@ -1310,7 +1310,7 @@ class TestGuards:
             "0002_change",
             f'migrations.RunSQL("SELECT 1 FROM shop_item"),\n{operation},',
         )
-        assert folds(project.clean(**FOLD)) == []
+        assert folds(project.compact(**FOLD)) == []
 
     def test_rename_named_in_options(self, project: Project) -> None:
         project.migration(
@@ -1368,7 +1368,7 @@ class TestGuards:
         project.migration(
             "shop", "0002_rename", 'migrations.RenameField("item", "tags", "labels"),'
         )
-        assert folds(project.clean(**FOLD)) == []
+        assert folds(project.compact(**FOLD)) == []
 
     @pytest.mark.parametrize(
         ("between", "table", "folded"),
@@ -1396,7 +1396,7 @@ class TestGuards:
             "0002_table",
             f'{between}\nmigrations.AlterModelTable("item", {table}),',
         )
-        result = project.clean(**FOLD)
+        result = project.compact(**FOLD)
         assert (
             bool([d for _, d in folds(result) if d.startswith("AlterModelTable")])
             is folded
@@ -1409,7 +1409,7 @@ class TestGuards:
             "0002_unmanaged",
             'migrations.AlterModelOptions("item", {"managed": False}),',
         )
-        assert folds(project.clean(**FOLD)) == []
+        assert folds(project.compact(**FOLD)) == []
 
 
 def test_mentions_unserializable() -> None:

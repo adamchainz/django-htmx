@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from django_clean_migrations.opaque import _source_words, python_words
+from django_compact_migrations.opaque import _source_words, python_words
 from tests.project import Project
-from tests.test_clean import ITEM, blocked, kinds
+from tests.test_compact import ITEM, blocked, kinds
 
 
 def dead_field(project: Project, name: str, ops: str, extra: str = "") -> None:
@@ -56,7 +56,7 @@ class TestPythonWords:
             "migrations.RunPython(forwards),",
             extra=f"def forwards(apps, schema_editor):\n    {body}\n",
         )
-        assert blocked(project.clean())["shop.Item.event"] == (
+        assert blocked(project.compact())["shop.Item.event"] == (
             "RunPython in shop.0002_add mentions 'event'",
         )
 
@@ -68,7 +68,7 @@ class TestPythonWords:
             "migrations.RunPython(migrations.RunPython.noop),",
             extra=f"from {project.package} import event as e",
         )
-        assert blocked(project.clean())["shop.Item.event"] == (
+        assert blocked(project.compact())["shop.Item.event"] == (
             "RunPython in shop.0002_add mentions 'event'",
         )
 
@@ -98,7 +98,7 @@ class TestPythonWords:
                 apps.get_model("shop", "Item")
             """,
         )
-        assert kinds(project.clean()) == [("field", "shop.Item.shop")]
+        assert kinds(project.compact()) == [("field", "shop.Item.shop")]
         assert "shop" in python_words(__import__("ast").parse('get_model("shop.Item")'))
 
     def test_fallback_to_raw_text(self) -> None:
@@ -128,7 +128,7 @@ class TestThirdParty:
         monkeypatch: pytest.MonkeyPatch,
         deps: list[tuple[str, str]],
     ) -> None:
-        from django_clean_migrations import history
+        from django_compact_migrations import history
 
         dead_field(project, "legacy", "")
         project.migration(
@@ -145,14 +145,14 @@ class TestThirdParty:
         self, project: Project, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         self.setup(project, monkeypatch, [("shop", "0001_initial")])
-        assert kinds(project.clean()) == [("field", "shop.Item.legacy")]
-        assert kinds(project.clean(opaque="block")) == [("field", "shop.Item.legacy")]
+        assert kinds(project.compact()) == [("field", "shop.Item.legacy")]
+        assert kinds(project.compact(opaque="block")) == [("field", "shop.Item.legacy")]
 
     def test_descendant_counts(
         self, project: Project, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         self.setup(project, monkeypatch, [("shop", "0002_add")])
-        assert blocked(project.clean())["shop.Item.legacy"] == (
+        assert blocked(project.compact())["shop.Item.legacy"] == (
             "RunSQL in vendor.0001_initial mentions 'legacy'",
         )
 
@@ -186,7 +186,7 @@ class TestPoisoningWidth:
             migrations.DeleteModel("Item"),
             """,
         )
-        result = project.clean()
+        result = project.compact()
         assert kinds(result) == [
             ("field", "shop.Item.legacy"),
             ("superseded", "shop.Item"),
@@ -222,7 +222,7 @@ class TestPoisoningWidth:
             ),
             """,
         )
-        result = project.clean()
+        result = project.compact()
         assert blocked(result)["shop.Item.legacy"] == (
             "ended by SeparateDatabaseAndState in shop.0003_unmount",
         )
@@ -316,7 +316,7 @@ class TestSoftReferences:
     )
     def test_ordering_forms(self, project: Project, ordering: str) -> None:
         self.history(project, ordering, 'apps.get_model("shop", "Item")')
-        assert "shop.Item._name" in blocked(project.clean())
+        assert "shop.Item._name" in blocked(project.compact())
 
     def test_get_latest_by(self, project: Project) -> None:
         project.migration("shop", "0001_initial", ITEM)
@@ -331,7 +331,7 @@ class TestSoftReferences:
             migrations.RemoveField("item", "stamp"),
             """,
         )
-        assert "shop.Item.stamp" in blocked(project.clean())
+        assert "shop.Item.stamp" in blocked(project.compact())
 
     def test_period_outside_query(self, project: Project) -> None:
         # The query runs after the ordering stopped naming the field.
@@ -387,7 +387,7 @@ class TestSoftReferences:
             """,
         )
         assert "shop.Item._name" in blocked(
-            project.clean(skip_kinds=["fold", "superseded"])
+            project.compact(skip_kinds=["fold", "superseded"])
         )
 
     def test_query_through_child_model(self, project: Project) -> None:
@@ -416,5 +416,5 @@ class TestSoftReferences:
             """,
         )
         assert "shop.Item._name" in blocked(
-            project.clean(skip_kinds=["fold", "superseded"])
+            project.compact(skip_kinds=["fold", "superseded"])
         )

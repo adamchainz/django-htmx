@@ -61,7 +61,7 @@ SERVERS: dict[str, dict[str, Any]] = {
 def server_alias(alias: str, db_blocker: Any) -> Iterator[str]:
     """A database alias for a server of compose.yaml (its own database is
     only used for scratch databases' names)."""
-    config = {**SERVERS[alias], "NAME": "cm_dev_tests"}
+    config = {**SERVERS[alias], "NAME": "compactdev_tests"}
     if config["ENGINE"].endswith("mysql"):
         config["NAME"] = "mysql"  # exists on every MySQL-family server
     connections.settings[alias] = connections.configure_settings(

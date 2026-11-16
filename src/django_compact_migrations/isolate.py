@@ -22,7 +22,7 @@ import warnings
 from collections.abc import Callable
 from typing import Any, TypeVar
 
-from django_clean_migrations.scratch import close_everything
+from django_compact_migrations.scratch import close_everything
 
 T = TypeVar("T")
 

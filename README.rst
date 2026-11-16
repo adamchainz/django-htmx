@@ -1,18 +1,18 @@
-=======================
-django-clean-migrations
-=======================
+=========================
+django-compact-migrations
+=========================
 
-.. image:: https://img.shields.io/readthedocs/django-clean-migrations?style=for-the-badge
-   :target: https://django-clean-migrations.readthedocs.io/en/latest/
+.. image:: https://img.shields.io/readthedocs/django-compact-migrations?style=for-the-badge
+   :target: https://django-compact-migrations.readthedocs.io/en/latest/
 
-.. image:: https://img.shields.io/github/actions/workflow/status/adamchainz/django-clean-migrations/main.yml.svg?branch=main&style=for-the-badge
-   :target: https://github.com/adamchainz/django-clean-migrations/actions?workflow=CI
+.. image:: https://img.shields.io/github/actions/workflow/status/adamchainz/django-compact-migrations/main.yml.svg?branch=main&style=for-the-badge
+   :target: https://github.com/adamchainz/django-compact-migrations/actions?workflow=CI
 
 .. image:: https://img.shields.io/badge/Coverage-100%25-success?style=for-the-badge
-   :target: https://github.com/adamchainz/django-clean-migrations/actions?workflow=CI
+   :target: https://github.com/adamchainz/django-compact-migrations/actions?workflow=CI
 
-.. image:: https://img.shields.io/pypi/v/django-clean-migrations.svg?style=for-the-badge
-   :target: https://pypi.org/project/django-clean-migrations/
+.. image:: https://img.shields.io/pypi/v/django-compact-migrations.svg?style=for-the-badge
+   :target: https://pypi.org/project/django-compact-migrations/
 
 .. image:: https://img.shields.io/badge/code%20style-black-000000.svg?style=for-the-badge
    :target: https://github.com/psf/black
@@ -23,7 +23,7 @@ django-clean-migrations
 
 ----
 
-Clean up your Django migration history by removing operations that cancel out.
+Compact your Django migration history by removing operations that cancel out.
 
 ----
 
@@ -32,23 +32,23 @@ Clean up your Django migration history by removing operations that cancel out.
 ----
 
 Over time, migration histories accumulate operations that undo each other: models created then deleted, fields added then removed, indexes and constraints added then dropped, and ``Alter*`` operations that later ones supersede.
-django-clean-migrations scans your project’s migrations and removes such operations, to speed up running migrations from scratch.
+django-compact-migrations scans your project’s migrations and removes such operations, to speed up running migrations from scratch.
 
 Preview the changes with ``plan``, then apply them with ``apply``:
 
 .. code-block:: console
 
-    $ python manage.py clean_migrations plan
-    $ python manage.py clean_migrations apply
+    $ python manage.py compact_migrations plan
+    $ python manage.py compact_migrations apply
 
 Or save the plan to a file, review it, and apply exactly that:
 
 .. code-block:: console
 
-    $ python manage.py clean_migrations plan --output plan.json
-    $ python manage.py clean_migrations apply --plan plan.json
+    $ python manage.py compact_migrations plan --output plan.toml
+    $ python manage.py compact_migrations apply --plan plan.toml
 
 Documentation
 -------------
 
-Please see https://django-clean-migrations.readthedocs.io/.
+Please see https://django-compact-migrations.readthedocs.io/.

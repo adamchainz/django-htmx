@@ -66,7 +66,7 @@ html_theme_options = {
         "admonition-font-size": "100%",
         "admonition-title-font-size": "100%",
     },
-    "source_repository": "https://github.com/adamchainz/django-clean-migrations/",
+    "source_repository": "https://github.com/adamchainz/django-compact-migrations/",
     "source_branch": "main",
     "source_directory": "docs/",
 }
@@ -79,8 +79,8 @@ html_theme_options = {
 latex_documents = [
     (
         "index",
-        "django-clean-migrations.tex",
-        "django-clean-migrations Documentation",
+        "django-compact-migrations.tex",
+        "django-compact-migrations Documentation",
         "Adam Johnson",
         "manual",
     ),

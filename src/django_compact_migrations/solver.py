@@ -9,8 +9,8 @@ from typing import Any
 from django.db.migrations import operations as m
 from django.db.migrations.operations.base import Operation
 
-from django_clean_migrations.backends import describe
-from django_clean_migrations.fold import (
+from django_compact_migrations.backends import describe
+from django_compact_migrations.fold import (
     FOLD_KINDS,
     Fold,
     Folder,
@@ -19,9 +19,9 @@ from django_clean_migrations.fold import (
     referenced_by_fields,
     same_named_objects,
 )
-from django_clean_migrations.history import History
-from django_clean_migrations.opaque import OpaqueIndex, OpaqueOp, Pos, TextBuilder
-from django_clean_migrations.timeline import (
+from django_compact_migrations.history import History
+from django_compact_migrations.opaque import OpaqueIndex, OpaqueOp, Pos, TextBuilder
+from django_compact_migrations.timeline import (
     Element,
     FieldLife,
     Life,

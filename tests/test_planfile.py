@@ -9,10 +9,10 @@ from typing import Any
 import pytest
 from django.core.management import CommandError
 
-from django_clean_migrations.patch import PatchError, apply_diff, make_diff
-from django_clean_migrations.planfile import dumps
+from django_compact_migrations.patch import PatchError, apply_diff, make_diff
+from django_compact_migrations.planfile import dumps
 from tests.project import Project
-from tests.test_clean import ITEM
+from tests.test_compact import ITEM
 
 LEGACY = 'migrations.AddField("item", "legacy", models.IntegerField(default=0)),'
 REMOVE = 'migrations.RemoveField("item", "legacy"),'
@@ -44,7 +44,7 @@ def test_layout(project: Project, tmp_path: Path) -> None:
     project.command("plan", "--prune", "--show-blocked", "-o", str(plan_path))
     text = plan_path.read_text()
     order = [
-        text.index('format = "django-clean-migrations-plan"'),
+        text.index('format = "django-compact-migrations-plan"'),
         text.index("[summary]"),
         text.index("[options]"),
         text.index("[verification]"),
@@ -78,7 +78,7 @@ def test_awkward_content(project: Project, tmp_path: Path) -> None:
         + text.rstrip("\n")
     ).replace("\n", "\r\n")
     path.write_bytes(text.encode("latin-1"))
-    expected = project.clean().files
+    expected = project.compact().files
     (change,) = [c for c in expected if c.path == path]
     data, written = round_trip(project, tmp_path)
     assert written == change.new.encode("latin-1")

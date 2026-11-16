@@ -1,1 +1,1 @@
-See https://django-clean-migrations.readthedocs.io/en/latest/changelog.html
+See https://django-compact-migrations.readthedocs.io/en/latest/changelog.html

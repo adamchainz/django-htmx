@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from django_clean_migrations import core
-from django_clean_migrations.core import CleanError
-from django_clean_migrations.history import SourceFile
+from django_compact_migrations import core
+from django_compact_migrations.core import CompactError
+from django_compact_migrations.history import SourceFile
 from tests.project import Project
-from tests.test_clean import ITEM, blocked, kinds
+from tests.test_compact import ITEM, blocked, kinds
 
 TAG = """
     migrations.CreateModel(
@@ -111,7 +111,7 @@ class TestWriteRestores:
     ) -> None:
         self.dead_field(project)
         before = project.files()
-        result = project.clean()
+        result = project.compact()
         real = core._write_text
         calls = []
 
@@ -123,7 +123,7 @@ class TestWriteRestores:
             real(path, text, encoding)
 
         monkeypatch.setattr(core, "_write_text", flaky)
-        with pytest.raises(CleanError, match="restored: disk full"):
+        with pytest.raises(CompactError, match="restored: disk full"):
             result.write()
         assert project.files() == before
 
@@ -132,7 +132,7 @@ class TestWriteRestores:
     ) -> None:
         self.dead_field(project)
         before = project.files()
-        result = project.clean()
+        result = project.compact()
 
         def interrupt(*args: object) -> None:
             raise KeyboardInterrupt
@@ -144,7 +144,7 @@ class TestWriteRestores:
 
     def test_no_temp_files_left(self, project: Project) -> None:
         self.dead_field(project)
-        project.clean().write()
+        project.compact().write()
         assert sorted(p.name for p in project.path("shop").iterdir()) == [
             "0001_initial.py",
             "0002_add.py",
@@ -213,7 +213,7 @@ class TestReverseNames:
             'migrations.RemoveField("item", "owner"),',
             extra_deps=[("other", "0001_data")],
         )
-        result = project.clean("shop.Item.owner")
+        result = project.compact("shop.Item.owner")
         assert blocked(result)["shop.Item.owner"] == (
             "RunSQL in other.0001_data mentions 'things'",
         )
@@ -276,7 +276,7 @@ class TestElidableScope:
             'migrations.DeleteModel("Coupon"),',
             extra_deps=[("other", "0001_initial")],
         )
-        result = project.clean("shop", exclude=["other"])
+        result = project.compact("shop", exclude=["other"])
         assert blocked(result)["shop.Coupon"] == (
             "elidable RunSQL in other.0001_initial mentions 'coupon' but cannot be"
             " removed: app 'other' is excluded",
@@ -291,7 +291,7 @@ class TestElidableScope:
         project.migration(
             "other", "0001_initial", "migrations.RunSQL('SELECT 2', elidable=True),"
         )
-        result = project.clean(elidable=True, exclude=["other"])
+        result = project.compact(elidable=True, exclude=["other"])
         assert kinds(result) == [("elidable", "shop")]
         assert (
             result.removals[0].description
@@ -317,7 +317,7 @@ def test_dependency_names_not_scanned(project: Project) -> None:
 def test_excluded_child_blocks_model(project: Project) -> None:
     project.migration("shop", "0001_initial", ITEM + COUPON)
     project.migration("shop", "0002_drop", 'migrations.DeleteModel("Coupon"),')
-    result = project.clean(exclude=["shop.Coupon.code"])
+    result = project.compact(exclude=["shop.Coupon.code"])
     assert result.removals == []
     assert blocked(result)["shop.Coupon"] == (
         "it contains the excluded field shop.Coupon.code",
@@ -365,7 +365,7 @@ def test_non_ascii_names(project: Project) -> None:
         """,
     )
     project.migration("shop", "0003_remove", 'migrations.RemoveField("item", "имя"),')
-    result = project.clean()
+    result = project.compact()
     assert blocked(result)["shop.Item.имя"] == (
         "RunPython in shop.0002_add mentions 'имя'",
     )
@@ -400,23 +400,23 @@ def test_unusual_line_breaks_in_migration(project: Project) -> None:
 class TestUnknownTargets:
     def test_model(self, project: Project) -> None:
         project.migration("shop", "0001_initial", ITEM)
-        with pytest.raises(CleanError, match="No model matching 'shop.Nope'"):
-            project.clean("shop.Nope")
+        with pytest.raises(CompactError, match="No model matching 'shop.Nope'"):
+            project.compact("shop.Nope")
 
     def test_field(self, project: Project) -> None:
         project.migration("shop", "0001_initial", ITEM)
-        with pytest.raises(CleanError, match="No field matching 'shop.Item.nope'"):
-            project.clean("shop.Item.nope")
+        with pytest.raises(CompactError, match="No field matching 'shop.Item.nope'"):
+            project.compact("shop.Item.nope")
 
     def test_exclude(self, project: Project) -> None:
         project.migration("shop", "0001_initial", ITEM)
-        with pytest.raises(CleanError, match="No model matching 'shop.Nope'"):
-            project.clean(exclude=["shop.Nope"])
+        with pytest.raises(CompactError, match="No model matching 'shop.Nope'"):
+            project.compact(exclude=["shop.Nope"])
 
     def test_old_names_ok(self, project: Project) -> None:
         project.migration("shop", "0001_initial", ITEM)
         project.migration("shop", "0002_drop", 'migrations.DeleteModel("Item"),')
-        assert project.clean("shop.Item.name").removals == []
+        assert project.compact("shop.Item.name").removals == []
 
 
 def test_bom_kept(project: Project) -> None:

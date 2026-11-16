@@ -20,8 +20,8 @@ from django.db.migrations.loader import MigrationLoader
 from django.db.migrations.operations.base import Operation
 from django.db.migrations.state import ProjectState
 
-from django_clean_migrations import backends
-from django_clean_migrations.history import (
+from django_compact_migrations import backends
+from django_compact_migrations.history import (
     History,
     Key,
     OpRecord,
@@ -30,9 +30,9 @@ from django_clean_migrations.history import (
     load_history,
     read_python,
 )
-from django_clean_migrations.locate import locate_create_model, locate_together_op
-from django_clean_migrations.opaque import TextBuilder
-from django_clean_migrations.prune import (
+from django_compact_migrations.locate import locate_create_model, locate_together_op
+from django_compact_migrations.opaque import TextBuilder
+from django_compact_migrations.prune import (
     PruneError,
     PrunePlan,
     ancestor_sets,
@@ -40,7 +40,7 @@ from django_clean_migrations.prune import (
     plan_prune,
     rewrite_dependencies,
 )
-from django_clean_migrations.rewrite import (
+from django_compact_migrations.rewrite import (
     OpEdit,
     RewriteError,
     derive_op_edit,
@@ -49,7 +49,7 @@ from django_clean_migrations.rewrite import (
     rewrite_source,
     unchanged,
 )
-from django_clean_migrations.solver import (
+from django_compact_migrations.solver import (
     OPAQUE_POLICIES,
     Scope,
     SelectionError,
@@ -58,7 +58,7 @@ from django_clean_migrations.solver import (
     Unit,
     kinds_from,
 )
-from django_clean_migrations.timeline import (
+from django_compact_migrations.timeline import (
     Element,
     FieldLife,
     Life,
@@ -67,7 +67,7 @@ from django_clean_migrations.timeline import (
     TogetherLife,
     describe_sub,
 )
-from django_clean_migrations.verify import (
+from django_compact_migrations.verify import (
     VerificationError,
     state_from_disk,
     verify_in_memory,
@@ -76,7 +76,7 @@ from django_clean_migrations.verify import (
 
 __all__ = [
     "Blocked",
-    "CleanError",
+    "CompactError",
     "Location",
     "Removal",
     "Result",
@@ -85,7 +85,7 @@ __all__ = [
 ]
 
 
-class CleanError(Exception):
+class CompactError(Exception):
     """Invalid options or an unusable migration history."""
 
 
@@ -204,7 +204,7 @@ class Result:
         Write the plan as a reviewable TOML file for ``load_plan()``;
         ``blocked`` includes what was kept and why.
         """
-        from django_clean_migrations.planfile import save_plan
+        from django_compact_migrations.planfile import save_plan
 
         save_plan(self, Path(path), blocked=blocked)
 
@@ -212,7 +212,7 @@ class Result:
         """
         Write the rewritten files, then reload them from disk and check the
         resulting project state; on any failure restore every file and raise
-        CleanError.
+        CompactError.
 
         For a loaded plan, every file must still have the content the plan
         was made from.
@@ -223,7 +223,7 @@ class Result:
             try:
                 _, plan_keys, final_state = state_from_disk()
             except Exception as exc:
-                raise CleanError(f"Could not load migrations: {exc}") from exc
+                raise CompactError(f"Could not load migrations: {exc}") from exc
         else:
             plan_keys, final_state = self._plan_keys, self._final_state
         pruned = {c.migration for c in self.files if c.deleted}
@@ -235,7 +235,7 @@ class Result:
             try:
                 loader = MigrationLoader(None, ignore_no_migrations=True)
             except Exception as exc:
-                raise CleanError(f"Could not load migrations: {exc}") from exc
+                raise CompactError(f"Could not load migrations: {exc}") from exc
             survivors = [k for k in loader.graph.nodes if k not in pruned]
             ancestors = {
                 k: frozenset(v - pruned)
@@ -266,13 +266,13 @@ class Result:
                     unrestored.append(f"{change.path} ({restore_exc})")
             _forget(self.files)
             if unrestored:
-                raise CleanError(
+                raise CompactError(
                     f"Writing the migration files failed ({exc!r}) and these"
                     f" could not be restored: {', '.join(unrestored)}."
                 ) from exc
             if not isinstance(exc, Exception):
                 raise
-            raise CleanError(
+            raise CompactError(
                 "Writing or verifying the rewritten migration files failed, so"
                 f" they were restored: {exc}. Please report this as a bug."
             ) from exc
@@ -288,7 +288,7 @@ class Result:
             if hashlib.sha256(current).hexdigest() != change.sha256_before:
                 stale.append(str(change.path))
         if stale:
-            raise CleanError(
+            raise CompactError(
                 "These migration files changed since the plan was made, so"
                 f" nothing was written: {', '.join(stale)}. Make a new plan."
             )
@@ -422,19 +422,19 @@ def plan(
 ) -> Result:
     """
     Analyse the whole migration history and plan removals. Nothing is written;
-    call ``Result.write()`` to apply. Raises CleanError on invalid options or
+    call ``Result.write()`` to apply. Raises CompactError on invalid options or
     if the planned edit fails verification.
 
     With ``trial``, removals blocked only by the opaque-operation name scan
     are tried for real on scratch databases of ``database``'s backend (see
-    ``django_clean_migrations.trial``). ``noop_data`` (implies ``trial``)
+    ``django_compact_migrations.trial``). ``noop_data`` (implies ``trial``)
     also removes data migrations that do nothing on a fresh database.
     ``prune`` deletes migrations left with no operations, rewiring their
-    dependants (see ``django_clean_migrations.prune``).
+    dependants (see ``django_compact_migrations.prune``).
     """
     if noop_data:
         if opaque != "scan":
-            raise CleanError(
+            raise CompactError(
                 "--noop-data implies --trial, which can't be combined with --opaque."
             )
         trial = True
@@ -451,7 +451,7 @@ def plan(
     if trial_ignore_column_order:
         analysis.options["trial_ignore_column_order"] = True
     if trial:
-        from django_clean_migrations.trial import run_trial
+        from django_compact_migrations.trial import run_trial
 
         result: Result = run_trial(
             analysis,
@@ -619,7 +619,7 @@ class Analysis:
             try:
                 timeline.replay()
             except Exception as exc:
-                raise CleanError(
+                raise CompactError(
                     f"Internal error: the folded history doesn't replay ({exc})."
                     " No files were changed. Please report this as a bug, and use"
                     " --skip-kind fold to work around it."
@@ -646,23 +646,23 @@ def analyse(
     elidable: bool = False,
 ) -> Analysis:
     if opaque not in OPAQUE_POLICIES:
-        raise CleanError(f"Unknown opaque policy {opaque!r}.")
+        raise CompactError(f"Unknown opaque policy {opaque!r}.")
     try:
         kind_set = kinds_from(kinds, skip_kinds)
     except SelectionError as exc:
-        raise CleanError(str(exc)) from exc
+        raise CompactError(str(exc)) from exc
 
     try:
         history = load_history()
     except Exception as exc:
-        raise CleanError(f"Could not load migrations: {exc}") from exc
+        raise CompactError(f"Could not load migrations: {exc}") from exc
 
     app_labels = [a.label for a in apps.get_app_configs()]
     try:
         target_list = [Target.parse(t, app_labels) for t in targets]
         exclude_list = [Target.parse(t, app_labels) for t in exclude]
     except SelectionError as exc:
-        raise CleanError(str(exc)) from exc
+        raise CompactError(str(exc)) from exc
     default_apps = frozenset(m.app_label for m in history.migrations if m.editable)
     scope = Scope(target_list, exclude_list, kind_set, default_apps)
 
@@ -670,13 +670,13 @@ def analyse(
     try:
         timeline.replay()
     except Exception as exc:
-        raise CleanError(str(exc)) from exc
+        raise CompactError(str(exc)) from exc
     for text, target in [*zip(targets, target_list), *zip(exclude, exclude_list)]:
         if target.model is not None and not any(
             _matches_entity(target, life) for life in timeline.lives
         ):
             what = "field" if target.field is not None else "model"
-            raise CleanError(
+            raise CompactError(
                 f"No {what} matching {text!r} exists anywhere in the migration history."
             )
     return Analysis(
@@ -718,7 +718,7 @@ def build(analysis: Analysis, solution: Solution) -> Built:
     try:
         verify_in_memory(history, edited_ops, timeline.dangling, timeline.state)
     except VerificationError as exc:
-        raise CleanError(
+        raise CompactError(
             f"Internal error: {exc}. No files were changed. Please report this as a"
             " bug, and use --exclude to work around it."
         ) from exc
@@ -763,7 +763,7 @@ def make_result(analysis: Analysis, solution: Solution, built: Built) -> Result:
             new_text = rewrite_source(info.source, op_edits)
             compile(new_text, str(info.path), "exec")
         except (SyntaxError, RewriteError) as exc:
-            raise CleanError(
+            raise CompactError(
                 f"Internal error: rewriting {info.label} failed ({exc}). No files"
                 " were changed. Please report this as a bug."
             ) from exc
@@ -786,7 +786,7 @@ def make_result(analysis: Analysis, solution: Solution, built: Built) -> Result:
                 text = rewrite_dependencies(text, info, prune.removed[key], added)
                 compile(text, str(info.path), "exec")
             except (SyntaxError, PruneError) as exc:
-                raise CleanError(
+                raise CompactError(
                     f"Internal error: rewiring {info.label} failed ({exc}). No"
                     " files were changed. Please report this as a bug."
                 ) from exc
@@ -844,7 +844,7 @@ def prune_plan(analysis: Analysis, built: Built) -> PrunePlan:
     try:
         return plan_prune(analysis.history, built.edited_ops, analysis.scope)
     except PruneError as exc:
-        raise CleanError(
+        raise CompactError(
             f"Internal error: {exc}. No files were changed. Please report this"
             " as a bug, and leave out --prune to work around it."
         ) from exc
@@ -1174,6 +1174,6 @@ def _describe_short(life: Life) -> str:
 
 def load_plan(path: str | os.PathLike[str]) -> Result:
     """Read a plan saved with ``Result.save()``; ``write()`` applies it."""
-    from django_clean_migrations.planfile import load_plan as _load
+    from django_compact_migrations.planfile import load_plan as _load
 
     return _load(Path(path))

@@ -20,17 +20,17 @@ from django.db.migrations.utils import resolve_relation
 from django.db.models.expressions import F
 from django.db.models.query_utils import Q
 
-from django_clean_migrations import backends
-from django_clean_migrations.history import History, HistoryError, Key, OpRecord
-from django_clean_migrations.locate import (
+from django_compact_migrations import backends
+from django_compact_migrations.history import History, HistoryError, Key, OpRecord
+from django_compact_migrations.locate import (
     TOGETHER_OPTIONS,
     Entry,
     check_sub_elements,
     normalize_together,
 )
-from django_clean_migrations.opaque import OpaqueOp, Pos
-from django_clean_migrations.ops import INERT, OPAQUE, classify, isolated
-from django_clean_migrations.verify import DanglingTracker
+from django_compact_migrations.opaque import OpaqueOp, Pos
+from django_compact_migrations.ops import INERT, OPAQUE, classify, isolated
+from django_compact_migrations.verify import DanglingTracker
 
 _ids = itertools.count()
 

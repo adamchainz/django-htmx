@@ -1,12 +1,12 @@
 Usage
 =====
 
-django-clean-migrations adds one management command, ``clean_migrations``, with subcommands:
+django-compact-migrations adds one management command, ``compact_migrations``, with subcommands:
 
-* ``clean_migrations plan`` analyses the history and reports what can be removed, optionally saving a plan file.
-* ``clean_migrations apply`` edits the migration files, either from a saved plan file or after analysing in one go.
+* ``compact_migrations plan`` analyses the history and reports what can be removed, optionally saving a plan file.
+* ``compact_migrations apply`` edits the migration files, either from a saved plan file or after analysing in one go.
 
-Running ``clean_migrations`` without a subcommand prints the help.
+Running ``compact_migrations`` without a subcommand prints the help.
 It reads your whole migration history and removes operations that cancel each other out, such as a model that is created and later deleted, or a field that is added and later removed.
 The migration files are edited in place: same files, same names, same dependencies, fewer operations.
 
@@ -18,7 +18,7 @@ This is the same caveat as when squashing migrations.
 The command edits migrations that other databases have already recorded as applied.
 If a database is only partway through the history, removing operations from the middle can leave it with a schema that doesn’t match what the later migrations expect.
 
-So, before running ``clean_migrations apply``:
+So, before running ``compact_migrations apply``:
 
 * Make sure production, staging, and any shared databases are up to date.
 * Commit your work, so you can review and revert the changes with Git.
@@ -41,7 +41,7 @@ It doesn’t touch any files:
 
 .. code-block:: console
 
-    $ python manage.py clean_migrations plan
+    $ python manage.py compact_migrations plan
     blog
       Post
         spam_score      field       0001_initial -> 0002_tidy               2 operations
@@ -54,7 +54,7 @@ It doesn’t touch any files:
         legacy_ref      field       0002_coupon_legacy_ref -> 0004_cleanup  2 operations
         sku             superseded  0003_widen_sku -> 0004_cleanup           1 operation
     Would remove 11 operations and edit 1 operation in 5 migration files. 2 migrations would be left with no operations.
-    Run 'clean_migrations apply' to apply.
+    Run 'compact_migrations apply' to apply.
 
 Removals are grouped by app, then by model.
 Each line names the thing that would be removed, its kind, the migrations where it appeared and disappeared, and how many operations are involved.
@@ -67,7 +67,7 @@ When you are happy with the plan, apply it with ``apply``, which takes the same 
 
 .. code-block:: console
 
-    $ python manage.py clean_migrations apply
+    $ python manage.py compact_migrations apply
     ...
     Removed 11 operations and edited 1 operation in 5 migration files. 2 migrations now have no operations.
 
@@ -75,7 +75,7 @@ Running ``plan`` again then reports that there’s nothing left to do:
 
 .. code-block:: console
 
-    $ python manage.py clean_migrations plan
+    $ python manage.py compact_migrations plan
     No operations to remove.
 
 Plan files
@@ -85,8 +85,8 @@ Plan files
 
 .. code-block:: console
 
-    $ python manage.py clean_migrations plan --output plan.toml
-    $ python manage.py clean_migrations apply --plan plan.toml
+    $ python manage.py compact_migrations plan --output plan.toml
+    $ python manage.py compact_migrations apply --plan plan.toml
 
 That lets you review the plan, or make it in CI and apply it elsewhere.
 The file reads top-down: what the plan does and how it was checked, then each removal, then the files, each edit as a unified diff.
@@ -94,10 +94,10 @@ A shortened example:
 
 .. code-block:: toml
 
-    format = "django-clean-migrations-plan"
+    format = "django-compact-migrations-plan"
     version = 2
     tool_version = "1.0.0"
-    tool_path = "/home/me/venv/lib/python3.13/site-packages/django_clean_migrations"
+    tool_path = "/home/me/venv/lib/python3.13/site-packages/django_compact_migrations"
     created = "2026-11-14T17:40:02+00:00"
     warnings = []
 
@@ -189,7 +189,7 @@ A shortened example:
 
 With ``--show-blocked``, the file also lists what was kept and why (``[[blocked]]``).
 With ``--prune``, deleted files are listed under ``[[deleted]]``, with the hash of their content.
-Paths are relative to the plan file, and ``tool_path`` says which copy of django-clean-migrations made the plan.
+Paths are relative to the plan file, and ``tool_path`` says which copy of django-compact-migrations made the plan.
 
 ``apply --plan`` finds each file through its module, as Python imports it now, so it can be run from any directory.
 It refuses to write anything if any file changed since the plan was made (its SHA-256 hash differs), if a diff doesn’t apply exactly (no fuzz: every context and removed line must match where the hunk says), or if applying it doesn’t give the file the plan was made for (``sha256_after``).
@@ -206,14 +206,14 @@ Migrations installed from third-party packages are read, because their operation
 Targets
 -------
 
-Pass one or more targets to limit the cleaning to part of your project.
+Pass one or more targets to limit the compacting to part of your project.
 Targets are case-insensitive and can be an app label, a model, or a field:
 
 .. code-block:: console
 
-    $ python manage.py clean_migrations plan shop
-    $ python manage.py clean_migrations plan shop.Coupon
-    $ python manage.py clean_migrations plan shop.Product.legacy_ref
+    $ python manage.py compact_migrations plan shop
+    $ python manage.py compact_migrations plan shop.Coupon
+    $ python manage.py compact_migrations plan shop.Product.legacy_ref
 
 * ``app`` selects everything in that app.
 * ``app.Model`` selects the model and everything belonging to it: its fields, indexes, constraints, ``unique_together`` and ``index_together`` entries, and superseded operations.
@@ -236,7 +236,7 @@ Excluding a field, for example ``shop.Coupon.code``, also keeps its model, since
 
 .. code-block:: console
 
-    $ python manage.py clean_migrations plan --exclude shop.Coupon --exclude blog
+    $ python manage.py compact_migrations plan --exclude shop.Coupon --exclude blog
 
 A target or exclusion naming a model or field that never existed in the migration history is an error, so typos don’t silently select nothing.
 Old names count: a model or field matches any name it had.
@@ -253,7 +253,7 @@ Use ``--kind``, repeated as needed, to only consider some of them:
 
 .. code-block:: console
 
-    $ python manage.py clean_migrations plan --kind field --kind index
+    $ python manage.py compact_migrations plan --kind field --kind index
 
 The default is all kinds.
 ``--skip-kind``, also repeatable, leaves some out instead, for example ``--skip-kind fold``.
@@ -289,7 +289,7 @@ Folded operations are reported against the thing they change, from the deleted o
 
 .. code-block:: console
 
-    $ python manage.py clean_migrations plan -v 2
+    $ python manage.py compact_migrations plan -v 2
     shop
       Product
         price  fold  0007_alter_price -> 0002_product_price  1 operation
@@ -354,7 +354,7 @@ In this example, the data fix in ``0003_widen_sku`` mentions ``Coupon``, so it i
 
 .. code-block:: console
 
-    $ python manage.py clean_migrations plan
+    $ python manage.py compact_migrations plan
     ...
     shop
       RunPython         elidable    0003_widen_sku                           1 operation  (mentions 'coupon', removed with shop.Coupon)
@@ -365,7 +365,7 @@ Second, with ``--elidable``, *every* elidable ``RunPython`` and ``RunSQL`` opera
 
 .. code-block:: console
 
-    $ python manage.py clean_migrations plan --elidable
+    $ python manage.py compact_migrations plan --elidable
 
 This is the same as dropping them while squashing.
 Only operations that don’t change the project state are removed.
@@ -379,7 +379,7 @@ This lets you fail a CI job when new redundant operations creep in:
 
 .. code-block:: console
 
-    $ python manage.py clean_migrations plan --check
+    $ python manage.py compact_migrations plan --check
     $ echo $?
     1
 
@@ -393,7 +393,7 @@ Add ``--show-blocked`` to also list things that cancel out in the history but we
 
 .. code-block:: console
 
-    $ python manage.py clean_migrations plan --show-blocked
+    $ python manage.py compact_migrations plan --show-blocked
     ...
     Blocked
       shop.Product.rank  field added in 0002_coupon_legacy_ref, removed in 0004_cleanup
@@ -413,14 +413,14 @@ The output also depends on the verbosity (``-v``):
 
   .. code-block:: console
 
-      $ python manage.py clean_migrations plan -v 2 blog.Post.spam_score
+      $ python manage.py compact_migrations plan -v 2 blog.Post.spam_score
       blog
         Post
           spam_score  field  0001_initial -> 0002_tidy  2 operations
             blog/migrations/0001_initial.py:15  CreateModel (field 'spam_score')
             blog/migrations/0002_tidy.py:10  RemoveField
       Would remove 1 operation and edit 1 operation in 2 migration files.
-      Run 'clean_migrations apply' to apply.
+      Run 'compact_migrations apply' to apply.
 
 Warnings, such as migrations skipped because a squashed migration replaces them, go to stderr.
 
@@ -470,10 +470,10 @@ By default, the command decides whether a data migration (``RunPython``, ``RunSQ
 
 .. code-block:: console
 
-    $ python manage.py clean_migrations plan --trial --output plan.toml
+    $ python manage.py compact_migrations plan --trial --output plan.toml
     ...
     Trial: 5 migrate runs on PostgreSQL in 141.7s; unlocked 212 removals of 221 that the static scan blocks, blocked 9 on evidence.
-    $ python manage.py clean_migrations apply --plan plan.toml
+    $ python manage.py compact_migrations apply --plan plan.toml
 
 It works like this:
 
@@ -549,7 +549,7 @@ Once operations are removed and folded, many migrations are left with no operati
 
 .. code-block:: console
 
-    $ python manage.py clean_migrations apply --prune
+    $ python manage.py compact_migrations apply --prune
     ...
     shop
       Migration  prune  0002_add  (dependants rewired: shop.0004_qty)
@@ -595,7 +595,7 @@ On a fresh database there are no such rows, so they run a few ``SELECT`` queries
 
 .. code-block:: console
 
-    $ python manage.py clean_migrations plan --noop-data
+    $ python manage.py compact_migrations plan --noop-data
     ...
     shop
       RunPython  noop  0042_backfill_x  1 operation  (no writes on a fresh PostgreSQL database: 3 queries)
@@ -632,12 +632,12 @@ The plan file lists them under ``verification.noop``, with what was observed.
 Profiling migrations
 --------------------
 
-``clean_migrations profile`` shows where the time goes when migrating from scratch.
+``compact_migrations profile`` shows where the time goes when migrating from scratch.
 It creates an empty scratch database, runs the whole history on it with Django’s migration executor, prints timings, and drops the database:
 
 .. code-block:: console
 
-    $ python manage.py clean_migrations profile --top 5
+    $ python manage.py compact_migrations profile --top 5
     Migrated 412 migrations in 68.50s on PostgreSQL: 14.85s in the database, 47.20s updating the project state, 6.45s other.
     Slowest 5 migrations
     ...
@@ -665,7 +665,7 @@ The removable estimate counts both database and project state time of the operat
 ``--json`` prints the same report as JSON.
 
 The scratch database uses the backend and settings of the ``default`` database, or of ``--database ALIAS``.
-For SQLite it is a temporary file; for PostgreSQL and MySQL a new database named ``cleanmig_<random>_<name>`` is created next to the real one, so the database user needs permission to create databases, as for running tests.
+For SQLite it is a temporary file; for PostgreSQL and MySQL a new database named ``compactmig_<random>_<name>`` is created next to the real one, so the database user needs permission to create databases, as for running tests.
 
 While migrating, *every* configured database alias is pointed at a scratch database, as Django’s test runner does, so no project code can reach a real database:
 
@@ -681,7 +681,7 @@ Each migrate run happens in a child process of its own (``os.fork()``), which en
 Where ``os.fork()`` doesn’t exist (Windows), runs happen in-process, with a warning.
 
 Only a hard kill (``SIGKILL``, a crash of the machine) can leave a scratch database behind.
-``clean_migrations scratch`` lists any on the server (or, for SQLite, in the temporary directory), and ``--drop NAME`` or ``--drop-all`` drops them.
+``compact_migrations scratch`` lists any on the server (or, for SQLite, in the temporary directory), and ``--drop NAME`` or ``--drop-all`` drops them.
 Other trial or profile runs against the same server use scratch databases too, so only drop those you know are left over.
 
 Verifying your schema
@@ -694,17 +694,17 @@ For example, with PostgreSQL, before running ``apply``:
 
 .. code-block:: console
 
-    $ dropdb --if-exists clean_check && createdb clean_check
-    $ DATABASE_URL=postgres:///clean_check python manage.py migrate
-    $ pg_dump --schema-only --no-owner clean_check > /tmp/before.sql
+    $ dropdb --if-exists compact_check && createdb compact_check
+    $ DATABASE_URL=postgres:///compact_check python manage.py migrate
+    $ pg_dump --schema-only --no-owner compact_check > /tmp/before.sql
 
-Then run ``clean_migrations apply``, and repeat on a fresh database:
+Then run ``compact_migrations apply``, and repeat on a fresh database:
 
 .. code-block:: console
 
-    $ dropdb clean_check && createdb clean_check
-    $ DATABASE_URL=postgres:///clean_check python manage.py migrate
-    $ pg_dump --schema-only --no-owner clean_check > /tmp/after.sql
+    $ dropdb compact_check && createdb compact_check
+    $ DATABASE_URL=postgres:///compact_check python manage.py migrate
+    $ pg_dump --schema-only --no-owner compact_check > /tmp/after.sql
     $ diff /tmp/before.sql /tmp/after.sql
 
 Adjust the commands to the way your project selects its database.

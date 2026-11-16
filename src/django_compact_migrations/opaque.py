@@ -13,8 +13,8 @@ from typing import Any
 from django.db.migrations.operations import RunPython, RunSQL, SeparateDatabaseAndState
 from django.db.migrations.operations.base import Operation
 
-from django_clean_migrations.history import History, MigrationInfo, OpRecord
-from django_clean_migrations.ops import OPAQUE, classify
+from django_compact_migrations.history import History, MigrationInfo, OpRecord
+from django_compact_migrations.ops import OPAQUE, classify
 
 Pos = tuple[int, int]
 """(plan index of migration, operation index)."""

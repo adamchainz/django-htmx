@@ -1,7 +1,7 @@
-django-clean-migrations documentation
-=====================================
+django-compact-migrations documentation
+=======================================
 
-*Clean up your Django migration history by removing operations that cancel out.*
+*Compact your Django migration history by removing operations that cancel out.*
 
 ----
 
@@ -9,7 +9,7 @@ django-clean-migrations documentation
 
 ----
 
-Welcome to the documentation for django-clean-migrations.
+Welcome to the documentation for django-compact-migrations.
 This package provides a management command that removes redundant operations from your project’s migration history, to speed up running migrations from scratch.
 
 .. toctree::
