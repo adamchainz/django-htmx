@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import dataclasses
+import json
+import os
+import subprocess
+import sys
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -787,3 +791,69 @@ def test_dependant_already_after_parent(project: Project) -> None:
     text = project.read("shop", "0004_qty")
     assert "0001_initial" in text and "0003_remove" not in text
     assert text.count("0001_initial") == 1
+
+
+PRUNE_IN_SUBPROCESS = """
+import json, sys
+import django
+from django.conf import settings
+
+sys.path.insert(0, sys.argv[1])
+settings.configure(
+    INSTALLED_APPS=[f"{sys.argv[2]}.shop", f"{sys.argv[2]}.other"],
+    DATABASES={"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memory:"}},
+)
+django.setup()
+from django_clean_migrations.core import plan
+
+result = plan(prune=True)
+print(json.dumps({
+    "pruned": sorted(".".join(k) for k in result.pruned_migrations),
+    "files": {str(c.migration[1]): c.new for c in result.files if not c.deleted},
+}))
+"""
+
+
+def test_prune_independent_of_hash_seed(project: Project) -> None:
+    # other.0002_c depends on the empty shop.0003_p, which depends on both
+    # shop.0001 and shop.0002 (itself after shop.0001). Inheriting both is
+    # redundant: walked latest first, only shop.0002 is added; Django's
+    # node sets used to give either, depending on string hashing.
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration("shop", "0002_q", 'migrations.RunSQL("SELECT 1"),')
+    project.migration(
+        "shop", "0003_p", deps=[("shop", "0002_q"), ("shop", "0001_initial")]
+    )
+    project.migration("shop", "0004_last", 'migrations.RunSQL("SELECT 1"),')
+    project.migration("other", "0001_initial", 'migrations.RunSQL("SELECT 1"),')
+    project.migration(
+        "other",
+        "0002_c",
+        'migrations.RunSQL("SELECT 2"),',
+        deps=[("other", "0001_initial"), ("shop", "0003_p")],
+    )
+    outputs = set()
+    for seed in ("0", "1", "2", "3", "123"):
+        outputs.add(
+            subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    PRUNE_IN_SUBPROCESS,
+                    str(project.root),
+                    project.package,
+                ],
+                env={**os.environ, "PYTHONHASHSEED": seed},
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout
+        )
+    (output,) = outputs
+    result = json.loads(output)
+    assert result["pruned"] == ["shop.0003_p"]
+    dependencies = result["files"]["0002_c"].split("dependencies = [")[1].split("]")[0]
+    assert [line.strip() for line in dependencies.strip().splitlines()] == [
+        "('other', '0001_initial'),",
+        '("shop", "0002_q"),',
+    ]
