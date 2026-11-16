@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import tomllib
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -18,7 +17,7 @@ def folds(result: Result) -> list[tuple[str, str]]:
     return sorted((r.label, r.description) for r in result.removals if r.kind == "fold")
 
 
-def test_add_field_into_create_model(project: Project) -> None:
+def test_add_field_into_create_model(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
         "shop",
@@ -52,7 +51,7 @@ def test_add_field_into_create_model(project: Project) -> None:
     assert "operations = []" in project.read("shop", "0002_qty")
 
 
-def test_alter_field_into_add_field_with_one_off_default(project: Project) -> None:
+def test_alter_field_into_add_field_with_one_off_default(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
         "shop",
@@ -81,7 +80,7 @@ def test_alter_field_into_add_field_with_one_off_default(project: Project) -> No
     assert "operations = []" in project.read("shop", "0003_qty")
 
 
-def test_chain_into_create_model(project: Project) -> None:
+def test_chain_into_create_model(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
         "shop",
@@ -101,7 +100,7 @@ def test_chain_into_create_model(project: Project) -> None:
     )
 
 
-def test_order_stops_at_first_unfoldable(project: Project) -> None:
+def test_order_stops_at_first_unfoldable(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
         "shop",
@@ -120,7 +119,7 @@ def test_order_stops_at_first_unfoldable(project: Project) -> None:
     assert folds(result) == []
 
 
-def test_retarget_makes_model_dead(project: Project) -> None:
+def test_retarget_makes_model_dead(project):
     project.migration(
         "shop",
         "0001_initial",
@@ -149,7 +148,7 @@ def test_retarget_makes_model_dead(project: Project) -> None:
     ]
 
 
-def test_retarget_to_later_model_blocked(project: Project) -> None:
+def test_retarget_to_later_model_blocked(project):
     project.migration(
         "shop",
         "0001_initial",
@@ -174,7 +173,7 @@ def test_retarget_to_later_model_blocked(project: Project) -> None:
     ) not in folds(result)
 
 
-def test_column_collision_blocked(project: Project) -> None:
+def test_column_collision_blocked(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
         "shop",
@@ -197,7 +196,7 @@ def test_column_collision_blocked(project: Project) -> None:
     )
 
 
-def test_opaque_scan_blocks_and_trial_unlocks(project: Project) -> None:
+def test_opaque_scan_blocks_and_trial_unlocks(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
         "shop",
@@ -221,7 +220,7 @@ def test_opaque_scan_blocks_and_trial_unlocks(project: Project) -> None:
     assert result.verification["unlocked"] == 1
 
 
-def test_imports_added(project: Project) -> None:
+def test_imports_added(project):
     project.migration(
         "shop",
         "0001_initial",
@@ -254,7 +253,7 @@ def test_imports_added(project: Project) -> None:
     )
 
 
-def test_import_clash_blocks(project: Project) -> None:
+def test_import_clash_blocks(project):
     project.migration(
         "shop",
         "0001_initial",
@@ -281,7 +280,7 @@ def test_import_clash_blocks(project: Project) -> None:
     assert folds(project.check_equivalence(**FOLD)) == []
 
 
-def test_unserializable_blocks(project: Project) -> None:
+def test_unserializable_blocks(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
         "shop",
@@ -295,7 +294,7 @@ def test_unserializable_blocks(project: Project) -> None:
     assert folds(project.check_equivalence(**FOLD)) == []
 
 
-def test_index_and_constraint(project: Project) -> None:
+def test_index_and_constraint(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
         "shop",
@@ -311,7 +310,7 @@ def test_index_and_constraint(project: Project) -> None:
     assert "'indexes': [models.Index(fields=['name'], name='name_idx')]," in source
 
 
-def test_constraint_scan_uses_model_names(project: Project) -> None:
+def test_constraint_scan_uses_model_names(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
         "shop",
@@ -324,7 +323,7 @@ def test_constraint_scan_uses_model_names(project: Project) -> None:
     assert folds(project.compact(**FOLD)) == []
 
 
-def test_index_name_collision(project: Project) -> None:
+def test_index_name_collision(project):
     project.migration("shop", "0001_initial", ITEM)
     # The old index can't be removed (its source isn't a literal), so its name
     # is taken until RemoveIndex: Item's index can't exist from 0001.
@@ -366,7 +365,7 @@ def test_index_name_collision(project: Project) -> None:
     assert folds(result) == []
 
 
-def test_together(project: Project) -> None:
+def test_together(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
         "shop",
@@ -385,7 +384,7 @@ def test_together(project: Project) -> None:
     )
 
 
-def test_model_options_and_comment(project: Project) -> None:
+def test_model_options_and_comment(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
         "shop",
@@ -402,7 +401,7 @@ def test_model_options_and_comment(project: Project) -> None:
     assert "'db_table_comment': 'Things'," in source
 
 
-def test_default_managers_not_folded(project: Project) -> None:
+def test_default_managers_not_folded(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
         "shop",
@@ -413,7 +412,7 @@ def test_default_managers_not_folded(project: Project) -> None:
     assert folds(project.check_equivalence(**FOLD)) == []
 
 
-def test_managers(project: Project) -> None:
+def test_managers(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
         "shop",
@@ -424,7 +423,7 @@ def test_managers(project: Project) -> None:
     assert result.folded_operations == 1
 
 
-def test_skip_kind_and_plan_file(project: Project, tmp_path: Path) -> None:
+def test_skip_kind_and_plan_file(project, tmp_path):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
         "shop",
@@ -460,7 +459,7 @@ def test_skip_kind_and_plan_file(project: Project, tmp_path: Path) -> None:
     )
 
 
-def test_blocked_reason_still_reported(project: Project) -> None:
+def test_blocked_reason_still_reported(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
         "shop",
@@ -479,7 +478,7 @@ def test_blocked_reason_still_reported(project: Project) -> None:
     assert "shop.Item.legacy" in blocked(result)
 
 
-def test_rounds_see_original_to_fields(project: Project) -> None:
+def test_rounds_see_original_to_fields(project):
     # RenameField rewrites to_fields of the FK in the project state in place;
     # later fold rounds must still see that the FK used the old name.
     project.migration(
@@ -522,7 +521,7 @@ def test_rounds_see_original_to_fields(project: Project) -> None:
     assert result.folded_operations >= 1
 
 
-def test_names_must_be_stable_across_window(project: Project) -> None:
+def test_names_must_be_stable_across_window(project):
     project.migration(
         "shop",
         "0001_initial",
@@ -559,7 +558,7 @@ def test_names_must_be_stable_across_window(project: Project) -> None:
 class TestDatabaseNames:
     """Folds that would change the names of database objects are refused."""
 
-    def test_unique_added_by_alter_field(self, project: Project) -> None:
+    def test_unique_added_by_alter_field(self, project):
         # Inline UNIQUE gets the database's name, AlterField a hashed _uniq.
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
@@ -569,7 +568,7 @@ class TestDatabaseNames:
         )
         assert folds(project.check_equivalence(**FOLD)) == []
 
-    def test_check_added_by_alter_field(self, project: Project) -> None:
+    def test_check_added_by_alter_field(self, project):
         project.migration(
             "shop",
             "0001_initial",
@@ -591,9 +590,7 @@ class TestDatabaseNames:
         assert folds(project.check_equivalence(**FOLD)) == []
 
     @pytest.mark.parametrize("custom", [True, False, "collation"])
-    def test_custom_field_not_folded_across_setup(
-        self, project: Project, custom: bool | str
-    ) -> None:
+    def test_custom_field_not_folded_across_setup(self, project, custom):
         # A RunSQL may create what a custom column type needs (CREATE
         # EXTENSION hstore): the column can't move before it.
         project.migration("shop", "0001_initial", ITEM)
@@ -619,7 +616,7 @@ class TestDatabaseNames:
     @pytest.mark.parametrize(
         "setup", ["HStoreExtension()", 'CreateCollation("natural", "und-u-kn-true")']
     )
-    def test_postgres_setup_operations(self, project: Project, setup: str) -> None:
+    def test_postgres_setup_operations(self, project, setup):
         # Extensions and collations don't change the state, so they aren't
         # opaque, but they set up what a column may need.
         project.migration("shop", "0001_initial", ITEM)
@@ -637,7 +634,7 @@ class TestDatabaseNames:
         )
         assert folds(project.check_equivalence(**FOLD)) == []
 
-    def test_same_check_folds(self, project: Project) -> None:
+    def test_same_check_folds(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -651,7 +648,7 @@ class TestDatabaseNames:
         )
         assert project.check_equivalence(**FOLD).folded_operations == 2
 
-    def test_m2m_before_pk_alter(self, project: Project) -> None:
+    def test_m2m_before_pk_alter(self, project):
         # The through table's foreign keys would exist when the pk changes
         # type, and be recreated as "..._fk".
         project.migration(
@@ -674,7 +671,7 @@ class TestDatabaseNames:
         )
         assert folds(project.check_equivalence(**FOLD)) == []
 
-    def test_fk_target_altered_in_window(self, project: Project) -> None:
+    def test_fk_target_altered_in_window(self, project):
         project.migration(
             "shop",
             "0001_initial",
@@ -695,7 +692,7 @@ class TestDatabaseNames:
         )
         assert folds(project.check_equivalence(**FOLD)) == []
 
-    def test_table_renamed_in_window(self, project: Project) -> None:
+    def test_table_renamed_in_window(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop", "0002_table", 'migrations.AlterModelTable("item", "things"),'
@@ -707,7 +704,7 @@ class TestDatabaseNames:
         )
         assert folds(project.check_equivalence(**FOLD)) == []
 
-    def test_superseded_unique_variation(self, project: Project) -> None:
+    def test_superseded_unique_variation(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -722,7 +719,7 @@ class TestDatabaseNames:
         result = project.check_equivalence(skip_kinds=["fold"])
         assert result.removals == []
 
-    def test_to_field_target_not_altered_by_fold(self, project: Project) -> None:
+    def test_to_field_target_not_altered_by_fold(self, project):
         project.migration(
             "shop",
             "0001_initial",
@@ -752,7 +749,7 @@ class TestDatabaseNames:
         assert not any(label == "shop.Item.code" for label, _ in folds(result))
 
 
-def test_duplicate_imports_not_added(project: Project) -> None:
+def test_duplicate_imports_not_added(project):
     project.migration(
         "shop",
         "0001_initial",
@@ -784,7 +781,7 @@ def test_duplicate_imports_not_added(project: Project) -> None:
     )
 
 
-def test_unchanged_operation_not_regenerated(project: Project) -> None:
+def test_unchanged_operation_not_regenerated(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
         "shop",
@@ -837,7 +834,7 @@ class TestRenames:
         )
         return project.check_equivalence(**FOLD)
 
-    def test_folded_into_add_field(self, project: Project) -> None:
+    def test_folded_into_add_field(self, project):
         result = self.renamed(project, "models.IntegerField(default=1)")
         descriptions = [d for _, d in folds(result)]
         # Into the AddField, which then goes into the CreateModel.
@@ -856,17 +853,17 @@ class TestRenames:
             "models.ManyToManyField('shop.Item')",
         ],
     )
-    def test_named_objects_block(self, project: Project, field: str) -> None:
+    def test_named_objects_block(self, project, field):
         result = self.renamed(project, field)
         assert not [d for _, d in folds(result) if d.startswith("RenameField")]
 
-    def test_db_column_keeps_names(self, project: Project) -> None:
+    def test_db_column_keeps_names(self, project):
         result = self.renamed(
             project, "models.IntegerField(default=1, unique=True, db_column='q')"
         )
         assert [d for _, d in folds(result) if d.startswith("RenameField")]
 
-    def test_reference_between_blocks(self, project: Project) -> None:
+    def test_reference_between_blocks(self, project):
         result = self.renamed(
             project,
             "models.IntegerField(default=1)",
@@ -874,7 +871,7 @@ class TestRenames:
         )
         assert not [d for _, d in folds(result) if d.startswith("RenameField")]
 
-    def test_opaque_mention_blocks(self, project: Project) -> None:
+    def test_opaque_mention_blocks(self, project):
         result = self.renamed(
             project,
             "models.IntegerField(default=1)",
@@ -882,7 +879,7 @@ class TestRenames:
         )
         assert not [d for _, d in folds(result) if d.startswith("RenameField")]
 
-    def test_not_last_field_blocks(self, project: Project) -> None:
+    def test_not_last_field_blocks(self, project):
         # SQLite rebuilds tables in the state's field order, and the
         # RenameField moved name to the end of it.
         project.migration("shop", "0001_initial", ITEM)
@@ -897,7 +894,7 @@ class TestRenames:
         result = project.check_equivalence(**FOLD)
         assert not [d for _, d in folds(result) if d.startswith("RenameField")]
 
-    def test_create_model_last_entry(self, project: Project) -> None:
+    def test_create_model_last_entry(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop", "0002_rename", 'migrations.RenameField("item", "name", "title"),'
@@ -906,7 +903,7 @@ class TestRenames:
         assert [d for _, d in folds(result) if d.startswith("RenameField")]
         assert "'title'" in project.read("shop", "0001_initial")
 
-    def test_new_name_taken_before_blocks(self, project: Project) -> None:
+    def test_new_name_taken_before_blocks(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -933,7 +930,7 @@ class TestRenames:
         result = project.check_equivalence(**FOLD)
         assert not [d for _, d in folds(result) if d.startswith("RenameField in 0005")]
 
-    def test_unmanaged_table_folded(self, project: Project) -> None:
+    def test_unmanaged_table_folded(self, project):
         project.migration(
             "shop",
             "0001_initial",
@@ -952,7 +949,7 @@ class TestRenames:
         assert [d for _, d in folds(result) if d.startswith("AlterModelTable")]
         assert "some_view" in project.read("shop", "0001_initial")
 
-    def test_managed_table_not_folded(self, project: Project) -> None:
+    def test_managed_table_not_folded(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop", "0002_table", 'migrations.AlterModelTable("item", "goods"),'
@@ -1026,15 +1023,13 @@ class TestGuards:
             ("", UNMANAGED, 'migrations.AlterModelTable("item", "things"),'),
         ],
     )
-    def test_unordered_branches(
-        self, project: Project, initial: str, first: str, second: str
-    ) -> None:
+    def test_unordered_branches(self, project, initial, first, second):
         project.migration("shop", "0001_initial", initial)
         unordered(project, first, second)
         result = project.compact(**FOLD)
         assert not [d for _, d in folds(result) if "0002_a" in d]
 
-    def test_unparseable_together(self, project: Project) -> None:
+    def test_unparsable_together(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -1048,7 +1043,7 @@ class TestGuards:
         )
         assert folds(project.compact(**FOLD)) == []
 
-    def test_model_created_with_removed_field(self, project: Project) -> None:
+    def test_model_created_with_removed_field(self, project):
         # The CreateModel loses an entry: nothing else goes into it in that
         # round, but a rename folds into its AddField (unless a field was
         # created in between). The next round fills the CreateModel.
@@ -1088,7 +1083,7 @@ class TestGuards:
             ("shop.Item.e", into_create),
         ]
 
-    def test_order_with_respect_to(self, project: Project) -> None:
+    def test_order_with_respect_to(self, project):
         project.migration(
             "shop",
             "0001_initial",
@@ -1110,7 +1105,7 @@ class TestGuards:
         )
         assert folds(project.check_equivalence(**FOLD)) == []
 
-    def test_one_off_default_into_create_model(self, project: Project) -> None:
+    def test_one_off_default_into_create_model(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -1121,7 +1116,7 @@ class TestGuards:
         project.check_equivalence(**FOLD)
         assert "('qty', models.IntegerField())," in project.read("shop", "0001_initial")
 
-    def test_renamed_sibling_blocks_add_field(self, project: Project) -> None:
+    def test_renamed_sibling_blocks_add_field(self, project):
         project.migration("shop", "0001_initial", ITEM_CODE)
         project.migration(
             "shop", "0002_rename", 'migrations.RenameField("item", "name", "title"),'
@@ -1139,7 +1134,7 @@ class TestGuards:
         )
         assert folds(project.check_equivalence(**FOLD)) == []
 
-    def test_index_on_field_left_out(self, project: Project) -> None:
+    def test_index_on_field_left_out(self, project):
         project.migration("shop", "0001_initial", ITEM_CODE)
         project.migration(
             "shop", "0002_rename", 'migrations.RenameField("item", "name", "title"),'
@@ -1208,9 +1203,7 @@ class TestGuards:
             ),
         ],
     )
-    def test_alter_field_kept(
-        self, project: Project, added: str, between: str, altered: str
-    ) -> None:
+    def test_alter_field_kept(self, project, added, between, altered):
         project.migration(
             "shop",
             "0001_initial",
@@ -1247,7 +1240,7 @@ class TestGuards:
         result = project.compact(**FOLD)
         assert not [d for _, d in folds(result) if d.startswith("AlterField")]
 
-    def test_together_cleared(self, project: Project) -> None:
+    def test_together_cleared(self, project):
         project.migration(
             "shop",
             "0001_initial",
@@ -1277,7 +1270,7 @@ class TestGuards:
         assert "index_together" not in project.read("shop", "0001_initial")
 
     @pytest.mark.parametrize("same_migration", [True, False])
-    def test_target_deleted_later(self, project: Project, same_migration: bool) -> None:
+    def test_target_deleted_later(self, project, same_migration):
         # The target model exists from before the CreateModel until after
         # the AddField: the foreign key folds into the CreateModel.
         later = """
@@ -1303,7 +1296,7 @@ class TestGuards:
             'migrations.AlterModelOptions("item", {"verbose_name": "x"})',
         ],
     )
-    def test_opaque_in_window(self, project: Project, operation: str) -> None:
+    def test_opaque_in_window(self, project, operation):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -1312,7 +1305,7 @@ class TestGuards:
         )
         assert folds(project.compact(**FOLD)) == []
 
-    def test_rename_named_in_options(self, project: Project) -> None:
+    def test_rename_named_in_options(self, project):
         project.migration(
             "shop",
             "0001_initial",
@@ -1332,7 +1325,7 @@ class TestGuards:
         )
         assert folds(project.check_equivalence(**FOLD)) == []
 
-    def test_rename_after_removed_sibling(self, project: Project) -> None:
+    def test_rename_after_removed_sibling(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -1350,7 +1343,7 @@ class TestGuards:
             "RenameField in 0003_rename folded into CreateModel in 0001_initial"
         ]
 
-    def test_custom_field_rename(self, project: Project) -> None:
+    def test_custom_field_rename(self, project):
         project.migration(
             "shop",
             "0001_initial",
@@ -1383,9 +1376,7 @@ class TestGuards:
             ('migrations.RunSQL("SELECT 1 FROM item"),', '"t"', False),
         ],
     )
-    def test_unmanaged_table(
-        self, project: Project, between: str, table: str, folded: bool
-    ) -> None:
+    def test_unmanaged_table(self, project, between, table, folded):
         project.migration(
             "shop",
             "0001_initial",
@@ -1402,7 +1393,7 @@ class TestGuards:
             is folded
         )
 
-    def test_managed_changed_by_options(self, project: Project) -> None:
+    def test_managed_changed_by_options(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -1412,5 +1403,5 @@ class TestGuards:
         assert folds(project.compact(**FOLD)) == []
 
 
-def test_mentions_unserializable() -> None:
+def test_mentions_unserializable():
     assert _mentions({"x": object()}, "name") is True

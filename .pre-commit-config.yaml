@@ -60,10 +60,10 @@ repos:
   hooks:
   - id: mypy
     additional_dependencies:
+    - django-rich==2.2.0
     - django-stubs==6.1.0
-    - types-PyMySQL
-    - types-python-dateutil
-- repo: https://github.com/adamchainz/djade-pre-commit
-  rev: 728ec80e88767be989d18b53ed47753c85f3f0b8  # frozen: 1.10.0
-  hooks:
-  - id: djade
+    - pytest==9.2.0
+    - rich==15.0.0
+    - tokenize-rt==6.2.0
+    - tomli-w==1.2.0
+    - types-PyMySQL==1.2.4.20261111

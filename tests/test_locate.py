@@ -85,16 +85,14 @@ def locate(project: Project, operation: str, extra: str = "") -> object:
         ),
     ],
 )
-def test_not_locatable(
-    project: Project, operation: str, extra: str, problem: str
-) -> None:
+def test_not_locatable(project, operation, extra, problem):
     project.migration("shop", "0000_item", f"migrations.CreateModel('Item', [{ID}]),")
     result = locate(project, operation, extra)
     assert isinstance(result, str)
     assert result.startswith(problem)
 
 
-def test_options(project: Project) -> None:
+def test_options(project):
     loc = locate(
         project,
         f"""migrations.CreateModel(
@@ -119,13 +117,13 @@ def test_options(project: Project) -> None:
     assert loc.together["index_together"] == TogetherLoc(None, False, {})
 
 
-def test_no_options(project: Project) -> None:
+def test_no_options(project):
     loc = locate(project, f'migrations.CreateModel("Item", [{ID}], options=None)')
     assert isinstance(loc, CreateModelLoc)
     assert loc.options is None
 
 
-def test_normalize_flat() -> None:
+def test_normalize_flat():
     assert normalize_together(("a", "b")) == [("a", "b")]
 
 
@@ -166,15 +164,13 @@ def edited(project: Project, operation: str, new: Operation) -> object:
         ),
     ],
 )
-def test_edited_create_model(
-    project: Project, source: str, options: dict[str, object], problem: str
-) -> None:
+def test_edited_create_model(project, source, options, problem):
     new = CreateModel("Item", [("id", models.AutoField(primary_key=True))], options)
     result = edited(project, f'migrations.CreateModel("Item", [{ID}]{source})', new)
     assert isinstance(result, str) and result.startswith(problem)
 
 
-def test_edited_together_operation(project: Project) -> None:
+def test_edited_together_operation(project):
     result = edited(
         project,
         'migrations.AlterUniqueTogether("item", {("id",)})',
@@ -183,7 +179,7 @@ def test_edited_together_operation(project: Project) -> None:
     assert isinstance(result, str) and result.startswith("together value mismatch")
 
 
-def test_together_none(project: Project) -> None:
+def test_together_none(project):
     loc = locate(
         project, f'migrations.CreateModel("Item", [{ID}], {{"unique_together": None}})'
     )

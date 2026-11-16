@@ -44,47 +44,47 @@ def remove(source: str, *indexes: int, target: int = 0) -> str:
     return result
 
 
-def test_single_line_middle() -> None:
+def test_single_line_middle():
     assert remove("x = [a, b, c]\n", 1) == "x = [a, c]\n"
 
 
-def test_single_line_first() -> None:
+def test_single_line_first():
     assert remove("x = [a, b, c]\n", 0) == "x = [b, c]\n"
 
 
-def test_single_line_last() -> None:
+def test_single_line_last():
     assert remove("x = [a, b, c]\n", 2) == "x = [a, b]\n"
 
 
-def test_single_line_trailing_comma() -> None:
+def test_single_line_trailing_comma():
     assert remove("x = [a, b, c,]\n", 2) == "x = [a, b]\n"
 
 
-def test_single_line_several() -> None:
+def test_single_line_several():
     assert remove("x = [a, b, c, d]\n", 0, 2, 3) == "x = [b]\n"
 
 
-def test_single_line_all() -> None:
+def test_single_line_all():
     assert remove("x = [a, b]\n", 0, 1) == "x = []\n"
 
 
-def test_tuple_keeps_comma() -> None:
+def test_tuple_keeps_comma():
     assert remove("x = (a, b)\n", 1) == "x = (a,)\n"
     assert remove("x = (a, b)\n", 0) == "x = (b,)\n"
     assert remove("x = (a, b, c)\n", 0) == "x = (b, c)\n"
 
 
-def test_set_emptied() -> None:
+def test_set_emptied():
     assert remove("x = {('a', 'b')}\n", 0) == "x = set()\n"
     assert remove("x = {\n    ('a', 'b'),\n}\n", 0) == "x = set()\n"
 
 
-def test_dict_key() -> None:
+def test_dict_key():
     assert remove("x = {'a': 1, 'b': [2, 3]}\n", 1) == "x = {'a': 1}\n"
     assert remove("x = {'a': 1}\n", 0) == "x = {}\n"
 
 
-def test_multi_line() -> None:
+def test_multi_line():
     source = """\
     x = [
         a,
@@ -105,7 +105,7 @@ def test_multi_line() -> None:
     )
 
 
-def test_multi_line_last_without_comma() -> None:
+def test_multi_line_last_without_comma():
     source = """\
     x = [
         a,
@@ -115,7 +115,7 @@ def test_multi_line_last_without_comma() -> None:
     assert remove(source, 1) == "x = [\n    a,\n]\n"
 
 
-def test_multi_line_tuple_single_left() -> None:
+def test_multi_line_tuple_single_left():
     source = """\
     x = (
         a,
@@ -125,7 +125,7 @@ def test_multi_line_tuple_single_left() -> None:
     assert remove(source, 0) == "x = (\n    b,\n)\n"
 
 
-def test_multi_line_all() -> None:
+def test_multi_line_all():
     source = """\
     x = [
         # header
@@ -136,7 +136,7 @@ def test_multi_line_all() -> None:
     assert remove(source, 0, 1) == "x = []\n"
 
 
-def test_attached_comment() -> None:
+def test_attached_comment():
     source = """\
     x = [
         a,
@@ -163,7 +163,7 @@ def test_attached_comment() -> None:
     )
 
 
-def test_comment_after_opener_kept() -> None:
+def test_comment_after_opener_kept():
     source = """\
     x = [  # keep me
         a,
@@ -173,7 +173,7 @@ def test_comment_after_opener_kept() -> None:
     assert remove(source, 0) == "x = [  # keep me\n    b,\n]\n"
 
 
-def test_mixed_lines() -> None:
+def test_mixed_lines():
     source = """\
     x = [
         a, b,
@@ -184,7 +184,7 @@ def test_mixed_lines() -> None:
     assert remove(source, 0) == "x = [\n    b,\n    c,\n]\n"
 
 
-def test_mixed_last_on_closer_line() -> None:
+def test_mixed_last_on_closer_line():
     source = """\
     x = [
         a,  # note
@@ -193,11 +193,11 @@ def test_mixed_last_on_closer_line() -> None:
     assert remove(source, 1) == "x = [\n    a,  # note\n]\n"
 
 
-def test_crlf_preserved() -> None:
+def test_crlf_preserved():
     assert remove("x = [\r\n    a,\r\n    b,\r\n]\r\n", 0) == "x = [\r\n    b,\r\n]\r\n"
 
 
-def test_nested_edits_inside_removed_element() -> None:
+def test_nested_edits_inside_removed_element():
     source = "x = [[1, 2], [3]]\n"
     sf = SourceFile(Path("m.py"), source)
     assert sf.tree is not None
@@ -208,18 +208,18 @@ def test_nested_edits_inside_removed_element() -> None:
     assert fe.render() == "x = [[3]]\n"
 
 
-def test_not_a_container() -> None:
+def test_not_a_container():
     sf = SourceFile(Path("m.py"), "x = f(a)\n")
     assert sf.tree is not None
     with pytest.raises(RewriteError):
         FileEdit(sf).remove(sf.tree.body[0].value, {0})  # type: ignore[attr-defined]
 
 
-def test_element_without_space_after_comma() -> None:
+def test_element_without_space_after_comma():
     assert remove("x = [a,b]\n", 0) == "x = [b]\n"
 
 
-def test_trailing_element_after_comment_on_shared_line() -> None:
+def test_trailing_element_after_comment_on_shared_line():
     source = """\
     x = [
         a,
@@ -229,19 +229,19 @@ def test_trailing_element_after_comment_on_shared_line() -> None:
     assert remove(source, 1, 2) == "x = [\n    a,\n    # about b\n]\n"
 
 
-def test_comment_at_line_start_attached() -> None:
+def test_comment_at_line_start_attached():
     source = "x = [\n    a,\n# about b\n    b,\n]\n"
     assert remove(source, 1) == "x = [\n    a,\n]\n"
 
 
-def test_tuple_single_left_with_comma() -> None:
+def test_tuple_single_left_with_comma():
     assert remove("x = (a, b,)\n", 0) == "x = (b,)\n"
 
 
 # Whole operations
 
 
-def test_filter_together() -> None:
+def test_filter_together():
     assert _filter_together({("a", "b"), ("c", "d")}, {("a", "b")}) == {("c", "d")}
     assert _filter_together(("a", "b"), set()) == ("a", "b")
     assert _filter_together([["a", "b"], ["c", "d"]], {("a", "b")}) == [["c", "d"]]
@@ -274,7 +274,7 @@ migrations.AddField("item", "qty", models.IntegerField(default=0)),
 """
 
 
-def test_edited_operation(project: Project) -> None:
+def test_edited_operation(project):
     create, _, add = records(project, CREATE)
     assert edited_operation(OpEdit(create)) is create.op
     edit = OpEdit(
@@ -286,7 +286,7 @@ def test_edited_operation(project: Project) -> None:
         edited_operation(OpEdit(add, fields={"qty"}))
 
 
-def test_rewrite_source(project: Project) -> None:
+def test_rewrite_source(project):
     create, together, add = records(project, CREATE)
     source = create.migration.source
     assert source is not None
@@ -309,7 +309,7 @@ def test_rewrite_source(project: Project) -> None:
     assert unchanged_text == source.text
 
 
-def test_rewrite_source_failures(project: Project) -> None:
+def test_rewrite_source_failures(project):
     create, together, add = records(project, CREATE)
     source = create.migration.source
     assert source is not None
@@ -318,7 +318,7 @@ def test_rewrite_source_failures(project: Project) -> None:
         rewrite_source(source, [OpEdit(add, remove=True)])
 
 
-def test_rewrite_unlocatable(project: Project) -> None:
+def test_rewrite_unlocatable(project):
     create, together = records(
         project,
         """
@@ -336,7 +336,7 @@ def test_rewrite_unlocatable(project: Project) -> None:
         rewrite_source(source, [OpEdit(together, entries={("id",)})])
 
 
-def test_regenerate_failures() -> None:
+def test_regenerate_failures():
     op = migrations.AddField("item", "qty", models.IntegerField(default=0))
     clash = SourceFile(
         Path("m.py"), "from django.db import migrations\nmodels = None\nx = [f()]\n"
@@ -354,7 +354,7 @@ def test_regenerate_failures() -> None:
         FileEdit(bare).regenerate(elsewhere, op)
 
 
-def test_missing_imports() -> None:
+def test_missing_imports():
     source = SourceFile(Path("m.py"), "os = 1\n")
     assert (
         _missing_imports(source, {"import a as b"})
@@ -374,7 +374,7 @@ class Nowhere:
         return ("nowhere_at_all.Thing", [], {})
 
 
-def test_regeneration_problem() -> None:
+def test_regeneration_problem():
     source = SourceFile(Path("m.py"), "from django.db import migrations\n")
     assert regeneration_problem(None, migrations.RunSQL("")) == (
         "the source is not readable"
@@ -385,7 +385,7 @@ def test_regeneration_problem() -> None:
     assert "doesn't load" in str(regeneration_problem(source, unloadable))
 
 
-def test_operation_comparisons() -> None:
+def test_operation_comparisons():
     sql = migrations.RunSQL("")
     add = migrations.AddField("item", "qty", models.IntegerField())
     assert same_operation(sql, add) is False
@@ -394,7 +394,7 @@ def test_operation_comparisons() -> None:
     assert unchanged(lambda_op, lambda_op) is False
 
 
-def test_derive_op_edit(project: Project) -> None:
+def test_derive_op_edit(project):
     create, together, add = records(project, CREATE)
     assert derive_op_edit(create, add.op) is None
     op = create.op

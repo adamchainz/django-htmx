@@ -8,14 +8,13 @@ import pickle
 import signal
 import sys
 import warnings
-from pathlib import Path
 from typing import Any
 
 import pytest
 from django.contrib.postgres import operations as pg_operations
 from django.db import connections
 from django.db.models.signals import post_migrate, pre_migrate
-from tokenize_rt import src_to_tokens  # type: ignore[import-untyped]
+from tokenize_rt import src_to_tokens
 
 from django_compact_migrations import isolate, planfile, profile
 from django_compact_migrations.core import CompactError
@@ -39,12 +38,12 @@ from tests.test_compact import ITEM
 # isolate
 
 
-def test_child_error_pickles() -> None:
+def test_child_error_pickles():
     error = pickle.loads(pickle.dumps(ChildError("boom", "trace")))
     assert str(error) == "boom" and error.child_traceback == "trace"
 
 
-def test_without_fork(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_without_fork(monkeypatch):
     monkeypatch.setattr(isolate, "CAN_FORK", False)
     messages: list[Any] = []
 
@@ -60,7 +59,7 @@ def test_without_fork(monkeypatch: pytest.MonkeyPatch) -> None:
     assert messages == ["hi", "hi"]
 
 
-def test_unpicklable_error_in_child() -> None:
+def test_unpicklable_error_in_child():
     class Odd(Exception):
         def __init__(self) -> None:
             super().__init__("odd")
@@ -74,7 +73,7 @@ def test_unpicklable_error_in_child() -> None:
     assert "Traceback" in info.value.child_traceback
 
 
-def test_cleanup_failure_in_child_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cleanup_failure_in_child_ignored(monkeypatch):
     parent = os.getpid()
 
     def close() -> None:
@@ -85,7 +84,7 @@ def test_cleanup_failure_in_child_ignored(monkeypatch: pytest.MonkeyPatch) -> No
     assert run_isolated(lambda send: 42) == 42
 
 
-def test_child_killed() -> None:
+def test_child_killed():
     def function(send: Any) -> None:  # pragma: no cover - its child is killed
         os.kill(os.getpid(), signal.SIGKILL)
 
@@ -93,7 +92,7 @@ def test_child_killed() -> None:
         run_isolated(function)
 
 
-def test_parent_interrupted_kills_child() -> None:
+def test_parent_interrupted_kills_child():
     def function(send: Any) -> None:  # pragma: no cover - its child is killed
         send("started")
         signal.pause()
@@ -105,7 +104,7 @@ def test_parent_interrupted_kills_child() -> None:
         run_isolated(function, receive)
 
 
-def test_missing_or_broken_stream(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_missing_or_broken_stream(monkeypatch):
     class Broken:
         def flush(self) -> None:
             raise ValueError("closed")
@@ -115,7 +114,7 @@ def test_missing_or_broken_stream(monkeypatch: pytest.MonkeyPatch) -> None:
     assert run_isolated(lambda send: 1) == 1
 
 
-def test_kill_gone_child() -> None:
+def test_kill_gone_child():
     pid = os.fork()
     if pid == 0:  # pragma: no cover - the child exits at once
         os._exit(0)
@@ -135,11 +134,11 @@ def test_kill_gone_child() -> None:
         ("SET CONSTRAINTS ALL IMMEDIATE", None, False),
     ],
 )
-def test_classify_more(sql: str, rowcount: int | None, write: bool) -> None:
+def test_classify_more(sql, rowcount, write):
     assert (classify(sql, rowcount) is not None) is write
 
 
-def test_executemany_update_counts_as_write(django_db_blocker: Any) -> None:
+def test_executemany_update_counts_as_write(django_db_blocker):
     observation = Observation()
     with django_db_blocker.unblock(), scratch_database() as connection:
         with connection.cursor() as cursor:
@@ -150,7 +149,7 @@ def test_executemany_update_counts_as_write(django_db_blocker: Any) -> None:
     assert observation.tables == {"t"}
 
 
-def test_source_concern_more() -> None:
+def test_source_concern_more():
     assert (
         source_concern(samples._calls_subscript, 0)
         == "it ran no query, yet calls something()"
@@ -162,7 +161,7 @@ def test_source_concern_more() -> None:
 # ops
 
 
-def test_postgres_operations() -> None:
+def test_postgres_operations():
     assert classify_op(pg_operations.CreateExtension("hstore")) == INERT
     assert classify_op(pg_operations.HStoreExtension()) == INERT
     assert classify_op(pg_operations.CreateCollation("c", "und")) == INERT
@@ -172,7 +171,7 @@ def test_postgres_operations() -> None:
 # patch
 
 
-def test_patch_hunks_out_of_order() -> None:
+def test_patch_hunks_out_of_order():
     old = "".join(f"{i}\n" for i in range(20))
     new = old.replace("1\n", "one\n", 1).replace("18\n", "eighteen\n")
     diff = make_diff(old, new, "f")
@@ -185,7 +184,7 @@ def test_patch_hunks_out_of_order() -> None:
 # planfile
 
 
-def test_tool_version_not_installed(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_tool_version_not_installed(monkeypatch):
     from importlib.metadata import PackageNotFoundError
 
     def missing(name: str) -> str:
@@ -195,13 +194,13 @@ def test_tool_version_not_installed(monkeypatch: pytest.MonkeyPatch) -> None:
     assert planfile.tool_version() == "unknown"
 
 
-def test_module_file() -> None:
+def test_module_file():
     assert planfile._module_file("no.such.module") is None
     assert planfile._module_file("nosuchtoplevelmodule") is None
     assert planfile._module_file("") is None
 
 
-def test_plan_file_with_missing_migration(project: Project, tmp_path: Path) -> None:
+def test_plan_file_with_missing_migration(project, tmp_path):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
         "shop",
@@ -222,9 +221,7 @@ def test_plan_file_with_missing_migration(project: Project, tmp_path: Path) -> N
 # profile and runner
 
 
-def test_profile_without_plan(
-    project: Project, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_profile_without_plan(project, monkeypatch):
     project.migration("shop", "0001_initial", ITEM)
     project.activate()
 
@@ -238,7 +235,7 @@ def test_profile_without_plan(
     assert result.plan_error == "no plan"
 
 
-def test_run_history_needs_empty_database(project: Project) -> None:
+def test_run_history_needs_empty_database(project):
     project.migration("shop", "0001_initial", ITEM)
     project.activate()
     with project.db_blocker.unblock(), scratch_database() as connection:
@@ -247,7 +244,7 @@ def test_run_history_needs_empty_database(project: Project) -> None:
             run_history(connection)
 
 
-def test_shared_operation_timed_once(project: Project) -> None:
+def test_shared_operation_timed_once(project):
     project.migration("shop", "0001_initial", ITEM)
     (project.path("shop").parent / "shared.py").write_text(
         "from django.db import migrations\n\n"
@@ -264,7 +261,7 @@ def test_shared_operation_timed_once(project: Project) -> None:
     ] == ["0002_a"]
 
 
-def test_signal_handler_failures(project: Project) -> None:
+def test_signal_handler_failures(project):
     project.migration("shop", "0001_initial", ITEM)
     (project.path("shop").parent / "models.py").write_text("")
     project.activate()
@@ -311,11 +308,11 @@ def _container(source: str) -> Any:
         ("x = [lambda a, b: 1, 2]", False),  # commas inside an element
     ],
 )
-def test_containers(source: str, found: bool) -> None:
+def test_containers(source, found):
     assert (_container(source) is not None) is found
 
 
-def test_project_helper(tmp_path: Path, django_db_blocker: Any) -> None:
+def test_project_helper(tmp_path, django_db_blocker):
     project = Project(tmp_path, django_db_blocker)
     project.migration("shop", "0001_initial", ITEM)
     project.activate()

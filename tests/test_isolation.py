@@ -16,16 +16,13 @@ from django_compact_migrations import scratch as scratch_module
 from django_compact_migrations.core import Analysis, CompactError
 from django_compact_migrations.isolate import ChildError, run_isolated
 from django_compact_migrations.runner import RunError
-from tests.project import Project
 from tests.test_compact import ITEM, kinds
 from tests.test_trial import history
 
 # Scratch databases
 
 
-def test_every_alias_retargeted(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, django_db_blocker: Any
-) -> None:
+def test_every_alias_retargeted(tmp_path, monkeypatch, django_db_blocker):
     with django_db_blocker.unblock():
         every_alias_retargeted(tmp_path, monkeypatch)
 
@@ -63,9 +60,7 @@ def every_alias_retargeted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     assert not Path(primary).exists()
 
 
-def test_unsupported_alias_refused(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_unsupported_alias_refused(tmp_path, monkeypatch):
     handler = ConnectionHandler(
         {
             "default": {"ENGINE": "django.db.backends.sqlite3", "NAME": "x"},
@@ -81,7 +76,7 @@ def test_unsupported_alias_refused(
 # Forked runs
 
 
-def test_run_isolated() -> None:
+def test_run_isolated():
     parent = os.getpid()
     messages: list[Any] = []
 
@@ -120,7 +115,7 @@ def forwards(apps, schema_editor):
 """
 
 
-def test_runs_isolated_from_each_other(project: Project) -> None:
+def test_runs_isolated_from_each_other(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
         "shop",
@@ -138,7 +133,7 @@ def test_runs_isolated_from_each_other(project: Project) -> None:
     assert result.verification["runs"] == 3
 
 
-def test_pre_migrate_sent(project: Project) -> None:
+def test_pre_migrate_sent(project):
     def create_table(using: str, **kwargs: Any) -> None:
         from django.db import connections
 
@@ -163,7 +158,7 @@ def test_pre_migrate_sent(project: Project) -> None:
 # Nondeterminism and the static plan
 
 
-def test_nondeterministic_rows_not_blamed(project: Project) -> None:
+def test_nondeterministic_rows_not_blamed(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
         "shop",
@@ -192,9 +187,7 @@ def test_nondeterministic_rows_not_blamed(project: Project) -> None:
     assert result.verification["trial_blocked"] == 0
 
 
-def test_never_worse_than_static(
-    project: Project, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_never_worse_than_static(project, monkeypatch):
     history(project, "Item.objects.using(alias).filter(legacy=1).count()")
     project.migration(
         "shop",
@@ -224,7 +217,7 @@ def test_never_worse_than_static(
     assert set(kinds(static)) <= set(kinds(result))
 
 
-def test_baseline_error_explains(project: Project) -> None:
+def test_baseline_error_explains(project):
     project.migration(
         "shop", "0001_initial", "migrations.RunSQL('SELECT * FROM nope'),"
     )
@@ -236,15 +229,13 @@ def test_baseline_error_explains(project: Project) -> None:
 # Command line and plan files
 
 
-def test_skip_checks_after_subcommand(project: Project) -> None:
+def test_skip_checks_after_subcommand(project):
     project.migration("shop", "0001_initial", ITEM)
     out, _ = project.command("plan", "--skip-checks", "-v", "0")
     assert out == ""
 
 
-def test_apply_plan_from_elsewhere(
-    project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_apply_plan_from_elsewhere(project, tmp_path, monkeypatch):
     history(project, "pass")
     plans = tmp_path / "plans"
     plans.mkdir()

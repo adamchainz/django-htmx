@@ -38,6 +38,7 @@ classifiers = [
 dependencies = [
   "django>=5.2",
   "django-rich>=2.2",
+  "rich>=14.1",
   "tokenize-rt>=6.1",
   "tomli-w>=1.1",
 ]
@@ -123,7 +124,11 @@ enable_error_code = [
   "truthy-bool",
 ]
 strict = true
-overrides = [ { module = "tests.*", allow_untyped_defs = true } ]
+overrides = [
+  { module = "tests.*", allow_untyped_defs = true },
+  # No py.typed marker.
+  { module = "tokenize_rt", ignore_missing_imports = true },
+]
 
 [tool.pytest]
 django_find_project = false
@@ -152,8 +157,4 @@ report.skip_empty = true
 report.show_missing = true
 
 [tool.rstcheck]
-ignore_directives = [
-  "autoclass",
-  "autofunction",
-]
 report_level = "ERROR"

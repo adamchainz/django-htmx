@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from tests.project import Project
 from tests.test_compact import ITEM, blocked, kinds
 
 ADD = 'migrations.AddField("item", "legacy", models.IntegerField(default=0)),'
 INDEX = 'migrations.AddIndex("item", models.Index(fields=["legacy"], name="l_idx")),'
 
 
-def unparseable(operations: str, dependency: str) -> str:
+def unparsable(operations: str, dependency: str) -> str:
     return (
         "from django.db import migrations, models\n\n\n"
         "class Migration(migrations.Migration):\n"
@@ -28,7 +27,7 @@ def superseded(result: object) -> list[str]:
     )
 
 
-def test_unrequired_requirement_restored(project: Project) -> None:
+def test_unrequired_requirement_restored(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration("shop", "0002_add", ADD + "\n" + INDEX)
     project.migration(
@@ -46,7 +45,7 @@ def test_unrequired_requirement_restored(project: Project) -> None:
     assert list(blocked(result)) == ["shop.Item.legacy"]
 
 
-def test_elidable_hit_dropped_once(project: Project) -> None:
+def test_elidable_hit_dropped_once(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
         "shop",
@@ -62,7 +61,7 @@ def test_elidable_hit_dropped_once(project: Project) -> None:
 
 
 @pytest.mark.parametrize("policy", ["ignore", "scan"])
-def test_elidable_in_excluded_app(project: Project, policy: str) -> None:
+def test_elidable_in_excluded_app(project, policy):
     project.migration("shop", "0001_initial", ITEM)
     project.migration("shop", "0002_add", ADD)
     project.migration(
@@ -87,7 +86,7 @@ def test_elidable_in_excluded_app(project: Project, policy: str) -> None:
         )
 
 
-def test_poisoned_together_blocks_model(project: Project) -> None:
+def test_poisoned_together_blocks_model(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
         "shop",
@@ -114,12 +113,12 @@ def test_poisoned_together_blocks_model(project: Project) -> None:
 # Superseded AlterFields
 
 
-def test_alter_field_in_unparseable_migration(project: Project) -> None:
+def test_alter_field_in_unparsable_migration(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
         "shop",
         "0002_a",
-        source=unparseable(
+        source=unparsable(
             'migrations.AlterField("item", "name", models.CharField(max_length=20))',
             "0001_initial",
         ),
@@ -145,7 +144,7 @@ def test_alter_field_in_unparseable_migration(project: Project) -> None:
         ),
     ],
 )
-def test_unordered(project: Project, first: str, second: str) -> None:
+def test_unordered(project, first, second):
     project.migration("shop", "0001_initial", ITEM)
     # Django runs the second branch first.
     project.migration("shop", "0002_b", first, deps=[("shop", "0001_initial")])
@@ -156,7 +155,7 @@ def test_unordered(project: Project, first: str, second: str) -> None:
     assert superseded(project.compact()) == []
 
 
-def test_many_to_many_alters_kept(project: Project) -> None:
+def test_many_to_many_alters_kept(project):
     project.migration(
         "shop",
         "0001_initial",
@@ -176,7 +175,7 @@ def test_many_to_many_alters_kept(project: Project) -> None:
     assert superseded(project.compact()) == []
 
 
-def test_internal_type_differs(project: Project) -> None:
+def test_internal_type_differs(project):
     project.migration("shop", "0001_initial", ITEM)
     (project.path("shop").parent / "fields.py").write_text(
         "from django.db import models\n\n\n"
@@ -213,7 +212,7 @@ def test_internal_type_differs(project: Project) -> None:
 # Superseded model options
 
 
-def test_options_outside_alter_keys(project: Project) -> None:
+def test_options_outside_alter_keys(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
         "shop",
@@ -228,12 +227,12 @@ def test_options_outside_alter_keys(project: Project) -> None:
     assert superseded(project.compact()) == []
 
 
-def test_options_in_unparseable_migration(project: Project) -> None:
+def test_options_in_unparsable_migration(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
         "shop",
         "0002_a",
-        source=unparseable(
+        source=unparsable(
             'migrations.AlterModelOptions("item", {"verbose_name": "a"})',
             "0001_initial",
         ),
@@ -246,7 +245,7 @@ def test_options_in_unparseable_migration(project: Project) -> None:
     assert superseded(project.compact()) == []
 
 
-def test_index_on_two_dead_fields(project: Project) -> None:
+def test_index_on_two_dead_fields(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
         "shop",
@@ -271,7 +270,7 @@ def test_index_on_two_dead_fields(project: Project) -> None:
     assert [k for k, _ in kinds(result)] == ["elidable", "field", "field", "index"]
 
 
-def test_superseded_with_reference_before(project: Project) -> None:
+def test_superseded_with_reference_before(project):
     project.migration(
         "shop",
         "0001_initial",

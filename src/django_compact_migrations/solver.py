@@ -223,18 +223,18 @@ class Solver:
         return self._pos_between(e.pos, start, end)
 
     def _pos_between(self, pos: Pos, start: Pos, end: Pos) -> bool:
-        anc = self.history.ancestors
-        desc = self.history.descendants
+        ancestors = self.history.ancestors
+        descendants = self.history.descendants
         mig, idx = pos
         if mig == start[0]:
             if idx <= start[1]:
                 return False
-        elif anc[start[0]] >> mig & 1:
+        elif ancestors[start[0]] >> mig & 1:
             return False
         if mig == end[0]:
             if idx >= end[1]:
                 return False
-        elif desc[end[0]] >> mig & 1:
+        elif descendants[end[0]] >> mig & 1:
             return False
         return True
 

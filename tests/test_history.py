@@ -62,14 +62,14 @@ def odd_history(project: Project, body: str, extra: str = "") -> Any:
         (f"    operations = []\n    operations = [{ADD}]\n", "no unique operations"),
     ],
 )
-def test_unlocatable(project: Project, body: str, reason: str) -> None:
+def test_unlocatable(project, body, reason):
     result = odd_history(project, body)
     (message,) = blocked(result)["shop.Item.legacy"]
     assert message.startswith("operations list in shop.0002_add could not be parsed")
     assert reason in message
 
 
-def test_two_migration_classes(project: Project) -> None:
+def test_two_migration_classes(project):
     body = f"    operations = [{ADD}]\n\n\nclass Migration(Migration):\n    pass\n"
     result = odd_history(project, body)
     assert (
@@ -77,12 +77,12 @@ def test_two_migration_classes(project: Project) -> None:
     )
 
 
-def test_annotated_operations(project: Project) -> None:
+def test_annotated_operations(project):
     result = odd_history(project, f"    operations: list = [{ADD}]\n")
     assert ("field", "shop.Item.legacy") in kinds(result)
 
 
-def test_unreadable_source(project: Project, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_unreadable_source(project, monkeypatch):
     real = history_module._read_source
 
     def read(path: Path) -> Any:
@@ -99,17 +99,17 @@ def test_unreadable_source(project: Project, monkeypatch: pytest.MonkeyPatch) ->
     assert rec.node is None
 
 
-def test_source_file_offsets() -> None:
+def test_source_file_offsets():
     source = SourceFile(Path("x.py"), "a = [1, 2]")  # no final newline
     node = source.tree.body[0].value  # type: ignore[attr-defined]
     assert source.node_span(node) == (4, 10)
 
 
-def test_read_missing_source(tmp_path: Path) -> None:
+def test_read_missing_source(tmp_path):
     assert _read_source(tmp_path / "missing.py") is None
 
 
-def test_migration_path_without_file() -> None:
+def test_migration_path_without_file():
     module = types.ModuleType("compiled_migration")
     cls = type("Migration", (), {"__module__": module.__name__})
     import sys
@@ -121,12 +121,12 @@ def test_migration_path_without_file() -> None:
         del sys.modules[module.__name__]
 
 
-def test_callee_name() -> None:
+def test_callee_name():
     call = ast.parse("ops[0]()").body[0].value  # type: ignore[attr-defined]
     assert callee_name(call.func) is None
 
 
-def test_load_history_with_loader(project: Project) -> None:
+def test_load_history_with_loader(project):
     from django.db.migrations.loader import MigrationLoader
 
     project.migration("shop", "0001_initial", ITEM)
@@ -136,7 +136,7 @@ def test_load_history_with_loader(project: Project) -> None:
         assert load_history(loader).loader is loader
 
 
-def test_invalidate_without_bytecode_path(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_invalidate_without_bytecode_path(monkeypatch):
     def fail(path: str) -> str:
         raise NotImplementedError
 
@@ -144,5 +144,5 @@ def test_invalidate_without_bytecode_path(monkeypatch: pytest.MonkeyPatch) -> No
     invalidate_modules([], [Path("x.py")])
 
 
-def test_migration_source_helper() -> None:
+def test_migration_source_helper():
     assert "dependencies" in migration_source("", [])

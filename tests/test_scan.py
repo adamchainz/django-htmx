@@ -5,8 +5,6 @@ from __future__ import annotations
 import ast
 from typing import Any
 
-import pytest
-
 from django_compact_migrations import history as history_module
 from django_compact_migrations.core import analyse
 from django_compact_migrations.opaque import (
@@ -31,11 +29,11 @@ def scanned(project: Project) -> Any:
         return analyse()
 
 
-def test_empty_name_never_mentioned() -> None:
+def test_empty_name_never_mentioned():
     assert Text("anything", match_all=False).mentions("") is False
 
 
-def test_metadata_statements() -> None:
+def test_metadata_statements():
     tree = ast.parse(
         "class Migration:\n"
         "    initial: bool = True\n"
@@ -52,7 +50,7 @@ def test_metadata_statements() -> None:
     ]
 
 
-def test_unreadable_source(project: Project, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_unreadable_source(project, monkeypatch):
     analysis = scanned(project)
     info = analysis.history.migrations[1]
     without = history_module.MigrationInfo(
@@ -67,7 +65,7 @@ def test_unreadable_source(project: Project, monkeypatch: pytest.MonkeyPatch) ->
     assert _migration_text(without) == ("", True)
 
 
-def test_index_edges(project: Project) -> None:
+def test_index_edges(project):
     analysis = scanned(project)
     index = OpaqueIndex(analysis.history, analysis.timeline.opaque)
     # A name without words matches nothing (but match-all texts).
@@ -81,7 +79,7 @@ def test_index_edges(project: Project) -> None:
     assert index.contains(o, (0, 0), None, (o.pos[0], 0)) is False
 
 
-def test_block_policy_names_the_operation(project: Project) -> None:
+def test_block_policy_names_the_operation(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
         "shop",

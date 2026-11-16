@@ -47,7 +47,7 @@ def unique_together_pair(project: Project, entry: str) -> None:
     )
 
 
-def test_together_on_foreign_key_kept(project: Project, server: str) -> None:
+def test_together_on_foreign_key_kept(project, server):
     unique_together_pair(project, '("parent", "x")')
     result = project.compact()
     assert result.removals == []
@@ -62,12 +62,12 @@ def test_together_on_foreign_key_kept(project: Project, server: str) -> None:
     ]
 
 
-def test_together_elsewhere_removed(project: Project, server: str) -> None:
+def test_together_elsewhere_removed(project, server):
     unique_together_pair(project, '("x", "parent")')
     assert {k for k, _ in kinds(project.compact())} == {"together"}
 
 
-def test_together_without_mysql(project: Project) -> None:
+def test_together_without_mysql(project):
     unique_together_pair(project, '("parent", "x")')
     assert {k for k, _ in kinds(project.compact())} == {"together"}
     assert folds(project.compact(skip_kinds=[])) == []
@@ -81,7 +81,7 @@ def test_together_without_mysql(project: Project) -> None:
         'models.Index(F("parent").desc(), name="px")',
     ],
 )
-def test_index_on_foreign_key_kept(project: Project, server: str, index: str) -> None:
+def test_index_on_foreign_key_kept(project, server, index):
     project.migration("shop", "0001_initial", PARENT + CHILD)
     project.migration(
         "shop",
@@ -93,7 +93,7 @@ def test_index_on_foreign_key_kept(project: Project, server: str, index: str) ->
     assert list(blocked(project.compact())) == ["shop.Child index 'px'"]
 
 
-def test_constraint_on_foreign_key_dropped_later(project: Project, server: str) -> None:
+def test_constraint_on_foreign_key_dropped_later(project, server):
     # The foreign key's column goes later anyway: nothing to keep.
     project.migration("shop", "0001_initial", PARENT + CHILD)
     project.migration(
@@ -124,7 +124,7 @@ def test_constraint_on_foreign_key_dropped_later(project: Project, server: str) 
     ]
 
 
-def test_constraint_folded_past_another_dropped(project: Project, server: str) -> None:
+def test_constraint_folded_past_another_dropped(project, server):
     # Created in the CreateModel, the new constraint would exist when the
     # old one is dropped, and Django wouldn't create the key's own index.
     project.migration(
@@ -166,9 +166,7 @@ FK = 'models.ForeignKey("shop.parent", models.CASCADE, null=True{})'
         (FK.format(""), FK.format("").replace("CASCADE", "PROTECT"), True),
     ],
 )
-def test_alter_field_on_foreign_key(
-    project: Project, server: str, first: str, then: str, safe: bool
-) -> None:
+def test_alter_field_on_foreign_key(project, server, first, then, safe):
     project.migration("shop", "0001_initial", PARENT + THING)
     # Kept out of the CreateModel by the RunSQL.
     project.migration(
@@ -200,7 +198,7 @@ def test_alter_field_on_foreign_key(
         "models.BinaryField(default=b'x')",
     ],
 )
-def test_text_default_folds(project: Project, server: str, field: str) -> None:
+def test_text_default_folds(project, server, field):
     # MySQL leaves the DEFAULT of AddField on the column; MariaDB doesn't.
     project.migration("shop", "0001_initial", THING)
     project.migration(
@@ -215,7 +213,7 @@ def test_text_default_folds(project: Project, server: str, field: str) -> None:
     assert folded is (server == backends.MARIADB)
 
 
-def test_empty_text_default_folds(project: Project, server: str) -> None:
+def test_empty_text_default_folds(project, server):
     project.migration("shop", "0001_initial", THING)
     project.migration(
         "shop",
@@ -225,7 +223,7 @@ def test_empty_text_default_folds(project: Project, server: str) -> None:
     assert folds(project.compact(skip_kinds=[]))
 
 
-def test_text_alters_on_mysql(project: Project, server: str) -> None:
+def test_text_alters_on_mysql(project, server):
     project.migration(
         "shop",
         "0001_initial",
@@ -245,14 +243,14 @@ def test_text_alters_on_mysql(project: Project, server: str) -> None:
     assert bool(result.removals) is (server == backends.MARIADB)
 
 
-def test_first_field_name() -> None:
+def test_first_field_name():
     assert backends.first_field_name(models.Index(fields=["-a", "b"], name="i")) == "a"
     assert backends.first_field_name(models.Index(F("a").asc(), name="i")) == "a"
     assert backends.first_field_name(models.Index(Lower("a"), name="i")) is None
     assert backends.first_field_name(None) is None
 
 
-def test_other_folds_and_removals(project: Project, server: str) -> None:
+def test_other_folds_and_removals(project, server):
     project.migration("shop", "0001_initial", PARENT + CHILD)
     project.migration(
         "shop",
@@ -282,7 +280,7 @@ class FakeConnection:
         return self._mariadb
 
 
-def test_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_configured(monkeypatch):
     fake = {
         "default": FakeConnection("postgresql", None),
         "a": FakeConnection("mysql", True),

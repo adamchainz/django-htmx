@@ -28,7 +28,7 @@ def dead_field(project: Project) -> None:
     )
 
 
-def test_on_disk_rollback(project: Project) -> None:
+def test_on_disk_rollback(project):
     dead_field(project)
     before = project.files()
     result = project.compact()
@@ -46,7 +46,7 @@ def test_on_disk_rollback(project: Project) -> None:
     assert len(project.compact().removals) == 1
 
 
-def test_on_disk_state_mismatch(project: Project) -> None:
+def test_on_disk_state_mismatch(project):
     dead_field(project)
     before = project.files()
     result = project.compact()
@@ -60,7 +60,7 @@ def test_on_disk_state_mismatch(project: Project) -> None:
     assert project.files() == before
 
 
-def test_on_disk_import_error(project: Project) -> None:
+def test_on_disk_import_error(project):
     dead_field(project)
     before = project.files()
     result = project.compact()
@@ -72,7 +72,7 @@ def test_on_disk_import_error(project: Project) -> None:
     assert project.files() == before
 
 
-def test_in_memory_failure(project: Project, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_in_memory_failure(project, monkeypatch):
     project.migration(
         "shop",
         "0001_initial",
@@ -100,9 +100,7 @@ def test_in_memory_failure(project: Project, monkeypatch: pytest.MonkeyPatch) ->
         project.compact()
 
 
-def test_in_memory_state_difference(
-    project: Project, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_in_memory_state_difference(project, monkeypatch):
     dead_field(project)
     original = core._collect_edits
 
@@ -130,7 +128,7 @@ def analysed(project: Project) -> Any:
         return core.analyse()
 
 
-def test_in_memory_errors(project: Project) -> None:
+def test_in_memory_errors(project):
     from django.db.migrations import operations as m
     from django.db.models import IntegerField
 
@@ -180,7 +178,7 @@ def _replayed(history: Any, edited: dict[int, list[Any]]) -> Any:
     return state
 
 
-def test_first_difference() -> None:
+def test_first_difference():
     from django.db.migrations.state import ModelState
 
     from django_compact_migrations.verify import first_difference
@@ -190,7 +188,7 @@ def test_first_difference() -> None:
     assert first_difference({}, {("shop", "a"): a}) == "model shop.a is unexpected"
 
 
-def test_same_value_odd_objects() -> None:
+def test_same_value_odd_objects():
     from django_compact_migrations.verify import same_value
 
     class NoEq:
@@ -200,7 +198,7 @@ def test_same_value_odd_objects() -> None:
     assert same_value(NoEq(), NoEq()) is False
 
 
-def test_relation_targets_unresolvable() -> None:
+def test_relation_targets_unresolvable():
     from django.db.migrations.state import ModelState
     from django.db.models import ForeignKey
 
@@ -218,7 +216,7 @@ def models_cascade() -> Any:
     return CASCADE
 
 
-def test_dangling_tracker_opaque_state_operation() -> None:
+def test_dangling_tracker_opaque_state_operation():
     from django.db.migrations import operations as m
     from django.db.migrations.operations.base import Operation
     from django.db.migrations.state import ProjectState
@@ -232,7 +230,7 @@ def test_dangling_tracker_opaque_state_operation() -> None:
     assert DanglingTracker().before(op, "shop", ProjectState()) is None
 
 
-def test_on_disk_checks(project: Project) -> None:
+def test_on_disk_checks(project):
     from django_compact_migrations.verify import (
         VerificationError,
         state_from_disk,
@@ -263,7 +261,7 @@ def test_on_disk_checks(project: Project) -> None:
         verify_on_disk([*fake, *plan], state, {}, fake, None, None)
 
 
-def test_on_disk_conflicts(project: Project) -> None:
+def test_on_disk_conflicts(project):
     from django_compact_migrations.verify import (
         VerificationError,
         state_from_disk,

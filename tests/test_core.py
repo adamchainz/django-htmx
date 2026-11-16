@@ -26,18 +26,18 @@ def dead_field(project: Project) -> None:
     project.migration("shop", "0003_remove", REMOVE)
 
 
-def test_location_without_path() -> None:
+def test_location_without_path():
     location = Location(("shop", "0001_initial"), None, None, "CreateModel")
     assert location.display_path() == "shop.0001_initial"
 
 
-def test_noop_data_needs_scan(project: Project) -> None:
+def test_noop_data_needs_scan(project):
     project.migration("shop", "0001_initial", ITEM)
     with pytest.raises(CompactError, match="can't be combined with --opaque"):
         project.compact(noop_data=True, opaque="block")
 
 
-def test_broken_migration_module(project: Project) -> None:
+def test_broken_migration_module(project):
     project.migration(
         "shop", "0001_initial", ITEM + "\n", extra='raise ValueError("boom")'
     )
@@ -45,7 +45,7 @@ def test_broken_migration_module(project: Project) -> None:
         project.compact()
 
 
-def test_changed_before_writing(project: Project) -> None:
+def test_changed_before_writing(project):
     dead_field(project)
     result = project.compact()
     path = project.path("shop", "0002_add")
@@ -57,7 +57,7 @@ def test_changed_before_writing(project: Project) -> None:
     assert "0003_remove.py (missing)" in str(info.value)
 
 
-def test_restore_failure(project: Project, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_restore_failure(project, monkeypatch):
     dead_field(project)
     result = project.compact()
 
@@ -70,7 +70,7 @@ def test_restore_failure(project: Project, monkeypatch: pytest.MonkeyPatch) -> N
     assert "disk full" in str(info.value)
 
 
-def test_write_text_cleans_up(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_write_text_cleans_up(tmp_path, monkeypatch):
     path = tmp_path / "m.py"
     path.write_text("old")
 
@@ -84,7 +84,7 @@ def test_write_text_cleans_up(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     assert path.read_text() == "old"
 
 
-def test_loaded_plan_with_broken_module(project: Project, tmp_path: Path) -> None:
+def test_loaded_plan_with_broken_module(project, tmp_path):
     dead_field(project)
     plan_path = tmp_path / "plan.toml"
     project.command("plan", "-o", str(plan_path))
@@ -96,7 +96,7 @@ def test_loaded_plan_with_broken_module(project: Project, tmp_path: Path) -> Non
             result.write()
 
 
-def test_pruned_with_broken_module(project: Project) -> None:
+def test_pruned_with_broken_module(project):
     dead_field(project)
     result = project.compact(prune=True)
     project.migration("shop", "0004_broken", extra='raise ValueError("boom")')
@@ -108,7 +108,7 @@ def test_pruned_with_broken_module(project: Project) -> None:
         result.write()
 
 
-def test_internal_errors(project: Project, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_internal_errors(project, monkeypatch):
     dead_field(project)
 
     def fail(*args: Any, **kwargs: Any) -> Any:
@@ -138,9 +138,7 @@ def test_internal_errors(project: Project, monkeypatch: pytest.MonkeyPatch) -> N
             project.compact(prune=True)
 
 
-def test_folded_history_not_replaying(
-    project: Project, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_folded_history_not_replaying(project, monkeypatch):
     project.migration("shop", "0001_initial", ITEM)
     project.migration("shop", "0002_add", ADD)
     real = Timeline.replay
@@ -159,7 +157,7 @@ def test_folded_history_not_replaying(
         project.compact(skip_kinds=[])
 
 
-def test_field_of_removed_model_reported_once(project: Project) -> None:
+def test_field_of_removed_model_reported_once(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
         "shop",
@@ -176,7 +174,7 @@ def test_field_of_removed_model_reported_once(project: Project) -> None:
     assert kinds(project.compact()) == [("model", "shop.Coupon")]
 
 
-def test_blocked_requirement_reported_with_root(project: Project) -> None:
+def test_blocked_requirement_reported_with_root(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
         "shop",
@@ -197,7 +195,7 @@ def test_blocked_requirement_reported_with_root(project: Project) -> None:
     assert list(blocked(project.compact(kinds=["field"]))) == ["shop.Item.legacy"]
 
 
-def test_fold_into_unlocatable_create_model(project: Project) -> None:
+def test_fold_into_unlocatable_create_model(project):
     project.migration(
         "shop",
         "0001_initial",
@@ -217,7 +215,7 @@ def test_fold_into_unlocatable_create_model(project: Project) -> None:
     assert target.detail == "regenerated"
 
 
-def test_flat_together_located(project: Project) -> None:
+def test_flat_together_located(project):
     project.migration(
         "shop",
         "0001_initial",
@@ -234,7 +232,7 @@ def test_flat_together_located(project: Project) -> None:
     assert (element.operation, element.line) == ("CreateModel", 16)
 
 
-def test_fold_into_create_model_edited_earlier(project: Project) -> None:
+def test_fold_into_create_model_edited_earlier(project):
     # The first round removes the dead unique_together entry from the
     # CreateModel; the AlterField folds into it in the next round, when the
     # edited operation no longer matches its source.
@@ -260,7 +258,7 @@ def test_fold_into_create_model_edited_earlier(project: Project) -> None:
     assert (target.operation, target.line) == ("CreateModel", 10)  # the call
 
 
-def test_sub_line_of_edited_together_operation(project: Project) -> None:
+def test_sub_line_of_edited_together_operation(project):
     from django.db.migrations.operations import AlterUniqueTogether
 
     from django_compact_migrations.history import load_history

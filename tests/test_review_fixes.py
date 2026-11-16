@@ -22,7 +22,7 @@ TAG = """
 
 
 class TestSupersededReleases:
-    def test_to_field_released(self, project: Project) -> None:
+    def test_to_field_released(self, project):
         project.migration("shop", "0001_initial", ITEM + TAG)
         project.migration(
             "shop",
@@ -48,7 +48,7 @@ class TestSupersededReleases:
         result = project.check_equivalence()
         assert result.removals == []
 
-    def test_db_column_released(self, project: Project) -> None:
+    def test_db_column_released(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -73,7 +73,7 @@ class TestSupersededReleases:
         result = project.check_equivalence()
         assert result.removals == []
 
-    def test_same_column_still_superseded(self, project: Project) -> None:
+    def test_same_column_still_superseded(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -106,9 +106,7 @@ class TestWriteRestores:
             "shop", "0003_remove", 'migrations.RemoveField("item", "legacy"),'
         )
 
-    def test_failure_mid_write(
-        self, project: Project, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_failure_mid_write(self, project, monkeypatch):
         self.dead_field(project)
         before = project.files()
         result = project.compact()
@@ -127,9 +125,7 @@ class TestWriteRestores:
             result.write()
         assert project.files() == before
 
-    def test_keyboard_interrupt(
-        self, project: Project, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_keyboard_interrupt(self, project, monkeypatch):
         self.dead_field(project)
         before = project.files()
         result = project.compact()
@@ -142,7 +138,7 @@ class TestWriteRestores:
             result.write()
         assert project.files() == before
 
-    def test_no_temp_files_left(self, project: Project) -> None:
+    def test_no_temp_files_left(self, project):
         self.dead_field(project)
         project.compact().write()
         assert sorted(p.name for p in project.path("shop").iterdir()) == [
@@ -162,7 +158,7 @@ PERSON = """
 
 
 class TestReverseNames:
-    def test_default_query_name(self, project: Project) -> None:
+    def test_default_query_name(self, project):
         project.migration("shop", "0001_initial", ITEM + PERSON)
         project.migration(
             "shop",
@@ -191,7 +187,7 @@ class TestReverseNames:
             "RunPython in shop.0003_data mentions 'item'",
         )
 
-    def test_default_related_name(self, project: Project) -> None:
+    def test_default_related_name(self, project):
         project.migration("shop", "0001_initial", ITEM + PERSON)
         project.migration(
             "shop",
@@ -231,7 +227,7 @@ COUPON = """
 
 
 class TestElidableScope:
-    def test_unordered_elidable_blocks(self, project: Project) -> None:
+    def test_unordered_elidable_blocks(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration("shop", "0002_coupon", COUPON)
         project.migration("shop", "0003_drop", 'migrations.DeleteModel("Coupon"),')
@@ -248,7 +244,7 @@ class TestElidableScope:
         )
         assert "RunSQL" in project.read("other", "0001_initial")
 
-    def test_ordered_elidable_reported(self, project: Project) -> None:
+    def test_ordered_elidable_reported(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -261,7 +257,7 @@ class TestElidableScope:
             "elidable RunSQL in 0002_coupon (mentions 'coupon', removed with shop.Coupon)"
         ]
 
-    def test_elidable_in_excluded_app_blocks(self, project: Project) -> None:
+    def test_elidable_in_excluded_app_blocks(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration("shop", "0002_coupon", COUPON)
         project.migration(
@@ -282,7 +278,7 @@ class TestElidableScope:
             " removed: app 'other' is excluded",
         )
 
-    def test_elidable_flag_respects_exclude(self, project: Project) -> None:
+    def test_elidable_flag_respects_exclude(self, project):
         project.migration(
             "shop",
             "0001_initial",
@@ -299,7 +295,7 @@ class TestElidableScope:
         )
 
 
-def test_dependency_names_not_scanned(project: Project) -> None:
+def test_dependency_names_not_scanned(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
         "shop",
@@ -314,7 +310,7 @@ def test_dependency_names_not_scanned(project: Project) -> None:
     assert kinds(result) == [("field", "shop.Item.legacy")]
 
 
-def test_excluded_child_blocks_model(project: Project) -> None:
+def test_excluded_child_blocks_model(project):
     project.migration("shop", "0001_initial", ITEM + COUPON)
     project.migration("shop", "0002_drop", 'migrations.DeleteModel("Coupon"),')
     result = project.compact(exclude=["shop.Coupon.code"])
@@ -324,7 +320,7 @@ def test_excluded_child_blocks_model(project: Project) -> None:
     )
 
 
-def test_deconstructible_without_eq(project: Project) -> None:
+def test_deconstructible_without_eq(project):
     (project.root / project.package / "validators.py").write_text(
         "from django.utils.deconstruct import deconstructible\n\n\n"
         "@deconstructible\nclass Check:\n    def __init__(self, limit=1):\n"
@@ -350,7 +346,7 @@ def test_deconstructible_without_eq(project: Project) -> None:
     assert kinds(result) == [("field", "shop.Item.legacy")]
 
 
-def test_non_ascii_names(project: Project) -> None:
+def test_non_ascii_names(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
         "shop",
@@ -371,7 +367,7 @@ def test_non_ascii_names(project: Project) -> None:
     )
 
 
-def test_unusual_line_breaks() -> None:
+def test_unusual_line_breaks():
     sf = SourceFile(__import__("pathlib").Path("m.py"), "# a b\x0cc\nx = [1]\n")
     assert sf.tree is not None
     node = sf.tree.body[0].value  # type: ignore[attr-defined]
@@ -379,7 +375,7 @@ def test_unusual_line_breaks() -> None:
     assert sf.text[start:end] == "[1]"
 
 
-def test_unusual_line_breaks_in_migration(project: Project) -> None:
+def test_unusual_line_breaks_in_migration(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
         "shop",
@@ -398,28 +394,28 @@ def test_unusual_line_breaks_in_migration(project: Project) -> None:
 
 
 class TestUnknownTargets:
-    def test_model(self, project: Project) -> None:
+    def test_model(self, project):
         project.migration("shop", "0001_initial", ITEM)
         with pytest.raises(CompactError, match="No model matching 'shop.Nope'"):
             project.compact("shop.Nope")
 
-    def test_field(self, project: Project) -> None:
+    def test_field(self, project):
         project.migration("shop", "0001_initial", ITEM)
         with pytest.raises(CompactError, match="No field matching 'shop.Item.nope'"):
             project.compact("shop.Item.nope")
 
-    def test_exclude(self, project: Project) -> None:
+    def test_exclude(self, project):
         project.migration("shop", "0001_initial", ITEM)
         with pytest.raises(CompactError, match="No model matching 'shop.Nope'"):
             project.compact(exclude=["shop.Nope"])
 
-    def test_old_names_ok(self, project: Project) -> None:
+    def test_old_names_ok(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration("shop", "0002_drop", 'migrations.DeleteModel("Item"),')
         assert project.compact("shop.Item.name").removals == []
 
 
-def test_bom_kept(project: Project) -> None:
+def test_bom_kept(project):
     # Python reads a file with a byte order mark as UTF-8; it is written
     # back with it.
     project.migration("shop", "0001_initial", ITEM)
@@ -440,7 +436,7 @@ def test_bom_kept(project: Project) -> None:
     assert b"legacy" not in data
 
 
-def test_summary_wording(project: Project) -> None:
+def test_summary_wording(project):
     project.migration(
         "shop",
         "0001_initial",

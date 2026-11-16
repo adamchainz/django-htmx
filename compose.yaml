@@ -18,7 +18,7 @@ services:
       retries: 15
 
   mysql:
-    image: mysql:latest
+    image: mysql:26.10
     environment:
       MYSQL_ROOT_PASSWORD: mysql
     ports:
@@ -30,7 +30,7 @@ services:
       retries: 30
 
   mariadb:
-    image: mariadb:latest
+    image: mariadb:13.0
     environment:
       MARIADB_ROOT_PASSWORD: mariadb
     ports:

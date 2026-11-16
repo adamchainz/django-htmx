@@ -15,12 +15,11 @@ from django_compact_migrations import profile as profile_module
 from django_compact_migrations.core import CompactError
 from django_compact_migrations.runner import run_history
 from django_compact_migrations.scratch import ScratchDatabaseError, scratch_database
-from tests.project import Project
 from tests.test_command import history  # noqa: F401
 from tests.test_compact import ITEM
 
 
-def test_profile_report(history: Project) -> None:  # noqa: F811
+def test_profile_report(history):  # noqa: F811
     out, _ = history.command_db("profile", "--top", "2")
     assert out.startswith("Migrated 3 migrations in ")
     assert "Slowest 2 migrations" in out
@@ -33,7 +32,7 @@ def test_profile_report(history: Project) -> None:  # noqa: F811
     assert settings.DATABASES["default"]["NAME"] == ":memory:"
 
 
-def test_profile_json(history: Project) -> None:  # noqa: F811
+def test_profile_json(history):  # noqa: F811
     out, _ = history.command_db("profile", "--json")
     data = json.loads(out)
     assert data["vendor"] == "sqlite"
@@ -50,7 +49,7 @@ def test_profile_json(history: Project) -> None:  # noqa: F811
     assert [m["migration"] for m in data["slowest_migrations"]] != []
 
 
-def test_profile_failure(project: Project) -> None:
+def test_profile_failure(project):
     project.migration(
         "shop",
         "0001_initial",
@@ -61,9 +60,7 @@ def test_profile_failure(project: Project) -> None:
     assert connections["default"].settings_dict["NAME"] == ":memory:"
 
 
-def test_scratch_cleaned_up_on_interrupt(
-    project: Project, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_scratch_cleaned_up_on_interrupt(project, monkeypatch):
     project.migration("shop", "0001_initial", "")
     made: list[str] = []
     real_mkdtemp = tempfile.mkdtemp
@@ -92,12 +89,12 @@ def test_scratch_cleaned_up_on_interrupt(
     assert connections["default"].settings_dict["NAME"] == ":memory:"
 
 
-def test_scratch_unknown_alias() -> None:
+def test_scratch_unknown_alias():
     with pytest.raises(ScratchDatabaseError, match="no database alias 'nope'"):
         scratch_database("nope").__enter__()
 
 
-def test_hooks_removed(history: Project) -> None:  # noqa: F811
+def test_hooks_removed(history):  # noqa: F811
     history.activate()
     history.purge()
     with history.db_blocker.unblock(), scratch_database() as connection:
@@ -112,7 +109,7 @@ def test_hooks_removed(history: Project) -> None:  # noqa: F811
             assert "database_forwards" not in op.__dict__
 
 
-def test_profile_state_time(history: Project) -> None:  # noqa: F811
+def test_profile_state_time(history):  # noqa: F811
     data = json.loads(history.command_db("profile", "--json")[0])
     assert data["state_seconds"] > 0
     assert data["database_seconds"] > 0
@@ -130,9 +127,7 @@ def test_profile_state_time(history: Project) -> None:  # noqa: F811
     assert "Top 10 operations by project state cost" in out
 
 
-def test_scratch_listing(
-    project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_scratch_listing(project, tmp_path, monkeypatch):
     project.migration("shop", "0001_initial", "")
     temp = tmp_path / "temp"
     temp.mkdir()
@@ -150,7 +145,7 @@ def test_scratch_listing(
     assert not leftover.exists()
 
 
-def test_sigterm_cleans_up(project: Project, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_sigterm_cleans_up(project, monkeypatch):
     import os
     import signal
 
@@ -173,9 +168,7 @@ def test_sigterm_cleans_up(project: Project, monkeypatch: pytest.MonkeyPatch) ->
     assert signal.getsignal(signal.SIGTERM) is signal.SIG_DFL
 
 
-def test_profile_quiet_and_without_plan(
-    project: Project, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_profile_quiet_and_without_plan(project, monkeypatch):
     project.migration("shop", "0001_initial", ITEM)
     out, _ = project.command_db("profile", verbosity=0)
     assert out == ""

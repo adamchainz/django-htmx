@@ -11,7 +11,7 @@ from django.db.migrations import operations as m
 from django.db.migrations.operations.base import Operation
 from django.db.migrations.state import ModelState
 from django.db.migrations.writer import OperationWriter
-from tokenize_rt import UNIMPORTANT_WS, Token  # type: ignore[import-untyped]
+from tokenize_rt import UNIMPORTANT_WS, Token
 
 from django_compact_migrations.history import OpRecord, SourceFile
 from django_compact_migrations.locate import (

@@ -23,7 +23,6 @@ from django_compact_migrations.scratch import (
 )
 from django_compact_migrations.snapshot import Mask, Snapshot, _value, take_snapshot
 from tests.conftest import SERVERS
-from tests.project import Project
 from tests.test_compact import ITEM, blocked
 
 # Comparing snapshots
@@ -33,7 +32,7 @@ def snap(**kwargs: Any) -> Snapshot:
     return Snapshot("sqlite", **kwargs)
 
 
-def test_column_differences_named() -> None:
+def test_column_differences_named():
     a = snap(schema={("columns", "t", "t"): [("a", "int"), ("b", "int")]})
     b = snap(schema={("columns", "t", "t"): [("a", "int"), ("b", "text")]})
     (diff,) = a.differences(b)
@@ -44,14 +43,14 @@ def test_column_differences_named() -> None:
     assert a.differences(b, Mask(schema={("columns", "t", "t")})) == []
 
 
-def test_without_migrations() -> None:
+def test_without_migrations():
     a = snap()
     assert a.without_migrations([("shop", "0001")]) is a
     b = snap(data={"django_migrations": Counter({("'shop'", "'0001'"): 1})})
     assert b.without_migrations([("shop", "0001")]).data["django_migrations"] == {}
 
 
-def test_nondeterminism() -> None:
+def test_nondeterminism():
     a = snap(
         schema={("index", "t", "i"): "x"},
         data={
@@ -84,7 +83,7 @@ def test_nondeterminism() -> None:
 # SQLite, MySQL and other backends
 
 
-def test_sqlite_objects(django_db_blocker: Any) -> None:
+def test_sqlite_objects(django_db_blocker):
     with django_db_blocker.unblock(), scratch_database() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -111,9 +110,7 @@ def test_sqlite_objects(django_db_blocker: Any) -> None:
     )
 
 
-def test_generic_backend(
-    django_db_blocker: Any, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_generic_backend(django_db_blocker, monkeypatch):
     with django_db_blocker.unblock(), scratch_database() as connection:
         with connection.cursor() as cursor:
             cursor.execute("CREATE TABLE t (a integer UNIQUE)")
@@ -128,7 +125,7 @@ def test_generic_backend(
 # Scratch databases without a server
 
 
-def test_mirror_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_mirror_errors(monkeypatch):
     from django.db.utils import ConnectionHandler
 
     sqlite = "django.db.backends.sqlite3"
@@ -153,7 +150,7 @@ def test_mirror_errors(monkeypatch: pytest.MonkeyPatch) -> None:
     assert sorted(group.aliases) == ["default", "m1", "m2"]
 
 
-def test_dummy_alias_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_dummy_alias_refused(monkeypatch):
     from django.db.utils import ConnectionHandler
 
     handler = ConnectionHandler({"default": {"ENGINE": "django.db.backends.dummy"}})
@@ -162,9 +159,7 @@ def test_dummy_alias_refused(monkeypatch: pytest.MonkeyPatch) -> None:
         scratch_database("default").__enter__()
 
 
-def test_signals_outside_main_thread(
-    django_db_blocker: Any, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_signals_outside_main_thread(django_db_blocker, monkeypatch):
     restores: list[Any] = []
     thread = threading.Thread(
         target=lambda: restores.append(scratch_module._exit_on_termination())
@@ -178,7 +173,7 @@ def test_signals_outside_main_thread(
     scratch_module._exit_on_termination()()
 
 
-def test_drop_failure_reported() -> None:
+def test_drop_failure_reported():
     class Creation:
         def sql_table_creation_suffix(self) -> str:
             return ""
@@ -201,7 +196,7 @@ def test_drop_failure_reported() -> None:
         scratch_module._create(Connection(), "compactmig_x")
 
 
-def test_leftovers_unsupported(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_leftovers_unsupported(monkeypatch):
     monkeypatch.setattr(connections["default"], "vendor", "oracle")
     with pytest.raises(ScratchDatabaseError, match="aren't supported"):
         list_leftovers()
@@ -210,7 +205,7 @@ def test_leftovers_unsupported(monkeypatch: pytest.MonkeyPatch) -> None:
 # PostgreSQL
 
 
-def test_postgres_snapshot(pg: str) -> None:
+def test_postgres_snapshot(pg):
     with scratch_database(pg) as connection:
         assert connection.settings_dict["NAME"].startswith("compactmig_")
         with connection.cursor() as cursor:
@@ -252,7 +247,7 @@ def test_postgres_snapshot(pg: str) -> None:
     )
 
 
-def test_postgres_drop_forced(pg: str) -> None:
+def test_postgres_drop_forced(pg):
     import psycopg
 
     config = SERVERS[pg]
@@ -273,7 +268,7 @@ def test_postgres_drop_forced(pg: str) -> None:
     assert name not in list_leftovers(pg)
 
 
-def test_postgres_leftovers(pg: str) -> None:
+def test_postgres_leftovers(pg):
     connection = connections[pg]
     name = scratch_module._scratch_name("leftover", 63)
     scratch_module._create(connection, name)
@@ -286,9 +281,7 @@ def test_postgres_leftovers(pg: str) -> None:
         drop_leftover("postgres", pg)
 
 
-def test_postgres_drop_failure_reported(
-    pg: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_postgres_drop_failure_reported(pg, monkeypatch):
     real = scratch_module._drop
 
     def drop(connection: Any, name: str) -> None:
@@ -301,7 +294,7 @@ def test_postgres_drop_failure_reported(
             assert connections[pg].vendor == "postgresql"
 
 
-def test_postgres_trial(pg: str, project: Project) -> None:
+def test_postgres_trial(pg, project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
         "shop",
@@ -321,12 +314,12 @@ def test_postgres_trial(pg: str, project: Project) -> None:
     assert sorted(r.kind for r in result.removals) == ["field", "noop"]
 
 
-def test_memoryview_values() -> None:
+def test_memoryview_values():
     # psycopg2 returns bytea as memoryview.
     assert _value(memoryview(b"ab")) == "b'ab'"
 
 
-def test_postgres_scratch_name_taken(pg: str, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_postgres_scratch_name_taken(pg, monkeypatch):
     # Scratch names are random: never a configured database's, but checked.
     monkeypatch.setattr(scratch_module, "_scratch_name", lambda name, length: name)
     with pytest.raises(ScratchDatabaseError, match="it is a real database's name"):
@@ -355,7 +348,7 @@ def my_snapshot(alias: str, *statements: str) -> Snapshot:
         return take_snapshot(connection)
 
 
-def test_mysql_snapshot(my: str) -> None:
+def test_mysql_snapshot(my):
     base = my_snapshot(
         my,
         "CREATE TABLE parent (id int PRIMARY KEY)",
@@ -414,14 +407,14 @@ def test_mysql_snapshot(my: str) -> None:
         ),
     ],
 )
-def test_mysql_differences(my: str, table: str, what: str) -> None:
+def test_mysql_differences(my, table, what):
     base = my_snapshot(my, MY_TABLE)
     other = my_snapshot(my, table)
     details = [d.detail for d in base.differences(other, Mask())]
     assert any(d.startswith(what) for d in details), details
 
 
-def test_mysql_trial(my: str, project: Project) -> None:
+def test_mysql_trial(my, project):
     # The removal the static rules keep on MySQL (see test_backends), found
     # by the trial when the rules don't know the server.
     project.migration(
@@ -461,7 +454,7 @@ def test_mysql_trial(my: str, project: Project) -> None:
     assert (info["vendor"], info["server"]) == ("mysql", SERVER_NAMES[my])
 
 
-def test_mysql_noop_trial(my: str, project: Project) -> None:
+def test_mysql_noop_trial(my, project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
         "shop",

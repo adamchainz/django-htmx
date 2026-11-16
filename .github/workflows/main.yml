@@ -31,7 +31,7 @@ jobs:
       with:
         persist-credentials: false
 
-    - name: Start PostgreSQL
+    - name: Start database servers
       run: docker compose up -d --wait
 
     - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0

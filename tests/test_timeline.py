@@ -47,7 +47,7 @@ def lives(timeline: Timeline, label: str) -> list[Any]:
 # Helpers
 
 
-def test_mentioned_names() -> None:
+def test_mentioned_names():
     class Odd:
         def deconstruct(self) -> Any:
             raise ValueError
@@ -67,7 +67,7 @@ def test_mentioned_names() -> None:
     assert mentioned_names(values) == {"author_id", "author", "a", "b", "c"}
 
 
-def test_default_related_names() -> None:
+def test_default_related_names():
     model = ModelLife("shop", "Item")
     model.default_related_names = {"+", "%(class)s_things"}
     fk = FieldLife(model, "parent")
@@ -76,11 +76,11 @@ def test_default_related_names() -> None:
     assert fk.scan_names() == {"parent", "item", "item_things"}
 
 
-def test_option_field_names() -> None:
+def test_option_field_names():
     assert _option_field_names({"get_latest_by": "-created"}) == {"created"}
 
 
-def test_same_with_failing_comparison() -> None:
+def test_same_with_failing_comparison():
     class Odd:
         def __eq__(self, other: object) -> bool:
             raise ValueError
@@ -91,7 +91,7 @@ def test_same_with_failing_comparison() -> None:
 # Known operations
 
 
-def test_reused_names(project: Project) -> None:
+def test_reused_names(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
         "shop",
@@ -125,7 +125,7 @@ def test_reused_names(project: Project) -> None:
     assert "constraint name reused" in reasons["shop.Item.c"][0]
 
 
-def test_unknown_names(project: Project) -> None:
+def test_unknown_names(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
         "shop",
@@ -156,7 +156,7 @@ def test_unknown_names(project: Project) -> None:
         'migrations.RenameField("item", "nope", "other")',
     ],
 )
-def test_unknown_field(project: Project, operation: str) -> None:
+def test_unknown_field(project, operation):
     project.migration("shop", "0001_initial", ITEM + operation + ",")
     with pytest.raises(CompactError, match="refers to the field shop.Item.nope"):
         project.compact()
@@ -165,7 +165,7 @@ def test_unknown_field(project: Project, operation: str) -> None:
 @pytest.mark.skipif(
     not hasattr(migrations, "AlterConstraint"), reason="Django 6.0+ operation"
 )
-def test_alter_constraint(project: Project) -> None:
+def test_alter_constraint(project):
     check = "models.CheckConstraint(condition=Q(id__gt=0), name={!r})"
     project.migration(
         "shop",
@@ -190,7 +190,7 @@ def test_alter_constraint(project: Project) -> None:
     assert life.names == ["c", "renamed"]
 
 
-def test_validate_constraint(project: Project) -> None:
+def test_validate_constraint(project):
     project.migration(
         "shop",
         "0001_initial",
@@ -212,7 +212,7 @@ def test_validate_constraint(project: Project) -> None:
     assert [e.rec.op.name for e in model.elements[1:]] == ["nope"]
 
 
-def test_together_options(project: Project) -> None:
+def test_together_options(project):
     project.migration(
         "shop",
         "0001_initial",
@@ -255,7 +255,7 @@ def test_together_options(project: Project) -> None:
     assert repr(together) == "<TogetherLife shop.Item unique_together (id, title)>"
 
 
-def test_model_options(project: Project) -> None:
+def test_model_options(project):
     project.migration(
         "shop",
         "0001_initial",
@@ -303,7 +303,7 @@ def _plain_app(project: Project) -> None:
     project.apps.append("plain")
 
 
-def test_relations(project: Project) -> None:
+def test_relations(project):
     project.migration(
         "shop",
         "0001_initial",
@@ -415,7 +415,7 @@ migrations.CreateModel(
 """
 
 
-def test_opaque_state_changes(project: Project) -> None:
+def test_opaque_state_changes(project):
     project.migration(
         "shop",
         "0001_initial",
@@ -453,7 +453,7 @@ def test_opaque_state_changes(project: Project) -> None:
     assert later.end is not None
 
 
-def test_opaque_state_inside_run_sql(project: Project) -> None:
+def test_opaque_state_inside_run_sql(project):
     project.migration(
         "shop",
         "0001_initial",
@@ -470,13 +470,13 @@ def test_opaque_state_inside_run_sql(project: Project) -> None:
     assert item.poison_reasons == ["changed by RunSQL in shop.0001_initial"]
 
 
-def test_opaque_state_failure(project: Project) -> None:
+def test_opaque_state_failure(project):
     project.migration("shop", "0001_initial", ITEM + 'Change("fail"),', extra=STATE_OPS)
     with pytest.raises(CompactError, match="Could not apply Change"):
         project.compact()
 
 
-def test_opaque_element_reason(project: Project) -> None:
+def test_opaque_element_reason(project):
     project.migration("shop", "0001_initial", ITEM + 'migrations.RunSQL("SELECT 1"),')
     timeline = replay(project)
     (element,) = timeline.elements[1]

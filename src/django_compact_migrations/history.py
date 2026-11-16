@@ -18,7 +18,7 @@ from django.db.migrations.graph import MigrationGraph
 from django.db.migrations.loader import MigrationLoader
 from django.db.migrations.migration import Migration
 from django.db.migrations.operations.base import Operation
-from tokenize_rt import Token, src_to_tokens  # type: ignore[import-untyped]
+from tokenize_rt import Token, src_to_tokens
 
 from django_compact_migrations import tokens as tk
 

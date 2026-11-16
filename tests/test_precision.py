@@ -24,7 +24,7 @@ def dead_field(project: Project, name: str, ops: str, extra: str = "") -> None:
 
 
 class TestPythonWords:
-    def test_locals_parameters_and_comments_ignored(self, project: Project) -> None:
+    def test_locals_parameters_and_comments_ignored(self, project):
         dead_field(
             project,
             "event",
@@ -49,7 +49,7 @@ class TestPythonWords:
             'print(b"event")',
         ],
     )
-    def test_names_still_found(self, project: Project, body: str) -> None:
+    def test_names_still_found(self, project, body):
         dead_field(
             project,
             "event",
@@ -60,7 +60,7 @@ class TestPythonWords:
             "RunPython in shop.0002_add mentions 'event'",
         )
 
-    def test_imports_count(self, project: Project) -> None:
+    def test_imports_count(self, project):
         (project.root / project.package / "event.py").write_text("X = 1\n")
         dead_field(
             project,
@@ -72,7 +72,7 @@ class TestPythonWords:
             "RunPython in shop.0002_add mentions 'event'",
         )
 
-    def test_custom_operation_parameters_ignored(self, project: Project) -> None:
+    def test_custom_operation_parameters_ignored(self, project):
         (project.root / project.package / "ops.py").write_text(
             "from django.db import migrations\n\n\n"
             "class IgnoreMigration(migrations.operations.base.Operation):\n"
@@ -88,7 +88,7 @@ class TestPythonWords:
         )
         assert kinds(project.check_equivalence()) == [("field", "shop.Item.state")]
 
-    def test_get_model_app_label_ignored(self, project: Project) -> None:
+    def test_get_model_app_label_ignored(self, project):
         dead_field(
             project,
             "shop",
@@ -101,10 +101,10 @@ class TestPythonWords:
         assert kinds(project.compact()) == [("field", "shop.Item.shop")]
         assert "shop" in python_words(__import__("ast").parse('get_model("shop.Item")'))
 
-    def test_fallback_to_raw_text(self) -> None:
+    def test_fallback_to_raw_text(self):
         assert _source_words("lambda: event)") == "lambda: event)"
 
-    def test_words(self) -> None:
+    def test_words(self):
         import ast
 
         tree = ast.parse(
@@ -141,16 +141,12 @@ class TestThirdParty:
             history, "is_editable_path", lambda path: "vendor" not in path.parts
         )
 
-    def test_unordered_ignored(
-        self, project: Project, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_unordered_ignored(self, project, monkeypatch):
         self.setup(project, monkeypatch, [("shop", "0001_initial")])
         assert kinds(project.compact()) == [("field", "shop.Item.legacy")]
         assert kinds(project.compact(opaque="block")) == [("field", "shop.Item.legacy")]
 
-    def test_descendant_counts(
-        self, project: Project, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_descendant_counts(self, project, monkeypatch):
         self.setup(project, monkeypatch, [("shop", "0002_add")])
         assert blocked(project.compact())["shop.Item.legacy"] == (
             "RunSQL in vendor.0001_initial mentions 'legacy'",
@@ -158,7 +154,7 @@ class TestThirdParty:
 
 
 class TestPoisoningWidth:
-    def test_sdas_index_poisons_only_index(self, project: Project) -> None:
+    def test_sdas_index_poisons_only_index(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -202,7 +198,7 @@ class TestPoisoningWidth:
         }
         project.check_equivalence()
 
-    def test_state_only_remove_field(self, project: Project) -> None:
+    def test_state_only_remove_field(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -229,7 +225,7 @@ class TestPoisoningWidth:
         assert "shop.Item" not in blocked(result)
 
 
-def test_blocked_lines_name_their_migrations(project: Project) -> None:
+def test_blocked_lines_name_their_migrations(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
         "shop",
@@ -297,7 +293,7 @@ class TestSoftReferences:
             """,
         )
 
-    def test_netbox_shape(self, project: Project) -> None:
+    def test_netbox_shape(self, project):
         self.history(
             project,
             "('_name', 'pk')",
@@ -314,11 +310,11 @@ class TestSoftReferences:
         "ordering",
         ["['-_name']", "(models.F('_name').asc(),)", "['_name__lower']"],
     )
-    def test_ordering_forms(self, project: Project, ordering: str) -> None:
+    def test_ordering_forms(self, project, ordering):
         self.history(project, ordering, 'apps.get_model("shop", "Item")')
         assert "shop.Item._name" in blocked(project.compact())
 
-    def test_get_latest_by(self, project: Project) -> None:
+    def test_get_latest_by(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -333,7 +329,7 @@ class TestSoftReferences:
         )
         assert "shop.Item.stamp" in blocked(project.compact())
 
-    def test_period_outside_query(self, project: Project) -> None:
+    def test_period_outside_query(self, project):
         # The query runs after the ordering stopped naming the field.
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
@@ -356,7 +352,7 @@ class TestSoftReferences:
             ("field", "shop.Item._name")
         ]
 
-    def test_query_through_many_to_many(self, project: Project) -> None:
+    def test_query_through_many_to_many(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -390,7 +386,7 @@ class TestSoftReferences:
             project.compact(skip_kinds=["fold", "superseded"])
         )
 
-    def test_query_through_child_model(self, project: Project) -> None:
+    def test_query_through_child_model(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",

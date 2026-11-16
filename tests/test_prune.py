@@ -56,7 +56,7 @@ def dead_field(project: Project) -> None:
     project.migration("shop", "0004_qty", QTY)
 
 
-def test_chain_pruned_and_rewired(project: Project) -> None:
+def test_chain_pruned_and_rewired(project):
     dead_field(project)
     project.activate()
     before = ancestors(project)
@@ -73,14 +73,14 @@ def test_chain_pruned_and_rewired(project: Project) -> None:
     assert kinds == [("prune", "0002_add"), ("prune", "0003_remove")]
 
 
-def test_without_flag_kept(project: Project) -> None:
+def test_without_flag_kept(project):
     dead_field(project)
     result = project.check_equivalence()
     assert pruned(result) == []
     assert project.path("shop", "0002_add").exists()
 
 
-def test_leaf_and_root_kept(project: Project) -> None:
+def test_leaf_and_root_kept(project):
     project.migration(
         "shop",
         "0001_initial",
@@ -100,7 +100,7 @@ def test_leaf_and_root_kept(project: Project) -> None:
     assert reasons["shop.0003_drop"] == "it is the latest migration of its app"
 
 
-def test_already_empty(project: Project) -> None:
+def test_already_empty(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration("shop", "0002_nothing", "")
     project.migration("shop", "0003_qty", QTY)
@@ -109,7 +109,7 @@ def test_already_empty(project: Project) -> None:
     assert result.removed_operations == 0
 
 
-def test_cross_app_dependant(project: Project) -> None:
+def test_cross_app_dependant(project):
     dead_field(project)
     project.migration(
         "other",
@@ -133,7 +133,7 @@ def test_cross_app_dependant(project: Project) -> None:
     }
 
 
-def test_redundant_dependency_not_added(project: Project) -> None:
+def test_redundant_dependency_not_added(project):
     dead_field(project)
     project.migration(
         "other",
@@ -153,7 +153,7 @@ def test_redundant_dependency_not_added(project: Project) -> None:
     assert "shop" not in text.split("dependencies")[1].split("]")[0]
 
 
-def test_computed_dependencies_block(project: Project) -> None:
+def test_computed_dependencies_block(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration("shop", "0002_add", LEGACY)
     project.migration("shop", "0003_remove", REMOVE)
@@ -173,7 +173,7 @@ def test_computed_dependencies_block(project: Project) -> None:
     assert "can't be rewritten" in prune_blocks(result)["shop.0003_remove"]
 
 
-def test_first_dependency_not_copied(project: Project) -> None:
+def test_first_dependency_not_copied(project):
     project.migration(
         "other",
         "0001_initial",
@@ -196,7 +196,7 @@ def test_first_dependency_not_copied(project: Project) -> None:
     assert '("shop", "0002_add")' in project.read("shop", "0004_qty")
 
 
-def test_run_before_blocks(project: Project) -> None:
+def test_run_before_blocks(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration("shop", "0002_add", LEGACY)
     project.migration("shop", "0003_remove", REMOVE)
@@ -221,7 +221,7 @@ def test_run_before_blocks(project: Project) -> None:
     )
 
 
-def test_mentioned_module_blocks(project: Project) -> None:
+def test_mentioned_module_blocks(project):
     dead_field(project)
     project.migration(
         "other",
@@ -240,7 +240,7 @@ def test_mentioned_module_blocks(project: Project) -> None:
     assert "mentioned" in prune_blocks(result)["shop.0002_add"]
 
 
-def test_dependency_of_replaced_migration_blocks(project: Project) -> None:
+def test_dependency_of_replaced_migration_blocks(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration("shop", "0002_add", LEGACY)
     project.migration("shop", "0003_remove", REMOVE)
@@ -266,7 +266,7 @@ def test_dependency_of_replaced_migration_blocks(project: Project) -> None:
     assert "replaced" in prune_blocks(result)["shop.0003_remove"]
 
 
-def test_squash_blocks(project: Project) -> None:
+def test_squash_blocks(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration("shop", "0002_add", LEGACY)
     path = project.migration("shop", "0003_remove", REMOVE)
@@ -282,7 +282,7 @@ def test_squash_blocks(project: Project) -> None:
     assert prune_blocks(result)["shop.0003_remove"] == "it is a squashed migration"
 
 
-def test_excluded_dependant_blocks(project: Project) -> None:
+def test_excluded_dependant_blocks(project):
     dead_field(project)
     project.migration(
         "other",
@@ -295,7 +295,7 @@ def test_excluded_dependant_blocks(project: Project) -> None:
     assert pruned(result) == ["shop.0002_add"]
 
 
-def test_unselected_app_not_pruned(project: Project) -> None:
+def test_unselected_app_not_pruned(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration("shop", "0002_nothing", "")
     project.migration("shop", "0003_qty", QTY)
@@ -307,7 +307,7 @@ def test_unselected_app_not_pruned(project: Project) -> None:
     assert pruned(result) == ["shop.0002_nothing"]
 
 
-def test_plan_round_trip(project: Project, tmp_path: Path) -> None:
+def test_plan_round_trip(project, tmp_path):
     dead_field(project)
     plan_path = tmp_path / "plan.toml"
     out, _ = project.command("plan", "--prune", "-o", str(plan_path))
@@ -326,9 +326,7 @@ def test_plan_round_trip(project: Project, tmp_path: Path) -> None:
     assert not project.path("shop", "0002_add").exists()
 
 
-def test_failed_write_restores_deleted_files(
-    project: Project, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_failed_write_restores_deleted_files(project, monkeypatch):
     dead_field(project)
     before = project.files()
     result = project.compact(**PRUNE)
@@ -342,14 +340,14 @@ def test_failed_write_restores_deleted_files(
     assert project.files() == before
 
 
-def test_trial(project: Project) -> None:
+def test_trial(project):
     dead_field(project)
     result = project.check_equivalence(trial=True, **PRUNE)
     assert pruned(result) == ["shop.0002_add", "shop.0003_remove"]
     assert result.verification["failures"] == []
 
 
-def test_noop_data_then_pruned(project: Project) -> None:
+def test_noop_data_then_pruned(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
         "shop",
@@ -366,7 +364,7 @@ def test_noop_data_then_pruned(project: Project) -> None:
     assert pruned(result) == ["shop.0002_data"]
 
 
-def test_flag_with_plan_file(project: Project, tmp_path: Path) -> None:
+def test_flag_with_plan_file(project, tmp_path):
     dead_field(project)
     plan_path = tmp_path / "plan.toml"
     project.command("plan", "-o", str(plan_path))
@@ -388,7 +386,7 @@ def leaves_and_roots(project: Project) -> dict[str, Any]:
     }
 
 
-def test_same_app_dependency_kept(project: Project) -> None:
+def test_same_app_dependency_kept(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
         "other",
@@ -409,7 +407,7 @@ def test_same_app_dependency_kept(project: Project) -> None:
     assert leaves_and_roots(project) == before
 
 
-def test_pruned_merge_migration(project: Project) -> None:
+def test_pruned_merge_migration(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration("shop", "0002_a", QTY)
     project.migration(
@@ -431,7 +429,7 @@ def test_pruned_merge_migration(project: Project) -> None:
     assert leaves_and_roots(project) == before
 
 
-def test_merge_with_branch_reached_through_other_app(project: Project) -> None:
+def test_merge_with_branch_reached_through_other_app(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration("shop", "0002_a", QTY)
     project.migration(
@@ -474,7 +472,7 @@ def plan_order(project: Project) -> list[tuple[str, str]]:
         return generate_plan(MigrationLoader(None, ignore_no_migrations=True).graph)
 
 
-def test_order_preserved(project: Project) -> None:
+def test_order_preserved(project):
     sql = 'migrations.RunSQL("SELECT 1"),'
     project.migration("cc", "0001_initial", sql)
     project.migration("cc", "0002_more", sql)
@@ -492,9 +490,7 @@ def test_order_preserved(project: Project) -> None:
     assert plan_order(project) == before
 
 
-def test_trial_drops_prune_when_it_fails(
-    project: Project, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_trial_drops_prune_when_it_fails(project, monkeypatch):
     from django_compact_migrations import runner
     from django_compact_migrations.prune import PruneError
 
@@ -510,9 +506,7 @@ def test_trial_drops_prune_when_it_fails(
     assert result.removals  # the rest of the plan stays
 
 
-def test_trial_blames_until_a_plan_passes(
-    project: Project, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_trial_blames_until_a_plan_passes(project, monkeypatch):
     from django.db import migrations
 
     from django_compact_migrations import trial as trial_module
@@ -546,9 +540,7 @@ def same_app_shape(project: Project) -> None:
     project.migration("shop", "0004_qty", QTY, extra_deps=[("other", "0001_initial")])
 
 
-def test_broken_rewiring_rolled_back(
-    project: Project, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_broken_rewiring_rolled_back(project, monkeypatch):
     same_app_shape(project)
     before = project.files()
     result = project.compact(**PRUNE)
@@ -567,7 +559,7 @@ def test_broken_rewiring_rolled_back(
     assert project.files() == before
 
 
-def test_same_app_shape_under_order_check(project: Project) -> None:
+def test_same_app_shape_under_order_check(project):
     # The aa/bb/cc part makes the first plan change migrate's order, so
     # pruning goes one migration at a time; the shop part must still keep
     # its same-app dependency.
@@ -613,9 +605,7 @@ def unreadable(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
     monkeypatch.setattr(history, "_read_source", read)
 
 
-def test_dependant_not_editable(
-    project: Project, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_dependant_not_editable(project, monkeypatch):
     dead_field(project)
     unreadable(monkeypatch, "0004_qty")
     result = project.compact(**PRUNE)
@@ -624,9 +614,7 @@ def test_dependant_not_editable(
     )
 
 
-def test_empty_migration_not_editable(
-    project: Project, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_empty_migration_not_editable(project, monkeypatch):
     project.migration("shop", "0001_initial", ITEM)
     project.migration("shop", "0002_nothing")
     project.migration("shop", "0003_qty", QTY)
@@ -637,7 +625,7 @@ def test_empty_migration_not_editable(
     )
 
 
-def test_own_run_before_blocks(project: Project) -> None:
+def test_own_run_before_blocks(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration("other", "0001_initial", 'migrations.RunSQL("SELECT 1"),')
     project.migration(
@@ -653,7 +641,7 @@ def test_own_run_before_blocks(project: Project) -> None:
     assert prune_blocks(result)["shop.0002_nothing"] == "it has run_before"
 
 
-def test_pruned_diamond(project: Project) -> None:
+def test_pruned_diamond(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration("shop", "0002_a", LEGACY, deps=[("shop", "0001_initial")])
     project.migration(
@@ -675,16 +663,14 @@ def test_pruned_diamond(project: Project) -> None:
     assert '("shop", "0001_initial")' in project.read("shop", "0004_qty")
 
 
-def test_unreadable_file_not_scanned(
-    project: Project, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_unreadable_file_not_scanned(project, monkeypatch):
     dead_field(project)
     unreadable(monkeypatch, "0001_initial")
     result = project.compact(**PRUNE)
     assert pruned(result) == ["shop.0002_add", "shop.0003_remove"]
 
 
-def test_mentioned_by_module_without_class(project: Project) -> None:
+def test_mentioned_by_module_without_class(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration("shop", "0002_add", LEGACY)
     project.migration("shop", "0003_remove", REMOVE)
@@ -716,9 +702,7 @@ def test_mentioned_by_module_without_class(project: Project) -> None:
         ("dependencies = DEPS", None),
     ],
 )
-def test_dependency_forms(
-    project: Project, dependencies: str, rewritten: str | None
-) -> None:
+def test_dependency_forms(project, dependencies, rewritten):
     project.migration("shop", "0001_initial", ITEM)
     project.migration("shop", "0002_add", LEGACY)
     project.migration("shop", "0003_remove", REMOVE)
@@ -737,7 +721,7 @@ def test_dependency_forms(
         assert rewritten in project.read("shop", "0004_qty")
 
 
-def test_invariant_failures(project: Project) -> None:
+def test_invariant_failures(project):
     dead_field(project)
     project.migration("other", "0001_initial", deps=[("shop", "0001_initial")])
     project.activate()
@@ -766,7 +750,7 @@ def test_invariant_failures(project: Project) -> None:
     assert ancestor_sets(graph, keys)[("shop", "0001_initial")] == frozenset()
 
 
-def test_ancestor_sets_redundant_dependency() -> None:
+def test_ancestor_sets_redundant_dependency():
     graph = MigrationGraph()
     a, b, c = ("x", "0001"), ("x", "0002"), ("x", "0003")
     for key in (a, b, c):
@@ -777,7 +761,7 @@ def test_ancestor_sets_redundant_dependency() -> None:
     assert ancestor_sets(graph, [c])[c] == {a, b}
 
 
-def test_dependant_already_after_parent(project: Project) -> None:
+def test_dependant_already_after_parent(project):
     dead_field(project)
     path = project.path("shop", "0004_qty")
     path.write_text(
@@ -814,7 +798,7 @@ print(json.dumps({
 """
 
 
-def test_prune_independent_of_hash_seed(project: Project) -> None:
+def test_prune_independent_of_hash_seed(project):
     # other.0002_c depends on the empty shop.0003_p, which depends on both
     # shop.0001 and shop.0002 (itself after shop.0001). Inheriting both is
     # redundant: walked latest first, only shop.0002 is added; Django's

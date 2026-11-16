@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import textwrap
 import tomllib
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -43,7 +42,7 @@ def noops(result: Any) -> list[str]:
     return [r.description for r in result.removals if r.kind == "noop"]
 
 
-def test_loop_over_empty_table(project: Project) -> None:
+def test_loop_over_empty_table(project):
     data_migration(
         project,
         """
@@ -61,18 +60,18 @@ def test_loop_over_empty_table(project: Project) -> None:
     assert result.removals[0].kind in ("noop", "field")
 
 
-def test_seed_row_kept(project: Project) -> None:
+def test_seed_row_kept(project):
     data_migration(project, 'Item.objects.using(alias).create(name="x", legacy=1)')
     result = project.check_equivalence(**NOOP)
     assert noops(result) == []
 
 
-def test_update_zero_rows_removed(project: Project) -> None:
+def test_update_zero_rows_removed(project):
     data_migration(project, "Item.objects.using(alias).update(legacy=2)")
     assert len(noops(project.check_equivalence(**NOOP))) == 1
 
 
-def test_update_seeded_row_kept(project: Project) -> None:
+def test_update_seeded_row_kept(project):
     data_migration(
         project,
         "Item.objects.using(alias).update(legacy=2)",
@@ -81,7 +80,7 @@ def test_update_seeded_row_kept(project: Project) -> None:
     assert noops(project.check_equivalence(**NOOP)) == []
 
 
-def test_run_sql(project: Project) -> None:
+def test_run_sql(project):
     project.migration(
         "shop",
         "0001_initial",
@@ -97,7 +96,7 @@ def test_run_sql(project: Project) -> None:
     assert "CREATE INDEX" in project.read("shop", "0001_initial")
 
 
-def test_other_alias_kept(project: Project, tmp_path: Path) -> None:
+def test_other_alias_kept(project, tmp_path):
     data_migration(
         project,
         """
@@ -113,12 +112,12 @@ def test_other_alias_kept(project: Project, tmp_path: Path) -> None:
     assert noops(result) == []
 
 
-def test_excluded_app_kept(project: Project) -> None:
+def test_excluded_app_kept(project):
     data_migration(project, "Item.objects.using(alias).update(legacy=2)")
     assert noops(project.check_equivalence(exclude=["shop"], **NOOP)) == []
 
 
-def test_fold_unlocked(project: Project) -> None:
+def test_fold_unlocked(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
         "shop",
@@ -139,7 +138,7 @@ def test_fold_unlocked(project: Project) -> None:
     assert sorted(r.kind for r in result.removals) == ["fold", "noop"]
 
 
-def test_plan_file(project: Project, tmp_path: Path) -> None:
+def test_plan_file(project, tmp_path):
     data_migration(project, "Item.objects.using(alias).update(legacy=2)")
     plan_path = tmp_path / "plan.toml"
     out, _ = project.command("plan", "--noop-data", "-o", str(plan_path))
@@ -151,7 +150,7 @@ def test_plan_file(project: Project, tmp_path: Path) -> None:
     assert "RunPython" not in project.read("shop", "0003_data").split("operations")[-1]
 
 
-def test_needs_trial_backend(project: Project) -> None:
+def test_needs_trial_backend(project):
     data_migration(project, "pass")
     with pytest.raises(CommandError, match="can't be combined"):
         project.command("plan", "--noop-data", "--opaque", "ignore")
@@ -179,7 +178,7 @@ def test_needs_trial_backend(project: Project) -> None:
         ("PRAGMA foreign_keys = 0", None, True),
     ],
 )
-def test_classify(sql: str, rowcount: int | None, write: bool) -> None:
+def test_classify(sql, rowcount, write):
     assert (classify(sql, rowcount) is not None) is write
 
 
@@ -198,7 +197,7 @@ def test_classify(sql: str, rowcount: int | None, write: bool) -> None:
         (print, 0, "can't be read"),
     ],
 )
-def test_source_concern(func: Any, statements: int, concern: str | None) -> None:
+def test_source_concern(func, statements, concern):
     found = source_concern(func, statements)
     if concern is None:
         assert found is None
@@ -206,7 +205,7 @@ def test_source_concern(func: Any, statements: int, concern: str | None) -> None
         assert found is not None and concern in found
 
 
-def test_signal_registration_kept(project: Project) -> None:
+def test_signal_registration_kept(project):
     data_migration(
         project,
         """
@@ -220,7 +219,7 @@ def test_signal_registration_kept(project: Project) -> None:
     assert "signals" in reason
 
 
-def test_vendor_branch_kept(project: Project) -> None:
+def test_vendor_branch_kept(project):
     data_migration(
         project,
         """
@@ -231,7 +230,7 @@ def test_vendor_branch_kept(project: Project) -> None:
     assert noops(project.check_equivalence(**NOOP)) == []
 
 
-def test_plain_progress_without_terminal(project: Project) -> None:
+def test_plain_progress_without_terminal(project):
     data_migration(project, "Item.objects.using(alias).update(legacy=2)")
     _, err = project.command("plan", "--noop-data")
     assert "Baseline: migration 1/" in err
@@ -250,5 +249,5 @@ def test_plain_progress_without_terminal(project: Project) -> None:
         ("SELECT setval('x', 1)", {"*"}),
     ],
 )
-def test_written_tables(sql: str, tables: set[str]) -> None:
+def test_written_tables(sql, tables):
     assert written_tables(sql) == tables

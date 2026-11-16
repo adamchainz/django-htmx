@@ -25,7 +25,7 @@ def blocked(result: Result) -> dict[str, tuple[str, ...]]:
 
 
 class TestModel:
-    def test_removed(self, project: Project) -> None:
+    def test_removed(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -65,7 +65,7 @@ class TestModel:
         ]
         assert "operations = []" in project.read("shop", "0003_drop")
 
-    def test_renamed_model(self, project: Project) -> None:
+    def test_renamed_model(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -83,7 +83,7 @@ class TestModel:
         assert kinds(result) == [("model", "shop.New")]
         assert len(result.removals[0].elements) == 3
 
-    def test_name_reuse(self, project: Project) -> None:
+    def test_name_reuse(self, project):
         project.migration(
             "shop",
             "0001_initial",
@@ -114,7 +114,7 @@ class TestModel:
         ]
         assert "size" in project.read("shop", "0003_again")
 
-    def test_live_model_untouched(self, project: Project) -> None:
+    def test_live_model_untouched(self, project):
         project.migration("shop", "0001_initial", ITEM)
         result = project.compact()
         assert result.removals == []
@@ -122,7 +122,7 @@ class TestModel:
 
 
 class TestField:
-    def test_add_remove(self, project: Project) -> None:
+    def test_add_remove(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -143,7 +143,7 @@ class TestField:
         )
         assert result.removed_operations == 4
 
-    def test_create_model_entry(self, project: Project) -> None:
+    def test_create_model_entry(self, project):
         project.migration(
             "shop",
             "0001_initial",
@@ -179,7 +179,7 @@ class TestField:
 """
         )
 
-    def test_primary_key_blocked(self, project: Project) -> None:
+    def test_primary_key_blocked(self, project):
         project.migration(
             "shop",
             "0001_initial",
@@ -202,7 +202,7 @@ class TestField:
         assert result.removals == []
         assert blocked(result) == {"shop.Item.code": ("it is or was a primary key",)}
 
-    def test_referenced_by_live_index(self, project: Project) -> None:
+    def test_referenced_by_live_index(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -223,7 +223,7 @@ class TestField:
             "referenced by AddIndex in shop.0002_add",
         )
 
-    def test_generated_field_reference(self, project: Project) -> None:
+    def test_generated_field_reference(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -255,7 +255,7 @@ class TestField:
             ("field", "shop.Item.price"),
         ]
 
-    def test_generated_field_blocks(self, project: Project) -> None:
+    def test_generated_field_blocks(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -284,7 +284,7 @@ class TestField:
 
 
 class TestIndexAndConstraint:
-    def test_index(self, project: Project) -> None:
+    def test_index(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -304,7 +304,7 @@ class TestIndexAndConstraint:
         )
         assert result.removed_operations == 3
 
-    def test_create_model_index_entry(self, project: Project) -> None:
+    def test_create_model_index_entry(self, project):
         project.migration(
             "shop",
             "0001_initial",
@@ -331,7 +331,7 @@ class TestIndexAndConstraint:
             in project.read("shop", "0001_initial")
         )
 
-    def test_constraint(self, project: Project) -> None:
+    def test_constraint(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -359,7 +359,7 @@ class TestIndexAndConstraint:
         assert kinds(result) == [("constraint", "shop.Item")]
         assert result.removed_operations == 3
 
-    def test_create_model_constraint_entry(self, project: Project) -> None:
+    def test_create_model_constraint_entry(self, project):
         project.migration(
             "shop",
             "0001_initial",
@@ -388,7 +388,7 @@ class TestIndexAndConstraint:
         assert "constraints" not in project.read("shop", "0001_initial")
         assert "options={}," in project.read("shop", "0001_initial")
 
-    def test_constraint_keeps_field_alive(self, project: Project) -> None:
+    def test_constraint_keeps_field_alive(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -416,7 +416,7 @@ class TestIndexAndConstraint:
             ("field", "shop.Item.qty"),
         ]
 
-    def test_kind_selection_pulls_in(self, project: Project) -> None:
+    def test_kind_selection_pulls_in(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -449,7 +449,7 @@ class TestIndexAndConstraint:
 
 
 class TestTogether:
-    def test_alter_together_pair(self, project: Project) -> None:
+    def test_alter_together_pair(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -474,7 +474,7 @@ class TestTogether:
             "unique_together (id, name) added in 0002_unique, removed in 0003_not_unique"
         )
 
-    def test_entry_stripped(self, project: Project) -> None:
+    def test_entry_stripped(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -491,7 +491,7 @@ class TestTogether:
         assert result.removed_operations == 1
         assert result.edited_operations == 1
 
-    def test_create_model_option_and_rename_field(self, project: Project) -> None:
+    def test_create_model_option_and_rename_field(self, project):
         project.migration(
             "shop",
             "0001_initial",
@@ -520,7 +520,7 @@ class TestTogether:
         assert "unique_together" not in project.read("shop", "0001_initial")
         assert "options={}," in project.read("shop", "0001_initial")
 
-    def test_rename_index_old_fields_chain(self, project: Project) -> None:
+    def test_rename_index_old_fields_chain(self, project):
         project.migration(
             "shop",
             "0001_initial",
@@ -550,7 +550,7 @@ class TestTogether:
         assert result.edited_operations == 1
         assert "index_together" not in project.read("shop", "0001_initial")
 
-    def test_together_keeps_field(self, project: Project) -> None:
+    def test_together_keeps_field(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -584,7 +584,7 @@ def author_book(project: Project, book_ops: str = "", app: str = "library") -> N
 
 
 class TestRelations:
-    def test_cross_app_fk_pulled_in(self, project: Project) -> None:
+    def test_cross_app_fk_pulled_in(self, project):
         author_book(project)
         project.migration(
             "shop",
@@ -615,7 +615,7 @@ class TestRelations:
             ("model", "library.Author"),
         ]
 
-    def test_cross_app_fk_excluded(self, project: Project) -> None:
+    def test_cross_app_fk_excluded(self, project):
         author_book(project)
         project.migration(
             "shop",
@@ -648,7 +648,7 @@ class TestRelations:
             )
         }
 
-    def test_live_fk_blocks(self, project: Project) -> None:
+    def test_live_fk_blocks(self, project):
         author_book(project)
         project.migration(
             "shop",
@@ -675,7 +675,7 @@ class TestRelations:
             "referenced by AddField in shop.0001_initial",
         )
 
-    def test_to_field(self, project: Project) -> None:
+    def test_to_field(self, project):
         project.migration(
             "shop",
             "0001_initial",
@@ -710,7 +710,7 @@ class TestRelations:
             "referenced by CreateModel in shop.0001_initial (field 'item')",
         )
 
-    def test_m2m_auto_through(self, project: Project) -> None:
+    def test_m2m_auto_through(self, project):
         author_book(project)
         project.migration(
             "shop",
@@ -732,7 +732,7 @@ class TestRelations:
         result = project.check_equivalence()
         assert kinds(result) == [("field", "shop.Book.authors")]
 
-    def test_m2m_through(self, project: Project) -> None:
+    def test_m2m_through(self, project):
         author_book(project)
         project.migration(
             "shop",
@@ -772,7 +772,7 @@ class TestRelations:
             ("model", "shop.Credit"),
         ]
 
-    def test_m2m_through_blocks(self, project: Project) -> None:
+    def test_m2m_through_blocks(self, project):
         author_book(project)
         project.migration(
             "shop",
@@ -812,7 +812,7 @@ class TestRelations:
             "referenced by AddField in shop.0001_initial",
         )
 
-    def test_base_model(self, project: Project) -> None:
+    def test_base_model(self, project):
         project.migration(
             "shop",
             "0001_initial",
@@ -841,7 +841,7 @@ class TestRelations:
         result = project.check_equivalence("shop.Base")
         assert kinds(result) == [("model", "shop.Base"), ("model", "shop.Child")]
 
-    def test_base_model_blocks(self, project: Project) -> None:
+    def test_base_model_blocks(self, project):
         project.migration(
             "shop",
             "0001_initial",
@@ -863,7 +863,7 @@ class TestRelations:
             "referenced by CreateModel in shop.0001_initial",
         )
 
-    def test_self_referencing(self, project: Project) -> None:
+    def test_self_referencing(self, project):
         project.migration(
             "shop",
             "0001_initial",
@@ -881,7 +881,7 @@ class TestRelations:
         result = project.check_equivalence()
         assert kinds(result) == [("model", "shop.Node")]
 
-    def test_later_model_with_same_name_referenced(self, project: Project) -> None:
+    def test_later_model_with_same_name_referenced(self, project):
         # A FK created while its target name doesn't exist yet references the
         # life that later takes that name. (Not migratable, so state only.)
         project.migration(
@@ -927,7 +927,7 @@ class TestRelations:
 
 
 class TestSuperseded:
-    def test_alter_field_chain(self, project: Project) -> None:
+    def test_alter_field_chain(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -951,7 +951,7 @@ class TestSuperseded:
         ]
         assert "max_length=40" in project.read("shop", "0004_c")
 
-    def test_alter_field_type_guard(self, project: Project) -> None:
+    def test_alter_field_type_guard(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -966,7 +966,7 @@ class TestSuperseded:
         result = project.compact()
         assert result.removals == []
 
-    def test_alter_field_type_guard_one_side(self, project: Project) -> None:
+    def test_alter_field_type_guard_one_side(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -981,7 +981,7 @@ class TestSuperseded:
         result = project.check_equivalence()
         assert [r.kind for r in result.removals] == ["superseded"]
 
-    def test_alter_field_before_remove(self, project: Project) -> None:
+    def test_alter_field_before_remove(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -1000,7 +1000,7 @@ class TestSuperseded:
         assert result.removals == []
         assert "shop.Item.name" in blocked(result)
 
-    def test_alter_field_rename_between(self, project: Project) -> None:
+    def test_alter_field_rename_between(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -1013,7 +1013,7 @@ class TestSuperseded:
         )
         assert project.compact().removals == []
 
-    def test_alter_model_options(self, project: Project) -> None:
+    def test_alter_model_options(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -1030,7 +1030,7 @@ class TestSuperseded:
             "AlterModelOptions in 0002_a superseded by AlterModelOptions in 0003_b"
         ]
 
-    def test_alter_model_options_managed(self, project: Project) -> None:
+    def test_alter_model_options_managed(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -1044,7 +1044,7 @@ class TestSuperseded:
         )
         assert project.compact().removals == []
 
-    def test_alter_model_managers(self, project: Project) -> None:
+    def test_alter_model_managers(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -1059,7 +1059,7 @@ class TestSuperseded:
         result = project.check_equivalence()
         assert [r.kind for r in result.removals] == ["superseded"]
 
-    def test_alter_model_table_never_superseded(self, project: Project) -> None:
+    def test_alter_model_table_never_superseded(self, project):
         # Dropping 0002 would keep "shop_item" taken while Thing claims it.
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
@@ -1082,7 +1082,7 @@ class TestSuperseded:
         result = project.check_equivalence()
         assert result.removals == []
 
-    def test_alter_model_table_comment(self, project: Project) -> None:
+    def test_alter_model_table_comment(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop", "0002_a", 'migrations.AlterModelTableComment("item", "a"),'
@@ -1093,7 +1093,7 @@ class TestSuperseded:
         result = project.check_equivalence()
         assert [r.kind for r in result.removals] == ["superseded"]
 
-    def test_alter_model_table_with_element_between(self, project: Project) -> None:
+    def test_alter_model_table_with_element_between(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -1106,7 +1106,7 @@ class TestSuperseded:
         )
         assert project.compact().removals == []
 
-    def test_kind_filter(self, project: Project) -> None:
+    def test_kind_filter(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop", "0002_a", 'migrations.AlterModelTableComment("item", "a"),'
@@ -1147,7 +1147,7 @@ class TestOpaque:
             """,
         )
 
-    def test_scan_hit(self, project: Project) -> None:
+    def test_scan_hit(self, project):
         self._history(project, "migrations.RunPython(forwards),\n")
         result = project.check_equivalence()
         assert result.removals == []
@@ -1155,12 +1155,12 @@ class TestOpaque:
             "RunPython in shop.0002_add mentions 'legacy'",
         )
 
-    def test_scan_ignore(self, project: Project) -> None:
+    def test_scan_ignore(self, project):
         self._history(project, "migrations.RunPython(forwards),\n")
         result = project.compact(opaque="ignore")
         assert kinds(result) == [("field", "shop.Item.legacy")]
 
-    def test_scan_miss(self, project: Project) -> None:
+    def test_scan_miss(self, project):
         self._history(project, "migrations.RunSQL('SELECT 1'),\n")
         project.migration(
             "shop",
@@ -1176,7 +1176,7 @@ class TestOpaque:
         result_block = project.compact(opaque="block")
         assert result_block.removals == []
 
-    def test_window(self, project: Project) -> None:
+    def test_window(self, project):
         project.migration(
             "shop",
             "0001_initial",
@@ -1198,7 +1198,7 @@ class TestOpaque:
         result = project.check_equivalence(opaque="block")
         assert kinds(result) == [("field", "shop.Item.legacy")]
 
-    def test_external_function(self, project: Project) -> None:
+    def test_external_function(self, project):
         project.migration("shop", "0001_initial", ITEM)
         (project.root / project.package / "helpers.py").write_text(
             "def touch(apps, schema_editor):\n    apps.get_model('shop', 'Item').objects.filter(legacy=1)\n"
@@ -1220,7 +1220,7 @@ class TestOpaque:
             "RunPython in shop.0002_add mentions 'legacy'",
         )
 
-    def test_unknown_source_matches_everything(self, project: Project) -> None:
+    def test_unknown_source_matches_everything(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -1236,7 +1236,7 @@ class TestOpaque:
         result = project.compact()
         assert "mentions 'legacy'" in blocked(result)["shop.Item.legacy"][0]
 
-    def test_noop_and_partial(self, project: Project) -> None:
+    def test_noop_and_partial(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -1253,7 +1253,7 @@ class TestOpaque:
         result = project.check_equivalence()
         assert kinds(result) == [("field", "shop.Item.legacy")]
 
-    def test_soft_reference(self, project: Project) -> None:
+    def test_soft_reference(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -1294,7 +1294,7 @@ class TestOpaque:
 
 
 class TestElidable:
-    def test_removed_with_entity(self, project: Project) -> None:
+    def test_removed_with_entity(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -1316,7 +1316,7 @@ class TestElidable:
         assert kinds(result) == [("elidable", "shop"), ("model", "shop.Coupon")]
         assert result.removed_operations == 3
 
-    def test_unrelated_elidable_kept(self, project: Project) -> None:
+    def test_unrelated_elidable_kept(self, project):
         project.migration(
             "shop",
             "0001_initial",
@@ -1326,9 +1326,7 @@ class TestElidable:
         result = project.check_equivalence(elidable=True)
         assert kinds(result) == [("elidable", "shop")]
 
-    def test_elidable_not_removable_blocks(
-        self, project: Project, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_elidable_not_removable_blocks(self, project, monkeypatch):
         project.migration(
             "shop",
             "0001_initial",
@@ -1369,7 +1367,7 @@ class TestElidable:
             " (operations is not a list or tuple literal)"
         )
 
-    def test_elidable_with_state_change_is_opaque(self, project: Project) -> None:
+    def test_elidable_with_state_change_is_opaque(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -1395,7 +1393,7 @@ class TestElidable:
 
 
 class TestPoisoning:
-    def test_separate_database_and_state(self, project: Project) -> None:
+    def test_separate_database_and_state(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -1429,7 +1427,7 @@ class TestPoisoning:
             "created by SeparateDatabaseAndState in shop.0002_sdas",
         )
 
-    def test_sdas_touches_existing(self, project: Project) -> None:
+    def test_sdas_touches_existing(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -1456,7 +1454,7 @@ class TestPoisoning:
             "changed by SeparateDatabaseAndState in shop.0003_sdas",
         )
 
-    def test_custom_operation(self, project: Project) -> None:
+    def test_custom_operation(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -1478,7 +1476,7 @@ class TestPoisoning:
             "created by MyAddField in shop.0002_add",
         )
 
-    def test_custom_operation_renaming_model(self, project: Project) -> None:
+    def test_custom_operation_renaming_model(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -1499,7 +1497,7 @@ class TestPoisoning:
 
 
 class TestEditability:
-    def test_unlocatable_operations(self, project: Project) -> None:
+    def test_unlocatable_operations(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -1527,7 +1525,7 @@ class TestEditability:
             "operations list in shop.0002_add could not be parsed (cannot match AddField in source)",
         )
 
-    def test_unlocatable_sub_element(self, project: Project) -> None:
+    def test_unlocatable_sub_element(self, project):
         project.migration(
             "shop",
             "0001_initial",
@@ -1557,9 +1555,7 @@ class TestEditability:
             "fields is not a literal in CreateModel in shop.0001_initial",
         )
 
-    def test_non_editable(
-        self, project: Project, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_non_editable(self, project, monkeypatch):
         from django_compact_migrations import history
 
         project.migration("shop", "0001_initial", ITEM)
@@ -1581,24 +1577,24 @@ class TestEditability:
 
 
 class TestOptions:
-    def test_unknown_app(self, project: Project) -> None:
+    def test_unknown_app(self, project):
         project.migration("shop", "0001_initial", ITEM)
         with pytest.raises(CompactError, match="No installed app with label 'nope'"):
             project.compact("nope")
 
-    def test_bad_target(self, project: Project) -> None:
+    def test_bad_target(self, project):
         project.migration("shop", "0001_initial", ITEM)
         with pytest.raises(CompactError, match="Invalid target"):
             project.compact("shop.a.b.c")
 
-    def test_bad_kind_and_policy(self, project: Project) -> None:
+    def test_bad_kind_and_policy(self, project):
         project.migration("shop", "0001_initial", ITEM)
         with pytest.raises(CompactError, match="Unknown kind"):
             project.compact(kinds=["nope"])
         with pytest.raises(CompactError, match="Unknown opaque policy"):
             project.compact(opaque="nope")
 
-    def test_target_matches_any_name(self, project: Project) -> None:
+    def test_target_matches_any_name(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -1617,7 +1613,7 @@ class TestOptions:
         assert project.compact("shop.Product.name").removals == []
         assert project.compact("shop", exclude=["shop.Item.legacy"]).removals == []
 
-    def test_replaced_migrations_warning(self, project: Project) -> None:
+    def test_replaced_migrations_warning(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -1650,14 +1646,14 @@ class TestOptions:
             " shop.0001_initial, shop.0002_a"
         ]
 
-    def test_broken_history(self, project: Project) -> None:
+    def test_broken_history(self, project):
         project.migration("shop", "0001_initial", 'migrations.DeleteModel("Nope"),')
         with pytest.raises(CompactError, match="refers to the model shop.Nope"):
             project.compact()
 
 
 class TestMore:
-    def test_unordered_branch_in_window(self, project: Project) -> None:
+    def test_unordered_branch_in_window(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -1687,7 +1683,7 @@ class TestMore:
         )
         assert kinds(project.check_equivalence()) == [("field", "shop.Item.legacy")]
 
-    def test_postgres_operations_by_name(self, project: Project) -> None:
+    def test_postgres_operations_by_name(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -1723,7 +1719,7 @@ class TestMore:
         assert kinds(result) == [("index", "shop.Item")]
         assert "CreateExtension" in project.read("shop", "0002_index")
 
-    def test_order_with_respect_to(self, project: Project) -> None:
+    def test_order_with_respect_to(self, project):
         project.migration(
             "shop",
             "0001_initial",
@@ -1752,7 +1748,7 @@ class TestMore:
             "referenced by AlterOrderWithRespectTo in shop.0001_initial",
         )
 
-    def test_unknown_index_poisons(self, project: Project) -> None:
+    def test_unknown_index_poisons(self, project):
         project.migration(
             "shop",
             "0001_initial",
@@ -1770,7 +1766,7 @@ class TestMore:
             "unknown index 'nope' in RemoveIndex in shop.0001_initial",
         )
 
-    def test_together_with_dead_field(self, project: Project) -> None:
+    def test_together_with_dead_field(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -1792,7 +1788,7 @@ class TestMore:
         assert ("field", "shop.Item.x") in kinds(result)
         assert result.empty_migrations == [("shop", "0002_a"), ("shop", "0003_b")]
 
-    def test_together_flat_value(self, project: Project) -> None:
+    def test_together_flat_value(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -1808,7 +1804,7 @@ class TestMore:
         result = project.check_equivalence()
         assert result.removed_operations == 2
 
-    def test_constraint_only_target(self, project: Project) -> None:
+    def test_constraint_only_target(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -1829,7 +1825,7 @@ class TestMore:
             ("constraint", "shop.Item")
         ]
 
-    def test_redundant_together_unordered_kept(self, project: Project) -> None:
+    def test_redundant_together_unordered_kept(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -1860,7 +1856,7 @@ class TestMore:
         assert "AlterUniqueTogether" in project.read("shop", "0003_b")
         assert result.empty_migrations == [("shop", "0004_merge")]
 
-    def test_dead_model_with_unlocatable_fields(self, project: Project) -> None:
+    def test_dead_model_with_unlocatable_fields(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",
@@ -1907,7 +1903,7 @@ class TestCustomStateChanges:
         pass
     """
 
-    def test_custom_create_model(self, project: Project) -> None:
+    def test_custom_create_model(self, project):
         project.migration(
             "shop",
             "0001_initial",
@@ -1945,7 +1941,7 @@ class TestCustomStateChanges:
         assert reasons == {"created by MyCreateModel in shop.0001_initial"}
         assert len(result.blocked) == 4
 
-    def test_custom_index_and_together(self, project: Project) -> None:
+    def test_custom_index_and_together(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
             "shop",

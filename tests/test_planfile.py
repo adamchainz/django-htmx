@@ -38,7 +38,7 @@ def round_trip(project: Project, tmp_path: Path) -> tuple[dict[str, Any], bytes]
     return data, project.path("shop", "0002_add").read_bytes()
 
 
-def test_layout(project: Project, tmp_path: Path) -> None:
+def test_layout(project, tmp_path):
     history(project)
     plan_path = tmp_path / "plan.toml"
     project.command("plan", "--prune", "--show-blocked", "-o", str(plan_path))
@@ -61,20 +61,20 @@ def test_layout(project: Project, tmp_path: Path) -> None:
     assert "tool_path" in data and "created" in data
 
 
-def test_blocked_only_when_asked(project: Project, tmp_path: Path) -> None:
+def test_blocked_only_when_asked(project, tmp_path):
     history(project)
     plan_path = tmp_path / "plan.toml"
     project.command("plan", "-o", str(plan_path))
     assert "[[blocked]]" not in plan_path.read_text()
 
 
-def test_awkward_content(project: Project, tmp_path: Path) -> None:
+def test_awkward_content(project, tmp_path):
     path = history(project)
     text = path.read_text()
     # Triple quotes, CRLF endings, a Latin-1 coding cookie and no newline
     # at the end of the file.
     text = (
-        "# -*- coding: latin-1 -*-\n# caf\xe9 '''quoted''' \\back\\slash\n"
+        "# -*- coding: latin-1 -*-\n# calf\xe9 '''quoted''' \\back\\slash\n"
         + text.rstrip("\n")
     ).replace("\n", "\r\n")
     path.write_bytes(text.encode("latin-1"))
@@ -82,14 +82,14 @@ def test_awkward_content(project: Project, tmp_path: Path) -> None:
     (change,) = [c for c in expected if c.path == path]
     data, written = round_trip(project, tmp_path)
     assert written == change.new.encode("latin-1")
-    assert written.startswith(b"# -*- coding: latin-1 -*-\r\n# caf\xe9 '''")
+    assert written.startswith(b"# -*- coding: latin-1 -*-\r\n# calf\xe9 '''")
     assert not written.endswith(b"\n")
     assert b"legacy" not in written
     (edit,) = [f for f in data["files"] if f["migration"] == ["shop", "0002_add"]]
     assert edit["encoding"] == "iso-8859-1"
 
 
-def test_tampered_diff_refused(project: Project, tmp_path: Path) -> None:
+def test_tampered_diff_refused(project, tmp_path):
     history(project)
     plan_path = tmp_path / "plan.toml"
     project.command("plan", "-o", str(plan_path))
@@ -105,7 +105,7 @@ def test_tampered_diff_refused(project: Project, tmp_path: Path) -> None:
     assert project.files() == before
 
 
-def test_stale_file_refused(project: Project, tmp_path: Path) -> None:
+def test_stale_file_refused(project, tmp_path):
     path = history(project)
     plan_path = tmp_path / "plan.toml"
     project.command("plan", "-o", str(plan_path))
@@ -129,14 +129,14 @@ def test_stale_file_refused(project: Project, tmp_path: Path) -> None:
         ("".join(f"{i}\n" for i in range(30)), "".join(f"{i}\n" for i in range(1, 31))),
     ],
 )
-def test_patch_round_trip(old: str, new: str) -> None:
+def test_patch_round_trip(old, new):
     diff = make_diff(old, new, "f.py")
     assert apply_diff(old, diff) == new
     data = tomllib.loads(dumps({"diff": diff}))
     assert data["diff"] == diff
 
 
-def test_patch_strict() -> None:
+def test_patch_strict():
     diff = make_diff("a\nb\nc\n", "a\nB\nc\n", "f.py")
     with pytest.raises(PatchError, match="doesn't match"):
         apply_diff("a\nx\nc\n", diff)
@@ -162,11 +162,11 @@ def test_patch_strict() -> None:
         "multi\nline\x7f\n",
     ],
 )
-def test_toml_strings(value: str) -> None:
+def test_toml_strings(value):
     assert tomllib.loads(dumps({"v": value}))["v"] == value
 
 
-def test_toml_shapes() -> None:
+def test_toml_shapes():
     data = {
         "n": 1,
         "f": 1.5,

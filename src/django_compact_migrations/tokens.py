@@ -3,7 +3,7 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass
 
-from tokenize_rt import NON_CODING_TOKENS, Token  # type: ignore[import-untyped]
+from tokenize_rt import NON_CODING_TOKENS, Token
 
 OPENERS = frozenset("([{")
 CLOSERS = frozenset(")]}")

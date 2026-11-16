@@ -27,7 +27,7 @@ _CALL = re.compile(r"([a-z_][a-z0-9_.]*)\s*\(", re.I)
 _CONTROL = frozenset(
     {"SAVEPOINT", "RELEASE", "BEGIN", "COMMIT", "START", "END", "ROLLBACK"}
 )
-# Functions Django's ORM puts in SELECTs that can't change anything.
+# Functions Django's ORM puts in SELECT lists that can't change anything.
 _PURE_FUNCTIONS = frozenset(
     {
         "count",
