@@ -25,8 +25,7 @@ from django_compact_migrations.prune import (
     check_ends,
 )
 from django_compact_migrations.verify import VerificationError
-from tests.project import Project
-from tests.test_compact import ITEM, blocked
+from tests.project import ITEM, Project
 
 PRUNE: dict[str, Any] = {"prune": True}
 LEGACY = 'migrations.AddField("item", "legacy", models.IntegerField(default=0)),'
@@ -107,6 +106,13 @@ def test_already_empty(project):
     result = project.check_equivalence(**PRUNE)
     assert pruned(result) == ["shop.0002_nothing"]
     assert result.removed_operations == 0
+
+
+def test_nothing_to_prune(project):
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration("shop", "0002_sql", 'migrations.RunSQL("SELECT 1"),')
+    project.migration("shop", "0003_sql", 'migrations.RunSQL("SELECT 2"),')
+    assert pruned(project.compact(**PRUNE)) == []
 
 
 def test_cross_app_dependant(project):
@@ -409,11 +415,12 @@ def test_same_app_dependency_kept(project):
 
 def test_pruned_merge_migration(project):
     project.migration("shop", "0001_initial", ITEM)
-    project.migration("shop", "0002_a", QTY)
+    # The branches keep operations that can't go or fold anywhere.
+    project.migration("shop", "0002_a", 'migrations.RunSQL("SELECT 1"),')
     project.migration(
         "shop",
         "0002_b",
-        'migrations.AddField("item", "size", models.IntegerField(default=1)),',
+        'migrations.RunSQL("SELECT 2"),',
         deps=[("shop", "0001_initial")],
     )
     project.migration(
@@ -431,17 +438,18 @@ def test_pruned_merge_migration(project):
 
 def test_merge_with_branch_reached_through_other_app(project):
     project.migration("shop", "0001_initial", ITEM)
-    project.migration("shop", "0002_a", QTY)
+    # The branches keep operations that can't go or fold anywhere.
+    project.migration("shop", "0002_a", 'migrations.RunSQL("SELECT 1"),')
     project.migration(
         "shop",
         "0002_b",
-        'migrations.AddField("item", "size", models.IntegerField(default=1)),',
+        'migrations.RunSQL("SELECT 2"),',
         deps=[("shop", "0001_initial")],
     )
     project.migration(
         "other",
         "0001_initial",
-        'migrations.RunSQL("SELECT 1"),',
+        'migrations.RunSQL("SELECT 3"),',
         deps=[("shop", "0002_a")],
     )
     project.migration(
@@ -504,25 +512,6 @@ def test_trial_drops_prune_when_it_fails(project, monkeypatch):
     assert pruned(result) == []
     assert result.verification["dropped"][0].startswith("--prune (")
     assert result.removals  # the rest of the plan stays
-
-
-def test_trial_blames_until_a_plan_passes(project, monkeypatch):
-    from django.db import migrations
-
-    from django_compact_migrations import trial as trial_module
-
-    dead_field(project)
-
-    def sabotage(operations: dict[Any, list[Any]], passes: int) -> None:
-        for ops in operations.values():
-            ops.append(migrations.RunSQL("SELECT * FROM nowhere"))
-
-    monkeypatch.setattr(trial_module, "_candidate_hook", sabotage)
-    # Every edited migration fails: blamed until nothing is edited.
-    result = project.compact(trial=True, trial_max_runs=1, **PRUNE)
-    assert result.removals == []
-    assert result.verification["dropped"] == []
-    assert "no such table: nowhere" in blocked(result)["shop.Item.legacy"][0]
 
 
 def same_app_shape(project: Project) -> None:

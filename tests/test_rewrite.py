@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 from django.db import migrations, models
+from tokenize_rt import src_to_tokens
 
 from django_compact_migrations.history import OpRecord, SourceFile, load_history
 from django_compact_migrations.rewrite import (
@@ -22,6 +23,7 @@ from django_compact_migrations.rewrite import (
     same_operation,
     unchanged,
 )
+from django_compact_migrations.tokens import container_for_node
 from tests.project import Project
 
 
@@ -418,3 +420,29 @@ def test_derive_op_edit(project):
         derive_op_edit(together, migrations.AlterUniqueTogether("item", {("a", "b")}))
         is None
     )
+
+
+def _container(source: str) -> Any:
+    tree = ast.parse(source)
+    tokens = list(src_to_tokens(source))
+    index = {
+        (t.line, t.utf8_byte_offset): i
+        for i, t in enumerate(tokens)
+        if t.line is not None
+    }
+    node = tree.body[0].value  # type: ignore[attr-defined]
+    return container_for_node(tokens, index, node)
+
+
+@pytest.mark.parametrize(
+    ("source", "found"),
+    [
+        ("x = [1, 2]", True),
+        ("x = 1, 2", False),  # no brackets to edit
+        ("x = (1), 2", False),  # the first bracket isn't the tuple's
+        ("x = {**a, 'b': 1}", False),
+        ("x = [lambda a, b: 1, 2]", False),  # commas inside an element
+    ],
+)
+def test_containers(source, found):
+    assert (_container(source) is not None) is found

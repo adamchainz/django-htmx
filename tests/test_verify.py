@@ -9,8 +9,7 @@ from django_compact_migrations import core
 from django_compact_migrations.core import CompactError
 from django_compact_migrations.rewrite import OpEdit
 from django_compact_migrations.solver import Solver
-from tests.project import Project
-from tests.test_compact import ITEM
+from tests.project import ITEM, Project
 
 
 def dead_field(project: Project) -> None:
@@ -31,7 +30,7 @@ def dead_field(project: Project) -> None:
 def test_on_disk_rollback(project):
     dead_field(project)
     before = project.files()
-    result = project.compact()
+    result = project.compact(skip_kinds=["fold"])
     # Simulate a rewriting bug: the written file also loses another operation.
     change = result.files[0]
     assert change.migration == ("shop", "0002_add")
@@ -43,7 +42,7 @@ def test_on_disk_rollback(project):
         result.write()
     assert project.files() == before
     # The restored files load again.
-    assert len(project.compact().removals) == 1
+    assert len(project.compact(skip_kinds=["fold"]).removals) == 1
 
 
 def test_on_disk_state_mismatch(project):
@@ -116,7 +115,8 @@ def test_in_memory_state_difference(project, monkeypatch):
     with pytest.raises(
         CompactError, match="ends in a different state: model shop.item differs"
     ):
-        project.compact()
+        # Without folds, the CreateModel stays as written.
+        project.compact(skip_kinds=["fold"])
 
 
 # Direct checks

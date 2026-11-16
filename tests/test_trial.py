@@ -2,40 +2,31 @@ from __future__ import annotations
 
 import tomllib
 from collections import Counter
-from collections.abc import Iterator
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from django.db.migrations.operations.base import Operation
+from django.core.management import CommandError
 
 from django_compact_migrations import trial as trial_module
 from django_compact_migrations.core import CompactError, UnitInfo, analyse
 from django_compact_migrations.snapshot import Difference, Snapshot
-from tests.project import Project
-from tests.test_compact import ITEM, blocked, kinds
+from tests.project import (
+    FAILURE,
+    ITEM,
+    MENTIONED,
+    NO_FOLD,
+    Project,
+    blocked,
+    kinds,
+    with_data_migration,
+)
 
 LEGACY = 'migrations.AddField("item", "legacy", models.IntegerField(default=0)),'
 
 
-def history(project: Project, code: str, extra_ops: str = "") -> None:
-    project.migration("shop", "0001_initial", ITEM)
-    project.migration(
-        "shop",
-        "0002_add",
-        LEGACY + "\n" + extra_ops + "\nmigrations.RunPython(forwards),",
-        extra="def forwards(apps, schema_editor):\n"
-        "    Item = apps.get_model('shop', 'Item')\n"
-        "    alias = schema_editor.connection.alias\n"
-        + "\n".join(f"    {line}" for line in code.strip().splitlines()),
-    )
-    project.migration(
-        "shop", "0003_remove", 'migrations.RemoveField("item", "legacy"),'
-    )
-
-
 def test_mention_without_effect_is_unlocked(project):
-    history(
+    with_data_migration(
         project,
         """
         for item in Item.objects.using(alias).all():
@@ -43,8 +34,8 @@ def test_mention_without_effect_is_unlocked(project):
             item.save()
         """,
     )
-    assert project.compact().removals == []
-    result = project.check_equivalence(trial=True)
+    assert project.compact(**NO_FOLD).removals == []
+    result = project.check_equivalence(trial=True, **NO_FOLD)
     assert kinds(result) == [("field", "shop.Item.legacy")]
     info = result.verification
     assert info["mode"] == "trial"
@@ -55,7 +46,7 @@ def test_mention_without_effect_is_unlocked(project):
 
 
 def test_failure_harvested_and_blocked(project):
-    history(
+    with_data_migration(
         project,
         "Item.objects.using(alias).filter(legacy=1).count()",
         extra_ops="""
@@ -67,7 +58,7 @@ def test_failure_harvested_and_blocked(project):
         migrations.DeleteModel("Coupon"),
         """,
     )
-    result = project.check_equivalence(trial=True)
+    result = project.check_equivalence(trial=True, **NO_FOLD)
     assert kinds(result) == [("model", "shop.Coupon")]
     (reason,) = blocked(result)["shop.Item.legacy"]
     assert reason.startswith(
@@ -106,7 +97,7 @@ def test_seeded_rows(project):
         migrations.RemoveField("item", "spare"),
         """,
     )
-    result = project.check_equivalence(trial=True)
+    result = project.check_equivalence(trial=True, **NO_FOLD)
     # "spare" is only mentioned through its name in the seed function's
     # source; seeding works without it and leaves identical rows.
     assert kinds(result) == [("field", "shop.Item.spare")]
@@ -151,41 +142,41 @@ def test_soft_reference_crash_blocked_by_trial(project):
         migrations.RemoveField("item", "_name"),
         """,
     )
-    result = project.check_equivalence(trial=True)
+    result = project.check_equivalence(trial=True, **NO_FOLD)
     assert result.removals == []
     (reason,) = blocked(result)["shop.Item._name"]
     assert "FieldError: Cannot resolve keyword '_name'" in reason
 
 
 @pytest.fixture
-def break_index_once() -> Iterator[None]:
-    def hook(operations: dict[tuple[str, str], list[Operation]], n: int) -> None:
-        if n == 0:
+def break_index_once(monkeypatch):
+    """The first candidate run loses 0004_index's AddIndex."""
+    real = trial_module.Trial._run
+
+    def run(self, label, operations, **kwargs):
+        if label == "Trial run 1":
             from django.db.migrations.loader import MigrationLoader
 
             loader = MigrationLoader(None, ignore_no_migrations=True)
             key = next(k for k in loader.graph.nodes if k[1] == "0004_index")
             ops = operations.get(key, loader.graph.nodes[key].operations)
             operations[key] = [o for o in ops if type(o).__name__ != "AddIndex"]
+        return real(self, label, operations, **kwargs)
 
-    trial_module._candidate_hook = hook
-    try:
-        yield
-    finally:
-        trial_module._candidate_hook = None
+    monkeypatch.setattr(trial_module.Trial, "_run", run)
 
 
 @pytest.mark.usefixtures("break_index_once")
 def test_schema_difference_detected(project):
     # The mention makes legacy's removal depend on the trial (the static plan
     # keeps it); removals the static plan makes are never blamed.
-    history(project, 'Item.objects.using(alias).count()\nunused = "legacy"')
+    with_data_migration(project, 'Item.objects.using(alias).count()\nunused = "legacy"')
     project.migration(
         "shop",
         "0004_index",
         'migrations.AddIndex("item", models.Index(fields=["name"], name="name_idx")),',
     )
-    result = project.check_equivalence(trial=True)
+    result = project.check_equivalence(trial=True, **NO_FOLD)
     assert result.removals == []
     (reason,) = blocked(result)["shop.Item.legacy"]
     assert reason == (
@@ -204,7 +195,7 @@ def test_baseline_failure(project):
 
 
 def test_plan_file_round_trip(project, tmp_path):
-    history(
+    with_data_migration(
         project,
         """
         for item in Item.objects.using(alias).all():
@@ -224,8 +215,7 @@ def test_plan_file_round_trip(project, tmp_path):
 
 
 def test_trial_with_opaque_policy(project):
-    history(project, "pass")
-    from django.core.management import CommandError
+    with_data_migration(project, "pass")
 
     with pytest.raises(CommandError, match="--trial replaces the --opaque"):
         project.command("plan", "--trial", "--opaque", "block")
@@ -260,7 +250,7 @@ def test_non_atomic_failure_ends_pass(project):
         'migrations.RemoveField("item", "legacy"),',
         deps=[("shop", "0002_add")],
     )
-    result = project.check_equivalence(trial=True)
+    result = project.check_equivalence(trial=True, **NO_FOLD)
     assert result.removals == []
     assert [f["harvested"] for f in result.verification["failures"]] == [False]
     assert blocked(result)["shop.Item.legacy"][0].startswith(
@@ -298,7 +288,7 @@ def two_fields(project: Project, check: str) -> None:
 
 def test_vague_failure_bisected(project):
     two_fields(project, "alpha")
-    result = project.check_equivalence(trial=True)
+    result = project.check_equivalence(trial=True, **NO_FOLD)
     # The first half of the suspects is blocked; the failure goes away, so
     # the other half stays removed.
     assert kinds(result) == [("field", "shop.Item.beta")]
@@ -308,7 +298,7 @@ def test_vague_failure_bisected(project):
 
 def test_vague_failure_bisected_second_half(project):
     two_fields(project, "beta")
-    result = project.check_equivalence(trial=True)
+    result = project.check_equivalence(trial=True, **NO_FOLD)
     # Blocking the first half didn't help: the failure came back, so the
     # rest is blocked (the innocent first half stays blocked: conservative).
     assert result.removals == []
@@ -385,15 +375,15 @@ def test_sqlite_column_order(project):
         "0002_longer",
         'migrations.AlterField("item", "name", models.CharField(max_length=20)),',
     )
-    static = project.compact(skip_kinds=[])
+    static = project.compact()
     assert [r.kind for r in static.removals] == ["fold"]
     # Folding keeps the column where CreateModel had it, while the
     # AlterField rebuilt the SQLite table with its field last.
-    result = project.compact(trial=True, skip_kinds=[])
+    result = project.compact(trial=True)
     assert result.removals == []
     assert result.verification["trial_blocked"] == 1
     assert result.verification["unlocked"] <= result.verification["at_risk"]
-    loose = project.compact(trial=True, skip_kinds=[], trial_ignore_column_order=True)
+    loose = project.compact(trial=True, trial_ignore_column_order=True)
     assert len(loose.removals) == 1
     out, _ = project.command("plan", "--kind", "fold")
     assert "physical order of columns" in out
@@ -475,21 +465,14 @@ def test_post_migrate_flag(project):
 # The trial loop, driven by scripted outcomes
 
 
-MENTIONED = """
-for item in Item.objects.using(alias).all():
-    item.legacy = 1
-"""
 DEAD = 'migrations.AddField("item", "dead", models.IntegerField(default=0)),'
 
 
 def unlockable(project: Project) -> None:
     """legacy: a removal only a trial unlocks; dead: one the static plan makes."""
-    history(project, MENTIONED)
+    with_data_migration(project, MENTIONED)
     project.migration("shop", "0004_dead", DEAD)
     project.migration("shop", "0005_dead", 'migrations.RemoveField("item", "dead"),')
-
-
-FAILURE = trial_module.TrialFailure(("shop", "0002_add"), "RunPython", "boom", "", True)
 
 
 def script(
@@ -523,7 +506,7 @@ def test_max_runs_reached(project, monkeypatch):
         [([FAILURE], []), None],
         lambda self, solution, f, d, **kw: {legacy_key(solution): "x"},
     )
-    result = project.compact(trial=True, trial_max_runs=1)
+    result = project.compact(trial=True, trial_max_runs=1, **NO_FOLD)
     assert result.verification["fallback"] is True
     assert kinds(result) == [("field", "shop.Item.dead")]
 
@@ -571,7 +554,7 @@ def test_static_part_blamed(project, monkeypatch):
         return {static_key(solution): "x", legacy_key(solution): "y"}
 
     keys = script(monkeypatch, [([FAILURE], []), None], attribute)
-    result = project.compact(trial=True)
+    result = project.compact(trial=True, **NO_FOLD)
     assert ":dead" not in keys[-1]
     assert result.removals == []
 
@@ -586,7 +569,7 @@ def test_static_plan_blamed(project, monkeypatch):
         return {static_key(solution): "x"}
 
     script(monkeypatch, [([FAILURE], []), None], attribute)
-    assert project.compact(trial=True).removals == []
+    assert project.compact(trial=True, **NO_FOLD).removals == []
 
 
 def test_noop_layer_dropped(project, monkeypatch):
@@ -604,15 +587,15 @@ def test_noop_layer_dropped(project, monkeypatch):
 
 
 def test_single_baseline(project):
-    history(project, MENTIONED)
-    result = project.compact(trial=True, trial_single_baseline=True)
+    with_data_migration(project, MENTIONED)
+    result = project.compact(trial=True, trial_single_baseline=True, **NO_FOLD)
     assert result.verification["runs"] == 2
     assert kinds(result) == [("field", "shop.Item.legacy")]
 
 
 def test_second_baseline_fails(project, tmp_path):
     marker = tmp_path / "ran"
-    history(
+    with_data_migration(
         project,
         "import pathlib\n"
         f"marker = pathlib.Path({str(marker)!r})\n"
@@ -627,7 +610,7 @@ def test_second_baseline_fails(project, tmp_path):
 def test_scratch_database_failure(project, monkeypatch):
     from django_compact_migrations.scratch import ScratchDatabaseError
 
-    history(project, MENTIONED)
+    with_data_migration(project, MENTIONED)
 
     def fail(*args: Any, **kwargs: Any) -> Any:
         raise ScratchDatabaseError("no room")
@@ -638,7 +621,7 @@ def test_scratch_database_failure(project, monkeypatch):
 
 
 def test_child_crash(project, monkeypatch):
-    history(project, MENTIONED)
+    with_data_migration(project, MENTIONED)
 
     class Odd(Exception):
         def __init__(self) -> None:
@@ -755,7 +738,7 @@ def test_elidable_in_excluded_app_at_risk(project):
         'migrations.RemoveField("item", "legacy"),',
         extra_deps=[("other", "0001_initial")],
     )
-    result = project.compact(exclude=["other"], trial=True)
+    result = project.compact(exclude=["other"], trial=True, **NO_FOLD)
     # Kept: removing the column breaks the UPDATE, which can't go.
     assert result.removals == []
     assert "no such column: legacy" in blocked(result)["shop.Item.legacy"][0]
@@ -807,3 +790,35 @@ def test_unattributed_difference_halved(project):
     failure = trial_module.TrialFailure(("shop", "0002_sql"), "RunSQL", "x", "", True)
     other: Any = SimpleNamespace(units=[unit("c", 2)])
     assert list(trial._attribute(other, [failure], [], include_static=True)) == ["c"]
+
+
+def test_trial_blames_until_a_plan_passes(project, monkeypatch):
+    from django.db import migrations
+
+    from django_compact_migrations import trial as trial_module
+
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration("shop", "0002_add", LEGACY)
+    project.migration(
+        "shop", "0003_remove", 'migrations.RemoveField("item", "legacy"),'
+    )
+    project.migration(
+        "shop",
+        "0004_qty",
+        'migrations.AddField("item", "qty", models.IntegerField(default=1)),',
+    )
+
+    real = trial_module.Trial._run
+
+    def sabotage(self, label, operations, **kwargs):
+        if label.startswith("Trial run"):
+            failing = migrations.RunSQL("SELECT * FROM nowhere")
+            operations = {k: [*ops, failing] for k, ops in operations.items()}
+        return real(self, label, operations, **kwargs)
+
+    monkeypatch.setattr(trial_module.Trial, "_run", sabotage)
+    # Every edited migration fails: blamed until nothing is edited.
+    result = project.compact(trial=True, trial_max_runs=1)
+    assert result.removals == []
+    assert result.verification["dropped"] == []
+    assert "no such table: nowhere" in blocked(result)["shop.Item.legacy"][0]

@@ -2,26 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from django_compact_migrations.core import CompactError, Result
-from tests.project import Project
-
-ITEM = """
-    migrations.CreateModel(
-        name="Item",
-        fields=[
-            ("id", models.AutoField(primary_key=True)),
-            ("name", models.CharField(max_length=10)),
-        ],
-    ),
-"""
-
-
-def kinds(result: Result) -> list[tuple[str, str]]:
-    return sorted((r.kind, r.label) for r in result.removals)
-
-
-def blocked(result: Result) -> dict[str, tuple[str, ...]]:
-    return {b.label: b.reasons for b in result.blocked}
+from django_compact_migrations.core import CompactError
+from tests.project import ITEM, NO_FOLD, Project, blocked, kinds
 
 
 class TestModel:
@@ -198,7 +180,7 @@ class TestField:
             migrations.RemoveField("item", "code"),
             """,
         )
-        result = project.compact()
+        result = project.compact(**NO_FOLD)
         assert result.removals == []
         assert blocked(result) == {"shop.Item.code": ("it is or was a primary key",)}
 
@@ -217,7 +199,7 @@ class TestField:
         project.migration(
             "shop", "0003_remove", 'migrations.RemoveField("item", "legacy"),'
         )
-        result = project.compact()
+        result = project.compact(**NO_FOLD)
         assert result.removals == []
         assert blocked(result)["shop.Item.legacy"] == (
             "referenced by AddIndex in shop.0002_add",
@@ -486,7 +468,7 @@ class TestTogether:
             "0003_less",
             'migrations.AlterUniqueTogether("item", {("name", "id")}),',
         )
-        result = project.check_equivalence()
+        result = project.check_equivalence(**NO_FOLD)
         assert '{("name", "id")}' in project.read("shop", "0002_unique")
         assert result.removed_operations == 1
         assert result.edited_operations == 1
@@ -563,7 +545,7 @@ class TestTogether:
         project.migration(
             "shop", "0003_remove", 'migrations.RemoveField("item", "code"),'
         )
-        result = project.compact()
+        result = project.compact(**NO_FOLD)
         assert result.removals == []
         assert blocked(result)["shop.Item.code"][0].startswith(
             "referenced by AlterUniqueTogether"
@@ -669,7 +651,7 @@ class TestRelations:
             'migrations.DeleteModel("Author"),',
             extra_deps=[("shop", "0001_initial")],
         )
-        result = project.compact()
+        result = project.compact(**NO_FOLD)
         assert result.removals == []
         assert blocked(result)["library.Author"] == (
             "referenced by AddField in shop.0001_initial",
@@ -944,7 +926,7 @@ class TestSuperseded:
             "0004_c",
             'migrations.AlterField("item", "name", models.CharField(max_length=40, db_index=True)),',
         )
-        result = project.check_equivalence()
+        result = project.check_equivalence(**NO_FOLD)
         assert [(r.kind, r.description) for r in result.removals] == [
             ("superseded", "AlterField in 0002_a superseded by AlterField in 0003_b"),
             ("superseded", "AlterField in 0003_b superseded by AlterField in 0004_c"),
@@ -963,7 +945,7 @@ class TestSuperseded:
             "0003_b",
             'migrations.AlterField("item", "name", models.IntegerField(null=True)),',
         )
-        result = project.compact()
+        result = project.compact(**NO_FOLD)
         assert result.removals == []
 
     def test_alter_field_type_guard_one_side(self, project):
@@ -978,7 +960,7 @@ class TestSuperseded:
             "0003_b",
             'migrations.AlterField("item", "name", models.TextField()),',
         )
-        result = project.check_equivalence()
+        result = project.check_equivalence(**NO_FOLD)
         assert [r.kind for r in result.removals] == ["superseded"]
 
     def test_alter_field_before_remove(self, project):
@@ -996,7 +978,7 @@ class TestSuperseded:
         project.migration("shop", "0004_b", 'migrations.RemoveField("item", "name"),')
         # The index keeps the (dead) field; the AlterField is still superseded
         # by RemoveField but the index refers to the field meanwhile.
-        result = project.compact()
+        result = project.compact(**NO_FOLD)
         assert result.removals == []
         assert "shop.Item.name" in blocked(result)
 
@@ -1011,7 +993,7 @@ class TestSuperseded:
             migrations.AlterField("item", "title", models.CharField(max_length=30)),
             """,
         )
-        assert project.compact().removals == []
+        assert project.compact(**NO_FOLD).removals == []
 
     def test_alter_model_options(self, project):
         project.migration("shop", "0001_initial", ITEM)
@@ -1025,7 +1007,7 @@ class TestSuperseded:
             "0003_b",
             'migrations.AlterModelOptions("item", {"verbose_name": "item"}),',
         )
-        result = project.check_equivalence()
+        result = project.check_equivalence(**NO_FOLD)
         assert [r.description for r in result.removals] == [
             "AlterModelOptions in 0002_a superseded by AlterModelOptions in 0003_b"
         ]
@@ -1090,7 +1072,7 @@ class TestSuperseded:
         project.migration(
             "shop", "0003_b", 'migrations.AlterModelTableComment("item", "b"),'
         )
-        result = project.check_equivalence()
+        result = project.check_equivalence(**NO_FOLD)
         assert [r.kind for r in result.removals] == ["superseded"]
 
     def test_alter_model_table_with_element_between(self, project):
@@ -1104,7 +1086,7 @@ class TestSuperseded:
             migrations.AlterModelTableComment("item", "b"),
             """,
         )
-        assert project.compact().removals == []
+        assert project.compact(**NO_FOLD).removals == []
 
     def test_kind_filter(self, project):
         project.migration("shop", "0001_initial", ITEM)
@@ -1116,9 +1098,9 @@ class TestSuperseded:
         )
         assert project.compact(kinds=["model", "field"]).removals == []
         assert len(project.compact(kinds=["superseded"]).removals) == 1
-        assert len(project.compact("shop.Item").removals) == 1
-        assert project.compact("shop.Item.name").removals == []
-        assert project.compact(exclude=["shop.item"]).removals == []
+        assert len(project.compact("shop.Item", **NO_FOLD).removals) == 1
+        assert project.compact("shop.Item.name", **NO_FOLD).removals == []
+        assert project.compact(exclude=["shop.item"], **NO_FOLD).removals == []
 
 
 class TestOpaque:
@@ -1149,7 +1131,7 @@ class TestOpaque:
 
     def test_scan_hit(self, project):
         self._history(project, "migrations.RunPython(forwards),\n")
-        result = project.check_equivalence()
+        result = project.check_equivalence(**NO_FOLD)
         assert result.removals == []
         assert blocked(result)["shop.Item.legacy"] == (
             "RunPython in shop.0002_add mentions 'legacy'",
@@ -1652,7 +1634,7 @@ class TestOptions:
             project.compact()
 
 
-class TestMore:
+class TestUnusualHistories:
     def test_unordered_branch_in_window(self, project):
         project.migration("shop", "0001_initial", ITEM)
         project.migration(
@@ -1850,7 +1832,7 @@ class TestMore:
             'migrations.RemoveField("item", "x"),',
             deps=[("shop", "0003_b"), ("shop", "0002_c")],
         )
-        result = project.check_equivalence()
+        result = project.check_equivalence(**NO_FOLD)
         assert ("field", "shop.Item.x") in kinds(result)
         # 0003_b is unordered relative to 0002_c's together change: kept.
         assert "AlterUniqueTogether" in project.read("shop", "0003_b")
@@ -1966,7 +1948,7 @@ class TestCustomStateChanges:
             migrations.RemoveField("item", "code"),
             """,
         )
-        result = project.check_equivalence()
+        result = project.check_equivalence(**NO_FOLD)
         assert result.removals == []
         assert blocked(result) == {
             "shop.Item index 'code_idx'": (

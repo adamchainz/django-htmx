@@ -19,8 +19,7 @@ from django_compact_migrations.timeline import (
     _same,
     mentioned_names,
 )
-from tests.project import Project
-from tests.test_compact import ITEM
+from tests.project import ITEM, Project, kinds
 
 STATE_OPS = "from tests.state_ops import Change"
 
@@ -483,3 +482,29 @@ def test_opaque_element_reason(project):
     assert element.not_editable_reason() == (
         "RunSQL in shop.0001_initial is an opaque operation"
     )
+
+
+def test_deconstructible_without_eq(project):
+    (project.root / project.package / "validators.py").write_text(
+        "from django.utils.deconstruct import deconstructible\n\n\n"
+        "@deconstructible\nclass Check:\n    def __init__(self, limit=1):\n"
+        "        self.limit = limit\n\n    def __call__(self, value):\n        pass\n"
+    )
+    project.migration(
+        "shop",
+        "0001_initial",
+        f"""
+        migrations.CreateModel(
+            name="Item",
+            fields=[
+                ("id", models.AutoField(primary_key=True)),
+                ("name", models.CharField(max_length=5, validators=[{project.package}.validators.Check(2)])),
+                ("legacy", models.IntegerField()),
+            ],
+        ),
+        """,
+        extra=f"import {project.package}.validators",
+    )
+    project.migration("shop", "0002_drop", 'migrations.RemoveField("item", "legacy"),')
+    result = project.check_equivalence()
+    assert kinds(result) == [("field", "shop.Item.legacy")]

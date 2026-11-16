@@ -7,10 +7,16 @@ from typing import Any
 import pytest
 from django.core.management import CommandError
 
-from django_compact_migrations.noop import classify, source_concern, written_tables
+from django_compact_migrations.noop import (
+    Observation,
+    classify,
+    observe,
+    source_concern,
+    written_tables,
+)
+from django_compact_migrations.scratch import scratch_database
 from tests import noop_samples as samples
-from tests.project import Project, temp_database
-from tests.test_compact import ITEM, kinds
+from tests.project import ITEM, Project, kinds, temp_database
 
 NOOP: dict[str, Any] = {"noop_data": True, "skip_kinds": ["fold"]}
 
@@ -134,7 +140,7 @@ def test_fold_unlocked(project):
         "0003_qty",
         'migrations.AddField("item", "qty", models.IntegerField(default=1)),',
     )
-    result = project.check_equivalence(noop_data=True, skip_kinds=[])
+    result = project.check_equivalence(noop_data=True)
     assert sorted(r.kind for r in result.removals) == ["fold", "noop"]
 
 
@@ -251,3 +257,36 @@ def test_plain_progress_without_terminal(project):
 )
 def test_written_tables(sql, tables):
     assert written_tables(sql) == tables
+
+
+@pytest.mark.parametrize(
+    ("sql", "rowcount", "write"),
+    [
+        ("-- only a comment", None, False),
+        ("SELECT 1; SELECT 2", None, False),
+        ("SELECT 1; DELETE FROM t", None, True),
+        ("SET CONSTRAINTS ALL IMMEDIATE", None, False),
+    ],
+)
+def test_classify_more(sql, rowcount, write):
+    assert (classify(sql, rowcount) is not None) is write
+
+
+def test_executemany_update_counts_as_write(django_db_blocker):
+    observation = Observation()
+    with django_db_blocker.unblock(), scratch_database() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("CREATE TABLE t (a int)")
+        with observe(connection.alias, observation), connection.cursor() as cursor:
+            cursor.executemany("UPDATE t SET a = %s", [(1,), (2,)])
+    assert observation.writes == ["UPDATE affected unknown rows"]
+    assert observation.tables == {"t"}
+
+
+def test_source_concern_more():
+    assert (
+        source_concern(samples._calls_subscript, 0)
+        == "it ran no query, yet calls something()"
+    )
+    assert source_concern(samples._imports_json, 1) is None
+    assert source_concern(samples._calls_unreadable, 1) == "its source can't be read"

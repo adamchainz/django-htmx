@@ -22,8 +22,7 @@ from django_compact_migrations.scratch import (
     scratch_database,
 )
 from django_compact_migrations.snapshot import Mask, Snapshot, _value, take_snapshot
-from tests.conftest import SERVERS
-from tests.test_compact import ITEM, blocked
+from tests.project import ITEM, SERVERS, blocked
 
 # Comparing snapshots
 
@@ -442,7 +441,10 @@ def test_mysql_trial(my, project):
     )
     static = project.compact()
     assert static.options["backends"] == [SERVERS_KIND[my]]
-    assert static.removals == []
+    # Only adding the entry folds; dropping it again is kept (see backends).
+    assert [r.description for r in static.removals] == [
+        "AlterUniqueTogether in 0002_add folded into CreateModel in 0001_initial"
+    ]
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(backends, "configured", lambda: frozenset())
         assert project.compact().removals
@@ -467,7 +469,7 @@ def test_mysql_noop_trial(my, project):
         'migrations.AddField("item", "qty", models.TextField(default="a")),',
     )
     result = project.check_equivalence(
-        trial=True, noop_data=True, prune=True, database=my, skip_kinds=[]
+        trial=True, noop_data=True, prune=True, database=my
     )
     assert [r.kind for r in result.removals if r.kind == "noop"] == ["noop"]
     # The TEXT default: kept out of the CreateModel on MySQL only.

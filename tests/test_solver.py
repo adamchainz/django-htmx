@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests.test_compact import ITEM, blocked, kinds
+from tests.project import ITEM, blocked, kinds
 
 ADD = 'migrations.AddField("item", "legacy", models.IntegerField(default=0)),'
 INDEX = 'migrations.AddIndex("item", models.Index(fields=["legacy"], name="l_idx")),'
@@ -288,3 +288,177 @@ def test_superseded_with_reference_before(project):
         'migrations.AlterField("item", "name", models.CharField(max_length=30)),',
     )
     assert superseded(project.check_equivalence()) == ["shop.Item.name"]
+
+
+TAG = """
+    migrations.CreateModel(
+        name="Tag",
+        fields=[
+            ("id", models.AutoField(primary_key=True)),
+            ("code", models.CharField(max_length=5, unique=True)),
+        ],
+    ),
+"""
+
+
+class TestSupersededReleases:
+    def test_to_field_released(self, project):
+        project.migration("shop", "0001_initial", ITEM + TAG)
+        project.migration(
+            "shop",
+            "0003_tag",
+            'migrations.AddField("item", "tag", models.ForeignKey("shop.tag",'
+            ' models.CASCADE, to_field="code", null=True)),',
+        )
+        project.migration(
+            "shop",
+            "0004_alter",
+            'migrations.AlterField("item", "tag", models.ForeignKey("shop.tag",'
+            " models.CASCADE, null=True)),",
+        )
+        project.migration(
+            "shop", "0005_drop_code", 'migrations.RemoveField("tag", "code"),'
+        )
+        project.migration(
+            "shop",
+            "0006_blank",
+            'migrations.AlterField("item", "tag", models.ForeignKey("shop.tag",'
+            " models.CASCADE, null=True, blank=True)),",
+        )
+        result = project.check_equivalence()
+        assert result.removals == []
+
+    def test_db_column_released(self, project):
+        project.migration("shop", "0001_initial", ITEM)
+        project.migration(
+            "shop",
+            "0002_a",
+            'migrations.AddField("item", "a", models.IntegerField(default=0, db_column="legacy")),',
+        )
+        project.migration(
+            "shop",
+            "0003_a",
+            'migrations.AlterField("item", "a", models.IntegerField(default=0)),',
+        )
+        project.migration(
+            "shop",
+            "0004_legacy",
+            'migrations.AddField("item", "legacy", models.IntegerField(default=0)),',
+        )
+        project.migration(
+            "shop",
+            "0005_a",
+            'migrations.AlterField("item", "a", models.IntegerField(default=1)),',
+        )
+        result = project.check_equivalence()
+        assert result.removals == []
+
+    def test_same_column_still_superseded(self, project):
+        project.migration("shop", "0001_initial", ITEM)
+        project.migration(
+            "shop",
+            "0002_a",
+            'migrations.AlterField("item", "name", models.CharField(max_length=20, db_column="n")),',
+        )
+        project.migration(
+            "shop",
+            "0003_b",
+            'migrations.AlterField("item", "name", models.CharField(max_length=30, db_column="n")),',
+        )
+        project.migration(
+            "shop",
+            "0004_c",
+            'migrations.AlterField("item", "name", models.CharField(max_length=40, db_column="n")),',
+        )
+        result = project.check_equivalence()
+        assert [r.kind for r in result.removals] == ["superseded"]
+
+
+class TestElidableScope:
+    def test_unordered_elidable_blocks(self, project):
+        project.migration("shop", "0001_initial", ITEM)
+        project.migration("shop", "0002_coupon", COUPON)
+        project.migration("shop", "0003_drop", 'migrations.DeleteModel("Coupon"),')
+        project.migration(
+            "other",
+            "0001_initial",
+            "migrations.RunSQL(\"SELECT 'coupon'\", elidable=True),",
+            deps=[("shop", "0001_initial")],
+        )
+        result = project.check_equivalence("shop")
+        assert result.removals == []
+        assert blocked(result)["shop.Coupon"] == (
+            "RunSQL in other.0001_initial mentions 'coupon'",
+        )
+        assert "RunSQL" in project.read("other", "0001_initial")
+
+    def test_ordered_elidable_reported(self, project):
+        project.migration("shop", "0001_initial", ITEM)
+        project.migration(
+            "shop",
+            "0002_coupon",
+            COUPON + "migrations.RunSQL(\"SELECT 'coupon'\", elidable=True),",
+        )
+        project.migration("shop", "0003_drop", 'migrations.DeleteModel("Coupon"),')
+        result = project.check_equivalence()
+        assert [r.description for r in result.removals if r.kind == "elidable"] == [
+            "elidable RunSQL in 0002_coupon (mentions 'coupon', removed with shop.Coupon)"
+        ]
+
+    def test_elidable_in_excluded_app_blocks(self, project):
+        project.migration("shop", "0001_initial", ITEM)
+        project.migration("shop", "0002_coupon", COUPON)
+        project.migration(
+            "other",
+            "0001_initial",
+            "migrations.RunSQL(\"SELECT 'coupon'\", elidable=True),",
+            deps=[("shop", "0002_coupon")],
+        )
+        project.migration(
+            "shop",
+            "0003_drop",
+            'migrations.DeleteModel("Coupon"),',
+            extra_deps=[("other", "0001_initial")],
+        )
+        result = project.compact("shop", exclude=["other"])
+        assert blocked(result)["shop.Coupon"] == (
+            "elidable RunSQL in other.0001_initial mentions 'coupon' but cannot be"
+            " removed: app 'other' is excluded",
+        )
+
+    def test_elidable_flag_respects_exclude(self, project):
+        project.migration(
+            "shop",
+            "0001_initial",
+            ITEM + "migrations.RunSQL('SELECT 1', elidable=True),",
+        )
+        project.migration(
+            "other", "0001_initial", "migrations.RunSQL('SELECT 2', elidable=True),"
+        )
+        result = project.compact(elidable=True, exclude=["other"])
+        assert kinds(result) == [("elidable", "shop")]
+        assert (
+            result.removals[0].description
+            == "elidable RunSQL in 0001_initial (--elidable)"
+        )
+
+
+def test_excluded_child_blocks_model(project):
+    project.migration("shop", "0001_initial", ITEM + COUPON)
+    project.migration("shop", "0002_drop", 'migrations.DeleteModel("Coupon"),')
+    result = project.compact(exclude=["shop.Coupon.code"])
+    assert result.removals == []
+    assert blocked(result)["shop.Coupon"] == (
+        "it contains the excluded field shop.Coupon.code",
+    )
+
+
+COUPON = """
+    migrations.CreateModel(
+        name="Coupon",
+        fields=[
+            ("id", models.AutoField(primary_key=True)),
+            ("code", models.CharField(max_length=5)),
+        ],
+    ),
+"""

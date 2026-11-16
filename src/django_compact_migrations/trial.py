@@ -69,9 +69,6 @@ if TYPE_CHECKING:
 Progress = Callable[[str, bool], None]
 """Called with (message, note): notes are worth keeping, others are status."""
 
-_candidate_hook: Callable[[dict[Key, list[Operation]], int], None] | None = None
-"""Test hook: may alter a candidate's operations before pass ``n`` runs."""
-
 
 class TrialFailed(CompactError):
     """No plan passes its trial run: nothing may be written."""
@@ -636,8 +633,6 @@ class Trial:
     ) -> tuple[list[TrialFailure], list[Difference]] | None:
         """Run a candidate; None if it passes, else failures and differences."""
         operations = built.operations_by_key(self.analysis.history)
-        if _candidate_hook is not None:
-            _candidate_hook(operations, self.passes)
         prune = (
             prune_plan(self.analysis, built)
             if self.analysis.options.get("prune")

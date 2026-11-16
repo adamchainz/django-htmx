@@ -5,8 +5,7 @@ from __future__ import annotations
 import pytest
 
 from django_compact_migrations.opaque import _source_words, python_words
-from tests.project import Project
-from tests.test_compact import ITEM, blocked, kinds
+from tests.project import ITEM, Project, blocked, kinds
 
 
 def dead_field(project: Project, name: str, ops: str, extra: str = "") -> None:
@@ -242,7 +241,9 @@ def test_blocked_lines_name_their_migrations(project):
         """,
     )
     project.migration("shop", "0005_remove", 'migrations.RemoveField("item", "body"),')
-    out, _ = project.command("plan", "--show-blocked")
+    # Without folds: the kept AddField would fold into the CreateModel, and
+    # the blocked field be reported as added there.
+    out, _ = project.command("plan", "--show-blocked", "--skip-kind", "fold")
     lines = out.splitlines()
     assert lines[2].split() == [
         "body",
@@ -299,7 +300,7 @@ class TestSoftReferences:
             "('_name', 'pk')",
             'list(apps.get_model("shop", "Item").objects.using(alias).all())',
         )
-        result = project.check_equivalence()
+        result = project.check_equivalence(skip_kinds=["fold"])
         assert result.removals == []
         assert blocked(result)["shop.Item._name"] == (
             "AlterModelOptions in shop.0002_name orders by it, and meanwhile"

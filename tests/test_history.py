@@ -20,8 +20,7 @@ from django_compact_migrations.history import (
     load_history,
     migration_path,
 )
-from tests.project import Project, migration_source
-from tests.test_compact import ITEM, blocked, kinds
+from tests.project import ITEM, Project, blocked, kinds, migration_source
 
 ADD = 'migrations.AddField("item", "legacy", models.IntegerField(default=0))'
 
@@ -146,3 +145,50 @@ def test_invalidate_without_bytecode_path(monkeypatch):
 
 def test_migration_source_helper():
     assert "dependencies" in migration_source("", [])
+
+
+def test_non_ascii_names(project):
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration(
+        "shop",
+        "0002_add",
+        """
+        migrations.AddField("item", "имя", models.IntegerField(default=0)),
+        migrations.RunPython(touch),
+        """,
+        extra="""
+        def touch(apps, schema_editor):
+            apps.get_model("shop", "Item").objects.filter(имя=1)
+        """,
+    )
+    project.migration("shop", "0003_remove", 'migrations.RemoveField("item", "имя"),')
+    result = project.compact()
+    assert blocked(result)["shop.Item.имя"] == (
+        "RunPython in shop.0002_add mentions 'имя'",
+    )
+
+
+def test_unusual_line_breaks():
+    sf = SourceFile(__import__("pathlib").Path("m.py"), "# a b\x0cc\nx = [1]\n")
+    assert sf.tree is not None
+    node = sf.tree.body[0].value  # type: ignore[attr-defined]
+    start, end = sf.node_span(node)
+    assert sf.text[start:end] == "[1]"
+
+
+def test_unusual_line_breaks_in_migration(project):
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration(
+        "shop",
+        "0002_add",
+        """
+        migrations.AddField("item", "legacy", models.IntegerField(default=0)),
+        migrations.RunSQL("SELECT 1"),
+        """,
+        extra="# Odd line\x0cbreaks here.",
+    )
+    project.migration(
+        "shop", "0003_remove", 'migrations.RemoveField("item", "legacy"),'
+    )
+    result = project.check_equivalence()
+    assert kinds(result) == [("field", "shop.Item.legacy")]

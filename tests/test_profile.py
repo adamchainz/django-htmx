@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import signal
 import tempfile
 from io import StringIO
 from pathlib import Path
@@ -10,16 +12,17 @@ import pytest
 from django.conf import settings
 from django.core.management import CommandError
 from django.db import connections
+from django.db.models.signals import post_migrate, pre_migrate
 
+from django_compact_migrations import profile
 from django_compact_migrations import profile as profile_module
 from django_compact_migrations.core import CompactError
-from django_compact_migrations.runner import run_history
+from django_compact_migrations.runner import RunError, run_history
 from django_compact_migrations.scratch import ScratchDatabaseError, scratch_database
-from tests.test_command import history  # noqa: F401
-from tests.test_compact import ITEM
+from tests.project import ITEM
 
 
-def test_profile_report(history):  # noqa: F811
+def test_profile_report(history):
     out, _ = history.command_db("profile", "--top", "2")
     assert out.startswith("Migrated 3 migrations in ")
     assert "Slowest 2 migrations" in out
@@ -32,7 +35,7 @@ def test_profile_report(history):  # noqa: F811
     assert settings.DATABASES["default"]["NAME"] == ":memory:"
 
 
-def test_profile_json(history):  # noqa: F811
+def test_profile_json(history):
     out, _ = history.command_db("profile", "--json")
     data = json.loads(out)
     assert data["vendor"] == "sqlite"
@@ -94,7 +97,7 @@ def test_scratch_unknown_alias():
         scratch_database("nope").__enter__()
 
 
-def test_hooks_removed(history):  # noqa: F811
+def test_hooks_removed(history):
     history.activate()
     history.purge()
     with history.db_blocker.unblock(), scratch_database() as connection:
@@ -109,7 +112,7 @@ def test_hooks_removed(history):  # noqa: F811
             assert "database_forwards" not in op.__dict__
 
 
-def test_profile_state_time(history):  # noqa: F811
+def test_profile_state_time(history):
     data = json.loads(history.command_db("profile", "--json")[0])
     assert data["state_seconds"] > 0
     assert data["database_seconds"] > 0
@@ -146,8 +149,6 @@ def test_scratch_listing(project, tmp_path, monkeypatch):
 
 
 def test_sigterm_cleans_up(project, monkeypatch):
-    import os
-    import signal
 
     project.migration("shop", "0001_initial", "")
     made: list[str] = []
@@ -179,3 +180,65 @@ def test_profile_quiet_and_without_plan(project, monkeypatch):
     monkeypatch.setattr(profile_module, "plan", fail)
     out, _ = project.command_db("profile", "--force-color")
     assert "Could not make the default plan: no plan" in out
+
+
+def test_profile_without_plan(project, monkeypatch):
+    project.migration("shop", "0001_initial", ITEM)
+    project.activate()
+
+    def fail(*args: Any, **kwargs: Any) -> None:
+        raise CompactError("no plan")
+
+    monkeypatch.setattr(profile, "plan", fail)
+    with project.db_blocker.unblock():
+        result = profile.profile()
+    assert result.removable is None
+    assert result.plan_error == "no plan"
+
+
+def test_run_history_needs_empty_database(project):
+    project.migration("shop", "0001_initial", ITEM)
+    project.activate()
+    with project.db_blocker.unblock(), scratch_database() as connection:
+        run_history(connection)
+        with pytest.raises(RunError, match="already has applied migrations"):
+            run_history(connection)
+
+
+def test_shared_operation_timed_once(project):
+    project.migration("shop", "0001_initial", ITEM)
+    (project.path("shop").parent / "shared.py").write_text(
+        "from django.db import migrations\n\n"
+        "NOTHING = migrations.RunPython(migrations.RunPython.noop)\n"
+    )
+    extra = f"from {project.package}.shop.shared import NOTHING"
+    project.migration("shop", "0002_a", "NOTHING,", extra=extra)
+    project.migration("shop", "0003_b", "NOTHING,", extra=extra)
+    project.activate()
+    with project.db_blocker.unblock(), scratch_database() as connection:
+        report = run_history(connection)
+    assert [
+        t.migration[1] for t in report.operations if t.operation == "RunPython"
+    ] == ["0002_a"]
+
+
+def test_signal_handler_failures(project):
+    project.migration("shop", "0001_initial", ITEM)
+    (project.path("shop").parent / "models.py").write_text("")
+    project.activate()
+
+    def fail(**kwargs: Any) -> None:
+        raise ValueError("handler")
+
+    for signal_, name in ((pre_migrate, "pre_migrate"), (post_migrate, "post_migrate")):
+        signal_.connect(fail, dispatch_uid="test_signal_handler_failures")
+        try:
+            with (
+                project.db_blocker.unblock(),
+                scratch_database() as connection,
+                pytest.raises(RunError, match=f"A {name} signal handler failed"),
+            ):
+                run_history(connection, post_migrate=True)
+        finally:
+            signal_.disconnect(dispatch_uid="test_signal_handler_failures")
+    assert connections["default"].vendor == "sqlite"

@@ -9,10 +9,11 @@ from typing import Any
 import pytest
 from django.core.management import CommandError
 
+from django_compact_migrations import planfile
+from django_compact_migrations.core import CompactError
 from django_compact_migrations.patch import PatchError, apply_diff, make_diff
 from django_compact_migrations.planfile import dumps
-from tests.project import Project
-from tests.test_compact import ITEM
+from tests.project import ITEM, Project
 
 LEGACY = 'migrations.AddField("item", "legacy", models.IntegerField(default=0)),'
 REMOVE = 'migrations.RemoveField("item", "legacy"),'
@@ -54,10 +55,13 @@ def test_layout(project, tmp_path):
     ]
     assert order == sorted(order)
     data = tomllib.loads(text)
-    (edit,) = [f for f in data["files"] if f["migration"] == ["shop", "0002_add"]]
+    # qty folds into the CreateModel; 0002_add is then empty, and pruned
+    # (0003_remove is the app's latest migration).
+    (edit,) = [f for f in data["files"] if f["migration"] == ["shop", "0001_initial"]]
     assert edit["diff"].startswith("--- a/")
-    assert '-        migrations.AddField("item", "legacy"' in edit["diff"]
+    assert "+                ('qty', models.IntegerField(default=1))," in edit["diff"]
     assert edit["sha256_before"] != edit["sha256_after"]
+    assert [d["migration"] for d in data["deleted"]] == [["shop", "0002_add"]]
     assert "tool_path" in data and "created" in data
 
 
@@ -95,8 +99,11 @@ def test_tampered_diff_refused(project, tmp_path):
     project.command("plan", "-o", str(plan_path))
     before = project.files()
     text = plan_path.read_text()
-    plan_path.write_text(text.replace("default=1", "default=2", 1))
-    with pytest.raises(CommandError, match="doesn't apply|doesn't give the file"):
+    # A changed removed line doesn't apply.
+    tampered = text.replace("-        migrations.AddField(", "-        x(", 1)
+    assert tampered != text
+    plan_path.write_text(tampered)
+    with pytest.raises(CommandError, match="doesn't apply"):
         project.command("apply", "--plan", str(plan_path))
     # A changed added line still applies, but gives another file.
     plan_path.write_text(text.replace("+    operations = []", "+    operations = [] "))
@@ -190,3 +197,47 @@ def test_toml_shapes():
         "rows": [{"k": "a", "nested": [{"z": 1}]}, {"k": "b"}],
         "empty": [],
     }
+
+
+def test_patch_hunks_out_of_order():
+    old = "".join(f"{i}\n" for i in range(20))
+    new = old.replace("1\n", "one\n", 1).replace("18\n", "eighteen\n")
+    diff = make_diff(old, new, "f")
+    header, first, second = diff.split("@@ -", 2)
+    swapped = header + "@@ -" + second + "@@ -" + first
+    with pytest.raises(PatchError, match="out of order"):
+        apply_diff(old, swapped)
+
+
+def test_tool_version_not_installed(monkeypatch):
+    from importlib.metadata import PackageNotFoundError
+
+    def missing(name: str) -> str:
+        raise PackageNotFoundError(name)
+
+    monkeypatch.setattr(planfile, "version", missing)
+    assert planfile.tool_version() == "unknown"
+
+
+def test_module_file():
+    assert planfile._module_file("no.such.module") is None
+    assert planfile._module_file("nosuchtoplevelmodule") is None
+    assert planfile._module_file("") is None
+
+
+def test_plan_file_with_missing_migration(project, tmp_path):
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration(
+        "shop",
+        "0002_add",
+        'migrations.AddField("item", "legacy", models.IntegerField(default=0)),',
+    )
+    project.migration(
+        "shop", "0003_remove", 'migrations.RemoveField("item", "legacy"),'
+    )
+    plan_path = tmp_path / "plan.toml"
+    project.command("plan", "-o", str(plan_path))
+    project.path("shop", "0002_add").unlink()
+    project.purge()
+    with pytest.raises(CompactError, match="can't be read"):
+        planfile.load_plan(plan_path)

@@ -1,23 +1,28 @@
-"""Scratch runs: every alias retargeted, forked runs, nondeterminism, and the
-command-line and plan-file fixes that came with them."""
+"""Scratch runs: every alias retargeted, forked runs, the isolate module,
+nondeterminism, and how the command reports them."""
 
 from __future__ import annotations
 
 import os
+import pickle
+import signal
+import sys
 import tomllib
+import warnings
 from pathlib import Path
 from typing import Any
 
 import pytest
+from django.db import connections
 from django.db.models.signals import pre_migrate
 from django.db.utils import ConnectionHandler
 
+from django_compact_migrations import isolate
 from django_compact_migrations import scratch as scratch_module
 from django_compact_migrations.core import Analysis, CompactError
 from django_compact_migrations.isolate import ChildError, run_isolated
 from django_compact_migrations.runner import RunError
-from tests.test_compact import ITEM, kinds
-from tests.test_trial import history
+from tests.project import ITEM, kinds, with_data_migration
 
 # Scratch databases
 
@@ -128,21 +133,25 @@ def test_runs_isolated_from_each_other(project):
         "shop", "0003_remove", 'migrations.RemoveField("item", "legacy"),'
     )
     result = project.check_equivalence(trial=True)
-    assert kinds(result) == [("field", "shop.Item.legacy")]
+    # The static plan folds the AddField (its removal is blocked by the
+    # mention); the trial then removes the field too.
+    assert kinds(result) == [
+        ("field", "shop.Item.legacy"),
+        ("fold", "shop.Item.legacy"),
+    ]
     assert result.verification["failures"] == []
     assert result.verification["runs"] == 3
 
 
 def test_pre_migrate_sent(project):
     def create_table(using: str, **kwargs: Any) -> None:
-        from django.db import connections
 
         with connections[using].cursor() as cursor:
             cursor.execute("CREATE TABLE IF NOT EXISTS aux (x int)")
 
     pre_migrate.connect(create_table, dispatch_uid="test_pre_migrate_sent")
     try:
-        history(
+        with_data_migration(
             project,
             "pass",
             extra_ops='migrations.RunSQL("INSERT INTO aux VALUES (1)"),',
@@ -182,13 +191,16 @@ def test_nondeterministic_rows_not_blamed(project):
         "shop", "0003_remove", 'migrations.RemoveField("item", "legacy"),'
     )
     result = project.check_equivalence(trial=True)
-    assert kinds(result) == [("field", "shop.Item.legacy")]
+    assert kinds(result) == [
+        ("field", "shop.Item.legacy"),
+        ("fold", "shop.Item.legacy"),
+    ]
     assert result.verification["nondeterministic_columns"] == {"shop_item": ["name"]}
     assert result.verification["trial_blocked"] == 0
 
 
 def test_never_worse_than_static(project, monkeypatch):
-    history(project, "Item.objects.using(alias).filter(legacy=1).count()")
+    with_data_migration(project, "Item.objects.using(alias).filter(legacy=1).count()")
     project.migration(
         "shop",
         "0004_spare",
@@ -236,7 +248,7 @@ def test_skip_checks_after_subcommand(project):
 
 
 def test_apply_plan_from_elsewhere(project, tmp_path, monkeypatch):
-    history(project, "pass")
+    with_data_migration(project, "pass")
     plans = tmp_path / "plans"
     plans.mkdir()
     monkeypatch.chdir(plans)
@@ -248,3 +260,87 @@ def test_apply_plan_from_elsewhere(project, tmp_path, monkeypatch):
     monkeypatch.chdir(elsewhere)
     project.command("apply", "--plan", str(plans / "plan.toml"))
     assert 'AddField("item", "legacy"' not in project.read("shop", "0002_add")
+
+
+def test_child_error_pickles():
+    error = pickle.loads(pickle.dumps(ChildError("boom", "trace")))
+    assert str(error) == "boom" and error.child_traceback == "trace"
+
+
+def test_without_fork(monkeypatch):
+    monkeypatch.setattr(isolate, "CAN_FORK", False)
+    messages: list[Any] = []
+
+    def function(send: Any) -> int:
+        send("hi")
+        return os.getpid()
+
+    with pytest.warns(RuntimeWarning, match="os.fork"):
+        assert run_isolated(function, messages.append) == os.getpid()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert run_isolated(function, messages.append, fork=False) == os.getpid()
+    assert messages == ["hi", "hi"]
+
+
+def test_unpicklable_error_in_child():
+    class Odd(Exception):
+        def __init__(self) -> None:
+            super().__init__("odd")
+            self.callback = lambda: None
+
+    def function(send: Any) -> None:
+        raise Odd()
+
+    with pytest.raises(ChildError, match="Odd: odd") as info:
+        run_isolated(function)
+    assert "Traceback" in info.value.child_traceback
+
+
+def test_cleanup_failure_in_child_ignored(monkeypatch):
+    parent = os.getpid()
+
+    def close() -> None:
+        if os.getpid() != parent:
+            raise RuntimeError("can't close")
+
+    monkeypatch.setattr(isolate, "close_everything", close)
+    assert run_isolated(lambda send: 42) == 42
+
+
+def test_child_killed():
+    def function(send: Any) -> None:  # pragma: no cover - its child is killed
+        os.kill(os.getpid(), signal.SIGKILL)
+
+    with pytest.raises(ChildError, match="killed by signal 9"):
+        run_isolated(function)
+
+
+def test_parent_interrupted_kills_child():
+    def function(send: Any) -> None:  # pragma: no cover - its child is killed
+        send("started")
+        signal.pause()
+
+    def receive(message: Any) -> None:
+        raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        run_isolated(function, receive)
+
+
+def test_missing_or_broken_stream(monkeypatch):
+    class Broken:
+        def flush(self) -> None:
+            raise ValueError("closed")
+
+    monkeypatch.setattr(sys, "__stderr__", None)
+    monkeypatch.setattr(sys, "stdout", Broken())
+    assert run_isolated(lambda send: 1) == 1
+
+
+def test_kill_gone_child():
+    pid = os.fork()
+    if pid == 0:  # pragma: no cover - the child exits at once
+        os._exit(0)
+    os.waitpid(pid, 0)
+    isolate._kill(pid)  # neither there to kill nor to wait for

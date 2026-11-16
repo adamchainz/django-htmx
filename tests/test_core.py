@@ -13,8 +13,7 @@ from django_compact_migrations.core import CompactError, Location
 from django_compact_migrations.prune import PruneError
 from django_compact_migrations.rewrite import RewriteError
 from django_compact_migrations.timeline import Timeline
-from tests.project import Project
-from tests.test_compact import ITEM, blocked, kinds
+from tests.project import ITEM, Project, blocked, kinds
 
 ADD = 'migrations.AddField("item", "legacy", models.IntegerField(default=0)),'
 REMOVE = 'migrations.RemoveField("item", "legacy"),'
@@ -154,7 +153,7 @@ def test_folded_history_not_replaying(project, monkeypatch):
     with pytest.raises(
         CompactError, match=r"the folded history doesn't replay \(odd\)"
     ):
-        project.compact(skip_kinds=[])
+        project.compact()
 
 
 def test_field_of_removed_model_reported_once(project):
@@ -208,7 +207,7 @@ def test_fold_into_unlocatable_create_model(project):
         "0002_alter",
         'migrations.AlterField("item", "name", models.CharField(max_length=20)),',
     )
-    result = project.compact(skip_kinds=[])
+    result = project.compact()
     (removal,) = result.removals
     (target,) = removal.targets
     assert target.line == 12  # the whole operation's line
@@ -252,7 +251,7 @@ def test_fold_into_create_model_edited_earlier(project):
         "0003_alter",
         'migrations.AlterField("item", "name", models.CharField(max_length=20)),',
     )
-    result = project.check_equivalence(skip_kinds=[])
+    result = project.check_equivalence()
     (fold,) = [r for r in result.removals if r.kind == "fold"]
     (target,) = fold.targets
     assert (target.operation, target.line) == ("CreateModel", 10)  # the call
@@ -274,3 +273,112 @@ def test_sub_line_of_edited_together_operation(project):
         rec = load_history().ops[-1]
     rec.op = AlterUniqueTogether("item", set())  # as an earlier round left it
     assert core._sub_line(Element(rec, ("entry", ("id", "name")), None)) is None
+
+
+class TestWriteRestores:
+    def dead_field(self, project: Project) -> None:
+        project.migration("shop", "0001_initial", ITEM)
+        project.migration(
+            "shop",
+            "0002_add",
+            'migrations.AddField("item", "legacy", models.IntegerField(default=0)),',
+        )
+        project.migration(
+            "shop", "0003_remove", 'migrations.RemoveField("item", "legacy"),'
+        )
+
+    def test_failure_mid_write(self, project, monkeypatch):
+        self.dead_field(project)
+        before = project.files()
+        result = project.compact()
+        real = core._write_text
+        calls = []
+
+        def flaky(path, text, encoding="utf-8"):
+            calls.append(path)
+            if len(calls) == 2:
+                path.write_text("garbage")  # a torn write
+                raise OSError("disk full")
+            real(path, text, encoding)
+
+        monkeypatch.setattr(core, "_write_text", flaky)
+        with pytest.raises(CompactError, match="restored: disk full"):
+            result.write()
+        assert project.files() == before
+
+    def test_keyboard_interrupt(self, project, monkeypatch):
+        self.dead_field(project)
+        before = project.files()
+        result = project.compact()
+
+        def interrupt(*args: object) -> None:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(core, "verify_on_disk", interrupt)
+        with pytest.raises(KeyboardInterrupt):
+            result.write()
+        assert project.files() == before
+
+    def test_no_temp_files_left(self, project):
+        self.dead_field(project)
+        project.compact().write()
+        assert sorted(p.name for p in project.path("shop").iterdir()) == [
+            "0001_initial.py",
+            "0002_add.py",
+            "0003_remove.py",
+            "__init__.py",
+        ]
+
+
+class TestUnknownTargets:
+    def test_model(self, project):
+        project.migration("shop", "0001_initial", ITEM)
+        with pytest.raises(CompactError, match="No model matching 'shop.Nope'"):
+            project.compact("shop.Nope")
+
+    def test_field(self, project):
+        project.migration("shop", "0001_initial", ITEM)
+        with pytest.raises(CompactError, match="No field matching 'shop.Item.nope'"):
+            project.compact("shop.Item.nope")
+
+    def test_exclude(self, project):
+        project.migration("shop", "0001_initial", ITEM)
+        with pytest.raises(CompactError, match="No model matching 'shop.Nope'"):
+            project.compact(exclude=["shop.Nope"])
+
+    def test_old_names_ok(self, project):
+        project.migration("shop", "0001_initial", ITEM)
+        project.migration("shop", "0002_drop", 'migrations.DeleteModel("Item"),')
+        assert project.compact("shop.Item.name").removals == []
+
+
+def test_bom_kept(project):
+    # Python reads a file with a byte order mark as UTF-8; it is written
+    # back with it.
+    project.migration("shop", "0001_initial", ITEM)
+    path = project.migration(
+        "shop",
+        "0002_add",
+        'migrations.AddField("item", "legacy", models.IntegerField(default=0)),\n'
+        'migrations.AddField("item", "qty", models.IntegerField(default=0)),',
+    )
+    path.write_bytes(b"\xef\xbb\xbf" + path.read_bytes())
+    project.migration(
+        "shop", "0003_remove", 'migrations.RemoveField("item", "legacy"),'
+    )
+    result = project.check_equivalence()
+    assert ("field", "shop.Item.legacy") in kinds(result)
+    data = path.read_bytes()
+    assert data.startswith(b"\xef\xbb\xbf")
+    assert b"legacy" not in data
+
+
+def test_project_helper(tmp_path, django_db_blocker):
+    project = Project(tmp_path, django_db_blocker)
+    project.migration("shop", "0001_initial", ITEM)
+    project.activate()
+    # A new app deactivates the project, to be activated with it.
+    project.migration("other", "0001_initial", "")
+    assert project._stack is None
+    project.close()
+    project.close()

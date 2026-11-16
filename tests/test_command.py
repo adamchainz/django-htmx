@@ -7,65 +7,36 @@ from typing import Any
 import pytest
 from django.core.management import CommandError
 
-from django_compact_migrations.core import load_plan
+from django_compact_migrations.core import CompactError, load_plan
 from django_compact_migrations.management.commands.compact_migrations import (
     sqlite_order_warning,
 )
-from tests.project import Project
-from tests.test_compact import ITEM
+from tests.project import (
+    FAILURE,
+    ITEM,
+    MENTIONED,
+    with_data_migration,
+)
 
-
-@pytest.fixture
-def history(project: Project) -> Project:
-    project.migration("shop", "0001_initial", ITEM)
-    project.migration(
-        "shop",
-        "0002_coupon",
-        """
-        migrations.CreateModel(
-            name="Coupon",
-            fields=[("id", models.AutoField(primary_key=True))],
-        ),
-        migrations.AddField("item", "legacy", models.IntegerField(default=0)),
-        migrations.AddField("item", "rank", models.IntegerField(default=0)),
-        migrations.RunPython(rank),
-        """,
-        extra="""
-        def rank(apps, schema_editor):
-            apps.get_model("shop", "Item").objects.update(rank=1)
-        """,
-    )
-    project.migration(
-        "shop",
-        "0003_drop",
-        """
-        migrations.DeleteModel("Coupon"),
-        migrations.RemoveField("item", "legacy"),
-        migrations.RemoveField("item", "rank"),
-        """,
-    )
-    return project
+PLAN_OUTPUT = """\
+shop
+  Coupon    model  0002_coupon -> 0003_drop     2 operations
+  Item
+    legacy  field  0002_coupon -> 0003_drop     2 operations
+    rank    fold   0002_coupon -> 0001_initial   1 operation
+"""
 
 
 def test_dry_run(history):
     before = history.files()
     out, err = history.command("plan")
-    lines = out.splitlines()
-    assert lines[0] == "shop"
-    assert lines[1].split() == ["Coupon", "model", "0002_coupon", "->", "0003_drop"] + [
-        "2",
-        "operations",
-    ]
-    assert lines[2] == "  Item"
-    assert lines[3].split() == ["legacy", "field", "0002_coupon", "->", "0003_drop"] + [
-        "2",
-        "operations",
-    ]
-    assert lines[3].startswith("    legacy")
-    assert lines[4:] == [
-        "Would remove 4 operations in 2 migration files.",
-        "Run 'compact_migrations apply' to apply.",
-    ]
+    assert out == PLAN_OUTPUT + (
+        "Would remove 4 operations, fold 1 operation and edit 1 operation in 3"
+        " migration files.\n"
+        "On SQLite, this plan may change the physical order of columns in rebuilt"
+        " tables (harmless for Django); --trial checks it.\n"
+        "Run 'compact_migrations apply' to apply.\n"
+    )
     assert err == ""
     assert history.files() == before
 
@@ -75,11 +46,12 @@ def test_verbose(history):
     lines = out.splitlines()
     assert lines[2].strip().endswith("0002_coupon.py:14  CreateModel")
     assert lines[3].strip().endswith("0003_drop.py:11  DeleteModel")
+    assert lines[9].strip().endswith("0002_coupon.py:19  AddField")
+    assert lines[10].strip().endswith("0001_initial.py:10  CreateModel (regenerated)")
     assert "Blocked" in lines
-    assert any(
-        line.startswith("  shop.Item.rank")
-        and "field added in 0002_coupon, removed in 0003_drop" in line
-        for line in lines
+    # Folded into the CreateModel, the field is now added there.
+    assert "  shop.Item.rank  field added in 0001_initial, removed in 0003_drop" in (
+        lines
     )
     assert "    RunPython in shop.0002_coupon mentions 'rank'" in lines
 
@@ -118,8 +90,15 @@ def test_check(history):
 
 def test_write(history):
     out, _ = history.command("apply")
-    assert out.endswith("Removed 4 operations in 2 migration files.\n")
-    assert "apply" not in out
+    assert out == PLAN_OUTPUT + (
+        "Removed 4 operations, folded 1 operation and edited 1 operation in 3"
+        " migration files.\n"
+        "On SQLite, this plan may change the physical order of columns in rebuilt"
+        " tables (harmless for Django); --trial checks it.\n"
+    )
+    assert "('rank', models.IntegerField(default=0))" in history.read(
+        "shop", "0001_initial"
+    )
     source = history.read("shop", "0003_drop")
     assert "Coupon" not in source
     assert 'migrations.RemoveField("item", "rank"),' in source
@@ -227,12 +206,13 @@ def test_plan_file_round_trip(history, tmp_path):
     assert data["verification"] == {"mode": "static"}
     assert data["options"]["opaque"] == "scan"
     assert [f["migration"] for f in data["files"]] == [
+        ["shop", "0001_initial"],
         ["shop", "0002_coupon"],
         ["shop", "0003_drop"],
     ]
     assert data["removals"][0]["elements"][0]["operation"] == "CreateModel"
     out, _ = history.command("apply", "--plan", str(plan_path))
-    assert out.endswith("Removed 4 operations in 2 migration files.\n")
+    assert out.startswith(PLAN_OUTPUT + "Removed 4 operations, folded 1 operation")
     assert "Coupon" not in history.read("shop", "0003_drop")
     out, _ = history.command("plan")
     assert out == "No operations to remove.\n"
@@ -297,7 +277,7 @@ def test_library_round_trip(history, tmp_path):
 
 
 def test_apply_failure(history, monkeypatch):
-    from django_compact_migrations.core import CompactError, Result
+    from django_compact_migrations.core import Result
 
     def fail(self: Result) -> None:
         raise CompactError("cannot write")
@@ -327,7 +307,8 @@ def test_prune_only_summary(project):
         "0003_qty",
         'migrations.AddField("item", "qty", models.IntegerField(default=0)),',
     )
-    out, _ = project.command("plan", "--prune")
+    # Nothing removed or folded: only the summary of pruning.
+    out, _ = project.command("plan", "--prune", "--skip-kind", "fold")
     assert "1 migration would be deleted." in out.splitlines()
 
 
@@ -366,10 +347,7 @@ def test_trial_masked_tables(project):
 
 
 def test_trial_report_postgres(project, pg):
-    from tests.test_trial import MENTIONED
-    from tests.test_trial import history as trial_history
-
-    trial_history(project, MENTIONED)
+    with_data_migration(project, MENTIONED)
     out, _ = project.command_db("plan", "--trial", "--database", pg)
     assert "on PostgreSQL" in out
     assert "SQLite trials" not in out
@@ -395,7 +373,6 @@ def test_sqlite_order_warning_other_alias(history):
 
 def test_trial_failure_writes_nothing(history, monkeypatch, tmp_path):
     from django_compact_migrations import trial
-    from tests.test_trial import FAILURE
 
     def candidate(self: Any, solution: Any, built: Any, reference: Any) -> Any:
         self.passes += 1
@@ -411,3 +388,30 @@ def test_trial_failure_writes_nothing(history, monkeypatch, tmp_path):
     with pytest.raises(CommandError, match="found no plan"):
         history.command_db("apply", "--trial")
     assert history.files() == before
+
+
+def test_summary_wording(project):
+    project.migration(
+        "shop",
+        "0001_initial",
+        """
+        migrations.CreateModel(
+            name="Item",
+            fields=[
+                ("id", models.AutoField(primary_key=True)),
+                ("legacy", models.IntegerField()),
+            ],
+        ),
+        """,
+    )
+    project.migration("shop", "0002_drop", 'migrations.RemoveField("item", "legacy"),')
+    out, _ = project.command("plan")
+    assert out.splitlines()[-2] == (
+        "Would remove 1 operation and edit 1 operation in 2 migration files."
+        " 1 migration would be left with no operations."
+    )
+    out, _ = project.command("apply")
+    assert out.splitlines()[-1] == (
+        "Removed 1 operation and edited 1 operation in 2 migration files."
+        " 1 migration now has no operations."
+    )

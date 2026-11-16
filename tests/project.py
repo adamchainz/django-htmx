@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import importlib
 import itertools
-import os
 import sys
 import textwrap
 from collections.abc import Iterator
@@ -17,12 +16,14 @@ from io import StringIO
 from pathlib import Path
 from typing import Any
 
+from django.conf import settings
 from django.core.management import call_command
 from django.db import connections
 from django.db.migrations.executor import MigrationExecutor
 from django.test import override_settings
 
 from django_compact_migrations.core import Result, plan
+from django_compact_migrations.trial import TrialFailure
 
 IMPORTS = """\
 import django.db.models.deletion
@@ -30,11 +31,6 @@ from django.db import migrations, models
 """
 
 _counter = itertools.count()
-
-# Most scenarios predate folding and assert exact plans without it. Set
-# COMPACTMIG_TEST_FOLD=1 to run them all with folding too: equivalence checks
-# must still pass (expected plans then differ).
-FOLD_BY_DEFAULT = os.environ.get("COMPACTMIG_TEST_FOLD") == "1"
 
 
 def migration_source(
@@ -161,21 +157,12 @@ class Project:
     def compact(self, *targets: str, **options: Any) -> Result:
         self.activate()
         self.purge()
-        if not FOLD_BY_DEFAULT and "kinds" not in options:
-            options.setdefault("skip_kinds", ["fold"])
         with self.db_blocker.unblock():
             return plan(targets, **options)
 
     def command(self, *args: str, **options: Any) -> tuple[str, str]:
         self.activate()
         self.purge()
-        if (
-            not FOLD_BY_DEFAULT
-            and args
-            and args[0] in ("plan", "apply")
-            and not {"--plan", "--kind", "--skip-kind"} & set(args)
-        ):
-            args = (args[0], "--skip-kind", "fold", *args[1:])
         out, err = StringIO(), StringIO()
         with self.db_blocker.unblock():
             call_command("compact_migrations", *args, stdout=out, stderr=err, **options)
@@ -277,3 +264,110 @@ def introspect(conn: Any) -> dict[str, Any]:
                 "checks": checks,
             }
     return schema
+
+
+ITEM = """
+    migrations.CreateModel(
+        name="Item",
+        fields=[
+            ("id", models.AutoField(primary_key=True)),
+            ("name", models.CharField(max_length=10)),
+        ],
+    ),
+"""
+
+# Folding is on by default. Tests about what is removed turn it off with
+# this, since folds also rewrite what is kept.
+NO_FOLD: dict[str, Any] = {"skip_kinds": ["fold"]}
+
+
+def kinds(result: Result) -> list[tuple[str, str]]:
+    return sorted((r.kind, r.label) for r in result.removals)
+
+
+def blocked(result: Result) -> dict[str, tuple[str, ...]]:
+    return {b.label: b.reasons for b in result.blocked}
+
+
+def folds(result: Result) -> list[tuple[str, str]]:
+    return sorted((r.label, r.description) for r in result.removals if r.kind == "fold")
+
+
+def with_data_migration(project: Project, code: str, extra_ops: str = "") -> None:
+    """shop.Item.legacy, added then removed, with a RunPython running
+    ``code`` (``Item`` and ``alias`` defined) in between."""
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration(
+        "shop",
+        "0002_add",
+        'migrations.AddField("item", "legacy", models.IntegerField(default=0)),\n'
+        + extra_ops
+        + "\nmigrations.RunPython(forwards),",
+        extra="def forwards(apps, schema_editor):\n"
+        "    Item = apps.get_model('shop', 'Item')\n"
+        "    alias = schema_editor.connection.alias\n"
+        + "\n".join(f"    {line}" for line in code.strip().splitlines()),
+    )
+    project.migration(
+        "shop", "0003_remove", 'migrations.RemoveField("item", "legacy"),'
+    )
+
+
+# Code for with_data_migration() that mentions legacy but doesn't need it.
+MENTIONED = """
+for item in Item.objects.using(alias).all():
+    item.legacy = 1
+"""
+
+# A failure a scripted trial run reports.
+FAILURE = TrialFailure(("shop", "0002_add"), "RunPython", "boom", "", True)
+
+
+# The database servers of compose.yaml.
+
+SERVERS: dict[str, dict[str, Any]] = {
+    "pg": {
+        "ENGINE": "django.db.backends.postgresql",
+        "HOST": "localhost",
+        "PORT": "55432",
+        "USER": "postgres",
+        "PASSWORD": "postgres",
+    },
+    "mysql": {
+        "ENGINE": "django.db.backends.mysql",
+        "HOST": "127.0.0.1",
+        "PORT": "53306",
+        "USER": "root",
+        "PASSWORD": "mysql",
+        "OPTIONS": {"charset": "utf8mb4"},
+    },
+    "mariadb": {
+        "ENGINE": "django.db.backends.mysql",
+        "HOST": "127.0.0.1",
+        "PORT": "53307",
+        "USER": "root",
+        "PASSWORD": "mariadb",
+        "OPTIONS": {"charset": "utf8mb4"},
+    },
+}
+
+
+@contextmanager
+def server_alias(alias: str, db_blocker: Any) -> Iterator[str]:
+    """A database alias for a server of compose.yaml (its own database is
+    only used for scratch databases' names)."""
+    config = {**SERVERS[alias], "NAME": "compactdev_tests"}
+    if config["ENGINE"].endswith("mysql"):
+        config["NAME"] = "mysql"  # exists on every MySQL-family server
+    connections.settings[alias] = connections.configure_settings(
+        {"default": {"ENGINE": "django.db.backends.sqlite3"}, alias: config}
+    )[alias]
+    settings.DATABASES[alias] = connections.settings[alias]
+    try:
+        with db_blocker.unblock():
+            yield alias
+    finally:
+        connections[alias].close()
+        del connections[alias]
+        connections.settings.pop(alias, None)
+        settings.DATABASES.pop(alias, None)
