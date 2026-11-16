@@ -598,3 +598,27 @@ def test_superseded_alter_field_window_mentioned(project):
         """,
     )
     assert kinds(project.compact(skip_kinds=["fold"])) == []
+
+
+def test_enforced_constraint_elidable_not_removed_alongside(project):
+    # An elidable operation naming the constraint's model blocks its removal
+    # (the scan looks for the model too), but isn't removed with it.
+    project.migration(
+        "shop",
+        "0001_initial",
+        ITEM + 'migrations.AddConstraint("item", models.UniqueConstraint('
+        'fields=["name"], name="uniq_name")),',
+    )
+    project.migration(
+        "shop",
+        "0002_view",
+        'migrations.RunSQL("DROP VIEW IF EXISTS shop_item_names", elidable=True),',
+    )
+    project.migration(
+        "shop", "0003_drop", 'migrations.RemoveConstraint("item", "uniq_name"),'
+    )
+    result = project.compact(skip_kinds=["fold"])
+    assert kinds(result) == []
+    assert blocked(result)["shop.Item constraint 'uniq_name'"] == (
+        "RunSQL in shop.0002_view mentions 'item'",
+    )

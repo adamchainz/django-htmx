@@ -251,12 +251,17 @@ class Solver:
         hits: list[tuple[OpaqueOp, str]] | None,
         known_from: Pos,
         unit: Unit | None = None,
+        *,
+        own: set[str] | None = None,
     ) -> str | None:
         """
         Reason an opaque op in the window blocks, else None. When ``hits`` is
         given (an entity removal), elidable ops that mention a name and are
         certain to run within the entity's lifetime are collected there to be
-        removed alongside, or block if they can't be. Any other elidable op
+        removed alongside, or block if they can't be; with ``own``, only for a
+        mention of one of those names (a constraint's model and field names
+        only block: the operation isn't about the constraint). Any other
+        elidable op
         (unordered relative to the entity, or nothing it could need is being
         removed) blocks like any opaque op: a word match is not proof that
         it is about this entity.
@@ -274,6 +279,7 @@ class Solver:
                 and hits is not None
                 and end is not None
                 and self._strictly_inside(o.pos, start, end)
+                and (own is None or name in own)
                 # One acting on every model isn't about this entity.
                 and not self.opaque.text(o).generic
             ):
@@ -379,6 +385,7 @@ class Solver:
                 hits,
                 life.start_pos,
                 life,
+                own=life.scan_names(),
             )
             if reason is None:
                 self._elidable_hits[life] = hits
