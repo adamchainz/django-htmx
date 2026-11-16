@@ -33,6 +33,8 @@ def test_dry_run(history):
     before = history.files()
     out, err = history.command("plan")
     assert out == PLAN_OUTPUT + (
+        "Checked against Django's model state only, not against a database:"
+        " --trial migrates scratch databases to check the plan.\n"
         "Would remove 4 operations, fold 1 operation and edit 1 operation in 3"
         " migration files.\n"
         "Would edit migration files of: shop.\n"
@@ -101,6 +103,8 @@ def test_write(history):
     out, _ = history.command("apply")
     # Warnings before writing; the summary only once the files are written.
     assert out == PLAN_OUTPUT + (
+        "Checked against Django's model state only, not against a database:"
+        " --trial migrates scratch databases to check the plan.\n"
         "No MySQL or MariaDB database is configured: if production runs on one,"
         " make the plan with it configured (some of its index names depend on"
         " the history).\n"
@@ -466,3 +470,54 @@ def test_backends_configured(history, monkeypatch):
     monkeypatch.setattr(backends, "configured", lambda: frozenset({"mysql"}))
     out, _ = history.command("plan")
     assert "MySQL" not in out
+
+
+# Databases the plan is applied for
+
+
+def test_partly_migrated_database_refused(history):
+    from django.db import connections
+    from django.db.migrations.recorder import MigrationRecorder
+
+    history.activate()
+    with history.db_blocker.unblock():
+        recorder = MigrationRecorder(connections["default"])
+        recorder.record_applied("shop", "0001_initial")
+        try:
+            before = history.files()
+            with pytest.raises(
+                CommandError,
+                match=r"'default' hasn't applied shop.0002_coupon, shop.0003_drop\.",
+            ):
+                history.command("apply")
+            assert history.files() == before
+            out, _ = history.command("apply", "--no-database-check")
+            assert "Removed 4 operations" in out
+        finally:
+            recorder.migration_qs.all().delete()
+
+
+def test_database_not_reachable(history, monkeypatch):
+    from django.db.utils import ConnectionHandler
+
+    from django_compact_migrations import core
+
+    handler = ConnectionHandler(
+        {
+            "default": {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memory:"},
+            "nowhere": {"ENGINE": "django.db.backends.dummy"},
+        }
+    )
+    monkeypatch.setattr(core, "connections", handler)
+    out, _ = history.command("apply")
+    assert "Couldn't check which migrations the database 'nowhere' has applied" in out
+
+
+def test_trial_preface(history):
+    out, _ = history.command_db("plan", "--trial")
+    assert out.startswith(
+        "The trial creates scratch databases next to 'default' (SQLite, files in"
+        " the temporary directory; settings tests.settings) and runs every"
+        " migration there, data migrations included: whatever they do outside"
+        " the database (email, files, network calls) happens for real.\n"
+    )

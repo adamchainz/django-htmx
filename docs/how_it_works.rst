@@ -10,7 +10,8 @@ Everything below serves that goal, and when the command is unsure, it keeps the 
 Reading the history
 -------------------
 
-The command loads your migrations with Django’s ``MigrationLoader``, without touching any database.
+The command loads your migrations with Django’s ``MigrationLoader``, without reading any table.
+It does connect to the configured databases: Django’s system checks do, telling MySQL from MariaDB needs the server’s version, and ``apply`` reads which migrations each database has applied.
 It then replays every migration in the same order that ``migrate`` would run them, tracking the state of every model as it goes.
 
 Squashed migrations are applied as Django does: the squashed migration is used, and the migrations it replaces are skipped.
@@ -32,7 +33,7 @@ The migration is only editable if that is a plain list or tuple literal, with no
 If a migration builds its operations dynamically, or has any other unusual shape, it can’t be edited, and anything that would need an edit there is kept.
 With ``--show-blocked``, you’ll see the reason, such as “operations list in app.0004_x could not be parsed”.
 
-Files that start with a UTF-8 byte order mark (BOM) are never edited either; the reason given says so.
+Files that start with a UTF-8 byte order mark (BOM) are edited like others, and keep it.
 
 Lives
 -----

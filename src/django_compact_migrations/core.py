@@ -14,8 +14,10 @@ from pathlib import Path
 from typing import Any
 
 from django.apps import apps
+from django.db import connections
 from django.db.migrations.loader import MigrationLoader
 from django.db.migrations.operations.base import Operation
+from django.db.migrations.recorder import MigrationRecorder
 from django.db.migrations.state import ProjectState
 
 from django_compact_migrations import backends
@@ -236,6 +238,44 @@ class Result:
                 " stash them first (or pass --allow-dirty)."
             )
         return []
+
+    def check_databases(self) -> list[str]:
+        """
+        Refuse when a database that can be reached has applied some of an
+        app's migrations but not one this plan edits or deletes: it is partly
+        migrated, and would run the edited history from there. Return notes
+        on databases that couldn't be checked.
+        """
+        changed = {c.migration for c in self.files}
+        apps_changed = {key[0] for key in changed}
+        problems: list[str] = []
+        notes: list[str] = []
+        for alias in connections:
+            connection = connections[alias]
+            try:
+                applied = set(MigrationRecorder(connection).applied_migrations())
+            except Exception as exc:
+                notes.append(
+                    f"Couldn't check which migrations the database {alias!r}"
+                    f" has applied ({type(exc).__name__}: {exc}).".replace("\n", " ")
+                )
+                continue
+            started = {app for app, _ in applied if app in apps_changed}
+            missing = sorted(
+                key for key in changed if key[0] in started and key not in applied
+            )
+            if missing:
+                problems.append(
+                    f"{alias!r} hasn't applied "
+                    + ", ".join(f"{a}.{n}" for a, n in missing)
+                )
+        if problems:
+            raise CompactError(
+                "Partly migrated databases would run the edited migrations from"
+                f" where they are, so nothing was written: {'; '.join(problems)}."
+                " Migrate them first (or pass --no-database-check)."
+            )
+        return notes
 
     def write(self, *, allow_dirty: bool = False) -> None:
         """

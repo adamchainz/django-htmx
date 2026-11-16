@@ -25,12 +25,17 @@ So, before running ``compact_migrations apply``:
 * Commit your work, so you can review and revert the changes with Git.
   ``apply`` refuses to edit migration files with uncommitted changes, so that its edit can be reviewed and reverted on its own (``--allow-dirty`` allows it), and warns when they aren’t in Git at all.
 
+``apply`` also refuses when a configured database it can reach has applied some of an app’s migrations but not one that the plan edits or deletes: that database is partly migrated, and would run the edited history from where it is.
+``--no-database-check`` skips this, for example when the databases aren’t reachable from where you run it; databases it can’t reach are listed.
+
 ``apply`` checks that every file can be written before it writes any (read-only files and symbolic links are refused).
 It keeps a copy of the originals in a ``.compact-migrations-journal`` directory at the project root until the result is verified; if it is killed in between, the next ``plan`` or ``apply`` restores the files it changed, unless they changed again since.
 
-``plan`` and ``apply`` on their own only read and write migration files.
+``plan`` and ``apply`` on their own only read and write migration files (and read which migrations each database has applied).
+Without ``--trial``, a plan is checked against Django’s model state only, not against a database, and the report says so.
 Trial runs (``--trial``, ``--noop-data``) and ``profile`` also create and drop temporary databases on the server of the ``--database`` alias, and run your migrations, data migrations included, on them.
 So run them with development settings that point at a local server of the same backend as production, never at production itself.
+Before a trial, the command says which alias, server and settings it uses.
 The database user needs permission to create databases (``CREATE DATABASE``), as for running tests.
 
 And afterwards:
@@ -705,7 +710,7 @@ The removable estimate counts both database and project state time of the operat
 The scratch database uses the backend and settings of the ``default`` database, or of ``--database ALIAS``.
 For SQLite it is a temporary file; for PostgreSQL and MySQL a new database named ``compactmig_<random>_<name>`` is created next to the real one, so the database user needs permission to create databases, as for running tests.
 
-While migrating, *every* configured database alias is pointed at a scratch database, as Django’s test runner does, so no project code can reach a real database:
+While migrating, *every* configured database alias is pointed at a scratch database, as Django’s test runner does, so project code using Django’s connections can’t reach a real database (code that opens its own connections, or an alias whose ``OPTIONS`` name another database, still can):
 
 * the chosen alias, the aliases configured for the same database (same engine, host, port and name, such as a read replica alias), and test mirrors (``"TEST": {"MIRROR": ...}``) share one scratch database, so a replica sees what the history wrote;
 * every other database gets its own, empty scratch database: only the chosen alias is migrated, so a data migration that reads another database finds no tables there.

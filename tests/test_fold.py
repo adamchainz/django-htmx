@@ -438,7 +438,7 @@ def test_skip_kind_and_plan_file(project, tmp_path):
     ]
     assert lines[3].strip().endswith("0002_qty.py:11  AddField")
     assert lines[4].strip().endswith("0001_initial.py:10  CreateModel (regenerated)")
-    assert lines[5] == (
+    assert lines[6] == (
         "Would fold 1 operation and edit 1 operation in 2 migration files."
         " 1 migration would be left with no operations."
     )

@@ -3,11 +3,13 @@ from __future__ import annotations
 import argparse
 import itertools
 import json
+import os
 import sys
 from argparse import ArgumentParser
 from dataclasses import dataclass
 from typing import Any
 
+from django.conf import settings
 from django.core.management.base import CommandError
 from django.db import connections
 from django_rich.management import RichCommand
@@ -103,6 +105,12 @@ class Command(RichCommand):
             dest="plan_file",
             help="A plan file saved by 'plan --output'. Refused if any"
             " migration file changed since.",
+        )
+        apply_parser.add_argument(
+            "--no-database-check",
+            action="store_true",
+            help="Don't check that the configured databases have applied every"
+            " migration this edits or deletes.",
         )
         apply_parser.add_argument(
             "--allow-dirty",
@@ -249,6 +257,8 @@ class Command(RichCommand):
         # the files are written and verified.
         try:
             notes = result.check_worktree(allow_dirty=options["allow_dirty"])
+            if not options["no_database_check"]:
+                notes += result.check_databases()
         except CompactError as exc:
             raise CommandError(str(exc)) from None
         if verbosity > 0:
@@ -405,6 +415,8 @@ class Command(RichCommand):
                 "--trial replaces the --opaque policy with trial runs; don't"
                 " combine them."
             )
+        if verbosity > 0 and (options["trial"] or options["noop_data"]):
+            self._print(Text(_trial_preface(options["database"]), style="yellow"))
         try:
             if verbosity > 0 and not self.console.is_terminal:
                 # No live status line: one plain line per run on stderr, so
@@ -461,6 +473,15 @@ class Command(RichCommand):
     def _report_trial(self, result: Result, verbosity: int) -> None:
         info = result.verification
         if info.get("mode") != "trial":
+            if result.changed:
+                self._print(
+                    Text(
+                        "Checked against Django's model state only, not against"
+                        " a database: --trial migrates scratch databases to"
+                        " check the plan.",
+                        style="dim",
+                    )
+                )
             return
         line = (
             ("Trial (recorded in the plan): " if result.from_plan else "Trial: ")
@@ -836,6 +857,24 @@ def _has_selection(options: dict[str, Any]) -> bool:
         or options["trial"]
         or options["noop_data"]
         or options["prune"]
+    )
+
+
+def _trial_preface(alias: str) -> str:
+    settings_dict = connections[alias].settings_dict
+    where = settings_dict.get("HOST") or "localhost"
+    if connections[alias].vendor == "sqlite":
+        where = "files in the temporary directory"
+    module = settings.SETTINGS_MODULE or os.environ.get(
+        "DJANGO_SETTINGS_MODULE", "configured in code"
+    )
+    where += f"; settings {module}"
+    return (
+        f"The trial creates scratch databases next to {alias!r}"
+        f" ({connections[alias].display_name}, {where}) and runs every"
+        " migration there, data"
+        " migrations included: whatever they do outside the database (email,"
+        " files, network calls) happens for real."
     )
 
 
