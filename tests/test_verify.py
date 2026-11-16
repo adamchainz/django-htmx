@@ -231,6 +231,7 @@ def test_dangling_tracker_opaque_state_operation():
 
 
 def test_on_disk_checks(project):
+    from django_compact_migrations.prune import ancestor_sets, app_ends
     from django_compact_migrations.verify import (
         VerificationError,
         state_from_disk,
@@ -242,23 +243,25 @@ def test_on_disk_checks(project):
     project.activate()
     with project.db_blocker.unblock():
         loader, plan, state = state_from_disk()
+        ends = app_ends(loader.graph)
+        ancestors = ancestor_sets(loader.graph, plan)
         with pytest.raises(VerificationError, match="graph changed"):
-            verify_on_disk(plan[:-1], state, {})
+            verify_on_disk(plan[:-1], state, {}, set(), {}, {})
         gone = {("shop", "0003_remove")}
         with pytest.raises(VerificationError, match="exactly the migrations"):
-            verify_on_disk(plan, state, {}, gone)
+            verify_on_disk(plan, state, {}, gone, ancestors, ends)
         # A migration said deleted that never was on disk, to reach the
         # later checks with the same set of migrations.
         fake = {("shop", "0000_fake")}
         with pytest.raises(VerificationError, match="another order"):
-            verify_on_disk([*fake, *reversed(plan)], state, {}, fake)
-        ancestors: dict[Any, frozenset[Any]] = {k: frozenset() for k in plan}
+            verify_on_disk([*fake, *reversed(plan)], state, {}, fake, ancestors, ends)
+        nothing: dict[Any, frozenset[Any]] = {k: frozenset() for k in plan}
         with pytest.raises(VerificationError, match="doesn't run after the same"):
-            verify_on_disk([*fake, *plan], state, {}, fake, ancestors)
-        ends: dict[str, Any] = {"shop": (frozenset(), frozenset())}
+            verify_on_disk([*fake, *plan], state, {}, fake, nothing, ends)
+        no_ends: dict[str, Any] = {"shop": (frozenset(), frozenset())}
         with pytest.raises(VerificationError, match="latest migrations of shop"):
-            verify_on_disk([*fake, *plan], state, {}, fake, None, ends)
-        verify_on_disk([*fake, *plan], state, {}, fake, None, None)
+            verify_on_disk([*fake, *plan], state, {}, fake, ancestors, no_ends)
+        verify_on_disk([*fake, *plan], state, {}, fake, ancestors, ends)
 
 
 def test_on_disk_conflicts(project):
@@ -287,4 +290,4 @@ def test_on_disk_conflicts(project):
             )
         }
         with pytest.raises(VerificationError, match="conflicting migrations"):
-            verify_on_disk([*fake, *plan], state, {}, fake, None, one_leaf)
+            verify_on_disk([*fake, *plan], state, {}, fake, {}, one_leaf)

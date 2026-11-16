@@ -1,6 +1,6 @@
 """
-Library entry point: ``plan()`` analyses, ``Result.save()`` / ``load_plan()``
-store and restore a plan, ``Result.write()`` applies it.
+Library entry point: ``plan()`` analyses, ``Result.write()`` applies; the
+planfile module stores and restores a plan.
 """
 
 from __future__ import annotations
@@ -23,12 +23,12 @@ from django.db.migrations.state import ProjectState
 from django_compact_migrations import backends
 from django_compact_migrations.history import (
     History,
+    HistoryError,
     Key,
     OpRecord,
     derive_history,
     invalidate_modules,
     load_history,
-    read_python,
 )
 from django_compact_migrations.locate import locate_create_model, locate_together_op
 from django_compact_migrations.opaque import TextBuilder
@@ -61,6 +61,7 @@ from django_compact_migrations.solver import (
 from django_compact_migrations.timeline import (
     Element,
     FieldLife,
+    InconsistentHistory,
     Life,
     ModelLife,
     Timeline,
@@ -80,7 +81,7 @@ __all__ = [
     "Location",
     "Removal",
     "Result",
-    "load_plan",
+    "count_noun",
     "plan",
 ]
 
@@ -109,7 +110,9 @@ class Location:
 @dataclass(frozen=True)
 class Removal:
     kind: str
-    """model, field, index, constraint, together, superseded or elidable."""
+    """model, field, index, constraint, together, superseded, elidable,
+    noop (a data migration a trial found to do nothing), fold (absorbed
+    into an earlier operation) or prune (an emptied migration deleted)."""
     app_label: str
     model: str | None
     label: str
@@ -199,15 +202,6 @@ class Result:
     def changed(self) -> bool:
         return bool(self.files)
 
-    def save(self, path: str | os.PathLike[str], *, blocked: bool = False) -> None:
-        """
-        Write the plan as a reviewable TOML file for ``load_plan()``;
-        ``blocked`` includes what was kept and why.
-        """
-        from django_compact_migrations.planfile import save_plan
-
-        save_plan(self, Path(path), blocked=blocked)
-
     def write(self) -> None:
         """
         Write the rewritten files, then reload them from disk and check the
@@ -227,8 +221,8 @@ class Result:
         else:
             plan_keys, final_state = self._plan_keys, self._final_state
         pruned = {c.migration for c in self.files if c.deleted}
-        ancestors = None
-        ends = None
+        ancestors: dict[Key, frozenset[Key]] = {}
+        ends: dict[str, tuple[frozenset[Key], frozenset[Key]]] = {}
         if pruned:
             # The key invariant of pruning: every surviving migration runs
             # after exactly the same migrations as before, minus the pruned.
@@ -292,11 +286,6 @@ class Result:
                 "These migration files changed since the plan was made, so"
                 f" nothing was written: {', '.join(stale)}. Make a new plan."
             )
-
-
-def _read_text(path: Path) -> tuple[str, str]:
-    """The exact text of a migration file and its encoding."""
-    return read_python(path)
 
 
 def _write_text(path: Path, text: str, encoding: str = "utf-8") -> None:
@@ -377,10 +366,7 @@ def _describe_life(life: Life) -> str:
         return f"model created in {created}, deleted in {ended}"
     if isinstance(life, FieldLife):
         return f"field added in {created}, removed in {ended}"
-    if isinstance(life, TogetherLife):
-        names = ", ".join(f.names[-1] for f in life.fields)
-        return f"{life.option} ({names}) added in {created}, removed in {ended}"
-    return f"{life.kind} {life.names[0]!r} added in {created}, removed in {ended}"
+    return f"{_describe_short(life)} added in {created}, removed in {ended}"
 
 
 def _entity_name(life: Life) -> str:
@@ -396,10 +382,6 @@ def _life_label(life: Life) -> str:
     if isinstance(life, (ModelLife, FieldLife)):
         return life.label
     return life.model.label
-
-
-def _sort_key(e: Element) -> tuple[int, int]:
-    return (e.rec.seq, 0)
 
 
 def plan(
@@ -451,19 +433,18 @@ def plan(
     if trial_ignore_column_order:
         analysis.options["trial_ignore_column_order"] = True
     if trial:
-        from django_compact_migrations.trial import run_trial
+        from django_compact_migrations.trial import Trial  # imports this module
 
-        result: Result = run_trial(
+        return Trial(
             analysis,
-            alias=database,
-            max_runs=trial_max_runs,
-            progress=progress,
+            database,
+            trial_max_runs,
+            progress,
             single_baseline=trial_single_baseline,
             ignore_column_order=trial_ignore_column_order,
             post_migrate=trial_post_migrate,
             noop_data=noop_data,
-        )
-        return result
+        ).run()
     solution = analysis.solve()
     return make_result(analysis, solution, build(analysis, solution))
 
@@ -669,7 +650,7 @@ def analyse(
     timeline = Timeline(history)
     try:
         timeline.replay()
-    except Exception as exc:
+    except (HistoryError, InconsistentHistory) as exc:
         raise CompactError(str(exc)) from exc
     for text, target in [*zip(targets, target_list), *zip(exclude, exclude_list)]:
         if target.model is not None and not any(
@@ -1023,7 +1004,7 @@ def _removals(solver: Solver) -> list[Removal]:
                 for e in sub.elements
                 if e.sub is None or e.rec.seq not in whole_ops
             ),
-            key=_sort_key,
+            key=lambda e: e.rec.seq,
         )
         creation, end = life.creation, life.end
         assert creation is not None and end is not None
@@ -1167,13 +1148,12 @@ def _blocked(solver: Solver) -> list[Blocked]:
 
 
 def _describe_short(life: Life) -> str:
+    """An index, constraint or together entry, as its model's report says."""
     if isinstance(life, TogetherLife):
-        return f"{life.option} ({', '.join(f.names[-1] for f in life.fields)})"
-    return f"{life.kind} {life.names[0]!r}"
+        return _entity_name(life)
+    return f"{life.kind} {_entity_name(life)!r}"
 
 
-def load_plan(path: str | os.PathLike[str]) -> Result:
-    """Read a plan saved with ``Result.save()``; ``write()`` applies it."""
-    from django_compact_migrations.planfile import load_plan as _load
-
-    return _load(Path(path))
+def count_noun(n: int, noun: str) -> str:
+    """ "1 operation", "2 operations"."""
+    return f"{n} {noun}{'' if n == 1 else 's'}"

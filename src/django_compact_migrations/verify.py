@@ -20,6 +20,7 @@ from django.db.migrations.writer import MigrationWriter
 from django_compact_migrations.history import Key, generate_plan
 from django_compact_migrations.locate import TOGETHER_OPTIONS, normalize_together
 from django_compact_migrations.ops import INERT, OPAQUE, classify, isolated
+from django_compact_migrations.prune import PruneError, ancestor_sets, check_ends
 
 if TYPE_CHECKING:
     from django_compact_migrations.history import History
@@ -244,43 +245,39 @@ def verify_on_disk(
     original_plan: Sequence[Key],
     original_final: ProjectState,
     expected_ops: Mapping[Key, Sequence[str]],
-    pruned: AbstractSet[Key] = frozenset(),
-    ancestors: Mapping[Key, AbstractSet[Key]] | None = None,
-    ends: Mapping[str, tuple[frozenset[Key], frozenset[Key]]] | None = None,
+    pruned: AbstractSet[Key],
+    ancestors: Mapping[Key, AbstractSet[Key]],
+    ends: Mapping[str, tuple[frozenset[Key], frozenset[Key]]],
 ) -> None:
     """
-    Reload the migrations from disk and check them. With ``pruned``
-    migrations deleted, the plan may be ordered differently, but must hold
-    the others, and each must have exactly ``ancestors`` (its old ancestors
-    minus the pruned) as its ancestors.
+    Reload the migrations from disk and check them. Without ``pruned``
+    migrations, the plan must be unchanged. With them deleted, it must hold
+    exactly the others, in the same order; each must have exactly
+    ``ancestors`` (its old ancestors minus the pruned) as its ancestors, and
+    each app the old first and latest migrations (``ends``) minus the pruned.
     """
     loader, plan, state = state_from_disk()
     if not pruned:
         if plan != list(original_plan):
             raise VerificationError("the migration graph changed after rewriting")
     else:
-        from django_compact_migrations.prune import ancestor_sets
-
         loader.graph.validate_consistency()
-        if ends is not None:
-            from django_compact_migrations.prune import PruneError, check_ends
-
-            # What migrate itself checks first, on a loader that just read
-            # the rewritten files.
-            had = {app for app, (_, leaves) in ends.items() if len(leaves) > 1}
-            conflicts = {
-                app: names
-                for app, names in loader.detect_conflicts().items()
-                if app not in had
-            }
-            if conflicts:
-                raise VerificationError(
-                    f"conflicting migrations after pruning: {conflicts}"
-                )
-            try:
-                check_ends(ends, loader.graph, pruned)
-            except PruneError as exc:
-                raise VerificationError(str(exc)) from exc
+        # What migrate itself checks first, on a loader that just read
+        # the rewritten files.
+        had = {app for app, (_, leaves) in ends.items() if len(leaves) > 1}
+        conflicts = {
+            app: names
+            for app, names in loader.detect_conflicts().items()
+            if app not in had
+        }
+        if conflicts:
+            raise VerificationError(
+                f"conflicting migrations after pruning: {conflicts}"
+            )
+        try:
+            check_ends(ends, loader.graph, pruned)
+        except PruneError as exc:
+            raise VerificationError(str(exc)) from exc
         expected_keys = [k for k in original_plan if k not in pruned]
         if sorted(plan) != sorted(expected_keys):
             raise VerificationError(
@@ -291,14 +288,13 @@ def verify_on_disk(
             raise VerificationError(
                 "after pruning, migrate would run the other migrations in another order"
             )
-        if ancestors is not None:
-            found = ancestor_sets(loader.graph, plan)
-            for key in plan:
-                if found[key] != ancestors.get(key):
-                    raise VerificationError(
-                        f"after pruning, {key[0]}.{key[1]} doesn't run after the"
-                        " same migrations as before"
-                    )
+        found = ancestor_sets(loader.graph, plan)
+        for key in plan:
+            if found[key] != ancestors.get(key):
+                raise VerificationError(
+                    f"after pruning, {key[0]}.{key[1]} doesn't run after the"
+                    " same migrations as before"
+                )
     for key, names in expected_ops.items():
         actual = [type(op).__name__ for op in loader.graph.nodes[key].operations]
         if actual != list(names):

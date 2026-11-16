@@ -9,7 +9,7 @@ from django.core.management import CommandError
 
 from django_compact_migrations.noop import (
     Observation,
-    classify,
+    classify_statement,
     observe,
     source_concern,
     written_tables,
@@ -184,8 +184,8 @@ def test_needs_trial_backend(project):
         ("PRAGMA foreign_keys = 0", None, True),
     ],
 )
-def test_classify(sql, rowcount, write):
-    assert (classify(sql, rowcount) is not None) is write
+def test_classify_statement(sql, rowcount, write):
+    assert (classify_statement(sql, rowcount) is not None) is write
 
 
 @pytest.mark.parametrize(
@@ -269,7 +269,7 @@ def test_written_tables(sql, tables):
     ],
 )
 def test_classify_more(sql, rowcount, write):
-    assert (classify(sql, rowcount) is not None) is write
+    assert (classify_statement(sql, rowcount) is not None) is write
 
 
 def test_executemany_update_counts_as_write(django_db_blocker):

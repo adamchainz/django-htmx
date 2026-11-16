@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from django.core.management.base import CommandError
+from django.db import connections
 from django_rich.management import RichCommand
 from rich.console import Console
 from rich.table import Table
@@ -18,9 +19,10 @@ from django_compact_migrations.core import (
     CompactError,
     Removal,
     Result,
-    load_plan,
+    count_noun,
     plan,
 )
+from django_compact_migrations.planfile import load_plan, save_plan
 from django_compact_migrations.profile import Profile, TypeStats, profile
 from django_compact_migrations.scratch import (
     ScratchDatabaseError,
@@ -193,13 +195,13 @@ class Command(RichCommand):
             try:
                 result = load_plan(options["plan_file"])
             except CompactError as exc:
-                raise CommandError(str(exc)) from exc
+                raise CommandError(str(exc)) from None
         else:
             result = self._analyse(options, verbosity)
         if subcommand == "plan":
             self._report(result, verbosity, show_blocked, False, options)
             if options["output"]:
-                result.save(options["output"], blocked=show_blocked)
+                save_plan(result, options["output"], blocked=show_blocked)
                 if verbosity > 0:
                     self._print(
                         Text(
@@ -221,7 +223,7 @@ class Command(RichCommand):
             try:
                 result.write()
             except CompactError as exc:
-                raise CommandError(str(exc)) from exc
+                raise CommandError(str(exc)) from None
 
     def _scratch(self, options: dict[str, Any]) -> None:
         alias = options["database"]
@@ -232,7 +234,7 @@ class Command(RichCommand):
                 drop_leftover(name, alias)
                 self._print(f"Dropped {name}.")
         except ScratchDatabaseError as exc:
-            raise CommandError(str(exc)) from exc
+            raise CommandError(str(exc)) from None
         if not names:
             if found:
                 for name in found:
@@ -257,7 +259,7 @@ class Command(RichCommand):
                 status = None
                 result = profile(options["database"], progress)
         except CompactError as exc:
-            raise CommandError(str(exc)) from exc
+            raise CommandError(str(exc)) from None
         if options["json"]:
             self.stdout.write(json.dumps(result.as_dict(options["top"]), indent=2))
             return
@@ -396,7 +398,7 @@ class Command(RichCommand):
                     return self._plan(options, progress)
             return self._plan(options, None)
         except CompactError as exc:
-            raise CommandError(str(exc)) from exc
+            raise CommandError(str(exc)) from None
 
     @staticmethod
     def _plan(options: dict[str, Any], progress: Any) -> Result:
@@ -423,16 +425,16 @@ class Command(RichCommand):
         if info.get("mode") != "trial":
             return
         line = (
-            f"Trial: {_count(info['runs'], 'migrate run')} on"
+            f"Trial: {count_noun(info['runs'], 'migrate run')} on"
             f" {info.get('server') or info['vendor']} in {info['seconds']:.1f}s;"
-            f" unlocked {_count(info['unlocked'], 'removal')} of"
+            f" unlocked {count_noun(info['unlocked'], 'removal')} of"
             f" {info['at_risk']} that the static scan blocks"
         )
         if info["trial_blocked"]:
             line += f", blocked {info['trial_blocked']} on evidence"
         if info.get("noop") is not None:
             line += (
-                f"; {_count(len(info['noop']), 'data migration operation')}"
+                f"; {count_noun(len(info['noop']), 'data migration operation')}"
                 f" did nothing on a fresh {info.get('server') or info['vendor']}"
                 " database"
             )
@@ -754,7 +756,7 @@ def _has_selection(options: dict[str, Any]) -> bool:
 
 
 def _ops(count: int) -> str:
-    return _count(count, "operation")
+    return count_noun(count, "operation")
 
 
 def _row(indent: int, removal: Removal, name: Text) -> Row:
@@ -782,10 +784,6 @@ def _locations(removal: Removal, indent: int, verbosity: int) -> list[Text]:
     return lines
 
 
-def _count(n: int, noun: str) -> str:
-    return f"{n} {noun}{'' if n == 1 else 's'}"
-
-
 def sqlite_order_warning(result: Result, alias: str) -> str | None:
     """
     On SQLite, Django rebuilds tables in the order the project state lists
@@ -793,8 +791,6 @@ def sqlite_order_warning(result: Result, alias: str) -> str | None:
     folding operations can change the physical column order. Only a trial
     that compares it shows whether this plan does.
     """
-    from django.db import connections
-
     info = result.verification
     if alias not in connections or connections[alias].vendor != "sqlite":
         return None
@@ -829,7 +825,7 @@ def summary(result: Result, write: bool) -> str:
             verb = done if write else todo
             if not actions:
                 verb = verb.capitalize() if write else f"Would {verb}"
-            actions.append(f"{verb} {_count(count, 'operation')}")
+            actions.append(f"{verb} {count_noun(count, 'operation')}")
     pruned = len(result.pruned_migrations)
     if actions:
         joined = (
@@ -837,13 +833,13 @@ def summary(result: Result, write: bool) -> str:
             if len(actions) == 1
             else ", ".join(actions[:-1]) + " and " + actions[-1]
         )
-        text = joined + f" in {_count(len(result.files), 'migration file')}."
+        text = joined + f" in {count_noun(len(result.files), 'migration file')}."
         if pruned:
-            text += f" {_count(pruned, 'migration')} " + (
+            text += f" {count_noun(pruned, 'migration')} " + (
                 "deleted." if write else "would be deleted."
             )
     else:
-        text = f"{_count(pruned, 'migration')} " + (
+        text = f"{count_noun(pruned, 'migration')} " + (
             "deleted." if write else "would be deleted."
         )
     noop = sum(1 for r in result.removals if r.kind == "noop")
@@ -855,7 +851,7 @@ def summary(result: Result, write: bool) -> str:
         )
     empty = len(result.empty_migrations)
     if empty:
-        text += f" {_count(empty, 'migration')} "
+        text += f" {count_noun(empty, 'migration')} "
         if write:
             text += (
                 "now has no operations." if empty == 1 else "now have no operations."

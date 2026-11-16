@@ -16,6 +16,7 @@ from django_compact_migrations.fold import (
     Folder,
     RegenerationCheck,
     mysql_safe_alters,
+    occupied,
     referenced_by_fields,
     same_named_objects,
 )
@@ -218,11 +219,8 @@ class Solver:
             owner.parent is not None and owner.parent in removed
         )
 
-    def _between(self, e: Element, start: Pos, end: Pos) -> bool:
-        """Whether ``e`` may run between two positions (conservative)."""
-        return self._pos_between(e.pos, start, end)
-
-    def _pos_between(self, pos: Pos, start: Pos, end: Pos) -> bool:
+    def between(self, pos: Pos, start: Pos, end: Pos) -> bool:
+        """Whether ``pos`` may run between two positions (conservative)."""
         ancestors = self.history.ancestors
         descendants = self.history.descendants
         mig, idx = pos
@@ -689,10 +687,10 @@ class Solver:
         # references that d1 doesn't would be held during E1..E2, where the
         # history may already reuse or remove it (a column name, a to_field,
         # a remote model...). State verification can't see a column clash.
-        if _occupied(d0) != _occupied(d1) or refs.get(id(d0)) != refs.get(id(d1)):
+        if occupied(d0) != occupied(d1) or refs.get(id(d0)) != refs.get(id(d1)):
             return False
         for e in life.referenced_by:
-            if not self.removed(e) and self._between(e, e1.pos, e2.pos):
+            if not self.removed(e) and self.between(e.pos, e1.pos, e2.pos):
                 return False
         names = life.scan_names() | life.model.scan_names()
         return self._window_clear(names, e1, e2, life)
@@ -737,7 +735,7 @@ class Solver:
                 for e in [*life.elements, *life.referenced_by]:
                     if e is e1 or e is e2 or self.removed(e):
                         continue
-                    if self._between(e, e1.pos, e2.pos):
+                    if self.between(e.pos, e1.pos, e2.pos):
                         return False
         return self._window_clear(model.scan_names(), e1, e2, model)
 
@@ -754,21 +752,6 @@ def _short_label(life: Life) -> str:
         names = ", ".join(f.names[-1] for f in life.fields)
         return f"{life.model.label} {life.option} ({names})"
     return f"{life.model.label} {life.names[0]!r}"
-
-
-def _occupied(fld: Any) -> tuple[Any, ...]:
-    """What a field definition holds in shared namespaces, other than refs."""
-    remote = getattr(fld, "remote_field", None)
-    return (
-        getattr(fld, "db_column", None),
-        remote is not None,
-        repr(getattr(fld, "to_fields", None)),
-        repr(getattr(fld, "from_fields", None)),
-        repr(getattr(remote, "through", None)),
-        getattr(fld, "db_table", None),
-        getattr(fld, "db_tablespace", None),
-        bool(getattr(fld, "primary_key", False)),
-    )
 
 
 def _same_kind(a: Any, ta: Life | None, b: Any, tb: Life | None) -> bool:

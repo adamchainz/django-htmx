@@ -130,7 +130,7 @@ class Observation:
         return not self.writes and not self.other_alias
 
 
-def classify(sql: str, rowcount: int | None) -> str | None:
+def classify_statement(sql: str, rowcount: int | None) -> str | None:
     """None if the statement is harmless, else why it counts as a write."""
     text = _COMMENTS.sub(" ", sql).strip().rstrip(";").strip()
     if not text:
@@ -138,7 +138,7 @@ def classify(sql: str, rowcount: int | None) -> str | None:
     parts = [p.strip() for p in text.split(";") if p.strip()]
     if len(parts) > 1:
         for part in parts:
-            reason = classify(part, None)
+            reason = classify_statement(part, None)
             if reason is not None:
                 return reason
         return None
@@ -183,7 +183,7 @@ def observe(alias: str, observation: Observation) -> Iterator[None]:
             cursor = context.get("cursor")
             rowcount = getattr(cursor, "rowcount", None)
             # executemany(): the row count isn't per statement, so unknown.
-            reason = classify(str(sql), None if many else rowcount)
+            reason = classify_statement(str(sql), None if many else rowcount)
             if reason is not None:
                 observation.writes.append(reason)
                 observation.tables |= written_tables(str(sql))

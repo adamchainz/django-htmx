@@ -7,10 +7,11 @@ from typing import Any
 import pytest
 from django.core.management import CommandError
 
-from django_compact_migrations.core import CompactError, load_plan
+from django_compact_migrations.core import CompactError
 from django_compact_migrations.management.commands.compact_migrations import (
     sqlite_order_warning,
 )
+from django_compact_migrations.planfile import load_plan, save_plan
 from tests.project import (
     FAILURE,
     ITEM,
@@ -256,7 +257,7 @@ def test_plan_file_invalid(history, tmp_path):
 
 def test_library_round_trip(history, tmp_path):
     result = history.compact()
-    result.save(tmp_path / "plan.toml", blocked=True)
+    save_plan(result, tmp_path / "plan.toml", blocked=True)
     history.activate()
     loaded = load_plan(tmp_path / "plan.toml")
     assert loaded.removals == [

@@ -437,7 +437,9 @@ def check_ancestors(history: History, plan: PrunePlan) -> None:
     sees them) the old ones minus the pruned.
     """
     check_ends(
-        history.loader.graph, pruned_graph(history.loader.graph, plan), plan.pruned
+        app_ends(history.loader.graph),
+        pruned_graph(history.loader.graph, plan),
+        plan.pruned,
     )
     graph = history.loader.graph
     pruned = set(plan.pruned)
@@ -521,14 +523,13 @@ def app_ends(graph: MigrationGraph) -> dict[str, tuple[frozenset[Key], frozenset
 
 
 def check_ends(
-    old: MigrationGraph | Mapping[str, tuple[frozenset[Key], frozenset[Key]]],
+    before: Mapping[str, tuple[frozenset[Key], frozenset[Key]]],
     new: MigrationGraph,
     pruned: Iterable[Key],
 ) -> None:
     """Roots and leaves of every app must be unchanged, minus the pruned (no
     new "conflicting migrations", no app losing its initial migration)."""
     gone = set(pruned)
-    before = app_ends(old) if isinstance(old, MigrationGraph) else old
     after = app_ends(new)
     for app in sorted(before.keys() | after.keys()):
         roots, leaves = before.get(app, (frozenset(), frozenset()))

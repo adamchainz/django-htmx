@@ -15,9 +15,9 @@ from django_compact_migrations.timeline import (
     ModelLife,
     Timeline,
     TogetherLife,
-    _option_field_names,
     _same,
     mentioned_names,
+    option_field_names,
 )
 from tests.project import ITEM, Project, kinds
 
@@ -75,8 +75,8 @@ def test_default_related_names():
     assert fk.scan_names() == {"parent", "item", "item_things"}
 
 
-def test_option_field_names():
-    assert _option_field_names({"get_latest_by": "-created"}) == {"created"}
+def testoption_field_names():
+    assert option_field_names({"get_latest_by": "-created"}) == {"created"}
 
 
 def test_same_with_failing_comparison():

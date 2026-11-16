@@ -21,6 +21,7 @@ from django_compact_migrations.prune import (
     PruneError,
     PrunePlan,
     ancestor_sets,
+    app_ends,
     check_ancestors,
     check_ends,
 )
@@ -729,12 +730,12 @@ def test_invariant_failures(project):
         check_ancestors(history, plan)
     empty = MigrationGraph()
     with pytest.raises(PruneError, match="latest migrations of other"):
-        check_ends(graph, empty, [])
+        check_ends(app_ends(graph), empty, [])
     only_leaf = MigrationGraph()
     only_leaf.add_node(("shop", "0004_qty"), None)
     only_leaf.add_node(other, None)
     with pytest.raises(PruneError, match="first migrations of shop"):
-        check_ends(graph, only_leaf, [])
+        check_ends(app_ends(graph), only_leaf, [])
     keys = [("shop", "0004_qty"), ("shop", "0001_initial")]
     assert ancestor_sets(graph, keys)[("shop", "0001_initial")] == frozenset()
 

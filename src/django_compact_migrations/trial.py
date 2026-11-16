@@ -27,7 +27,7 @@ import time
 import traceback
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from django.db import transaction
 from django.db.backends.base.base import BaseDatabaseWrapper
@@ -44,6 +44,7 @@ from django_compact_migrations.core import (
     Solution,
     UnitInfo,
     build,
+    count_noun,
     make_result,
     prune_plan,
 )
@@ -62,9 +63,6 @@ from django_compact_migrations.snapshot import (
     Snapshot,
     take_snapshot,
 )
-
-if TYPE_CHECKING:
-    pass
 
 Progress = Callable[[str, bool], None]
 """Called with (message, note): notes are worth keeping, others are status."""
@@ -109,14 +107,14 @@ class Trial:
     def __init__(
         self,
         analysis: Analysis,
-        alias: str = "default",
-        max_runs: int = 8,
-        progress: Progress | None = None,
-        isolate: bool = True,
-        single_baseline: bool = False,
-        noop_data: bool = False,
-        ignore_column_order: bool = False,
-        post_migrate: bool = False,
+        alias: str,
+        max_runs: int,
+        progress: Progress | None,
+        *,
+        single_baseline: bool,
+        noop_data: bool,
+        ignore_column_order: bool,
+        post_migrate: bool,
     ) -> None:
         self.analysis = analysis
         self.alias = alias
@@ -142,9 +140,9 @@ class Trial:
         self.single_baseline = single_baseline
         self.noop_data = noop_data
         self.ignore_column_order = ignore_column_order
+        """Don't compare the physical column order of SQLite tables."""
         self.post_migrate = post_migrate
         """Send post_migrate at the end of every run, as migrate does."""
-        """Don't compare the physical column order of SQLite tables."""
         self.noop: dict[tuple[int, int], str] = {}
         """(plan index, index on disk) of data migrations that did nothing on
         the baseline run, with what they did."""
@@ -155,17 +153,15 @@ class Trial:
         """(plan index, index on disk) of opaque operations -> the tables
         they wrote to on the baseline run."""
         self.noop_seen = 0
+        """How many data migrations were observed."""
         self.noop_suspect: dict[str, str] = {}
         """Data migrations that wrote nothing but whose source suggests
         effects queries don't show, with why."""
-        """How many data migrations were observed."""
         self.at_risk_units = 0
         self.first_static: set[str] = set()
         self.candidate_keys: set[str] = set()
         self.passes = 0
         self.static_units: set[str] = set()
-        self.isolate = isolate
-        """Run each migrate run in a forked child process."""
         self.suspects: dict[tuple[Any, ...], set[str]] = {}
         """Vague failures already half-blamed: the other half of the keys."""
 
@@ -207,7 +203,6 @@ class Trial:
                 return run_isolated(
                     child,
                     lambda message: self._say(*message),
-                    fork=self.isolate,
                 )
         except ScratchDatabaseError as exc:
             raise CompactError(str(exc)) from exc
@@ -390,11 +385,10 @@ class Trial:
 
     def run(self) -> Result:
         begin = time.perf_counter()
-        baseline_begin = time.perf_counter()
         # Every opaque operation is watched: what it writes to says which
         # removal to blame for a data difference, and finds no-ops.
         baseline = self._run("Baseline", None, observing=True)
-        baseline_seconds = time.perf_counter() - baseline_begin
+        baseline_seconds = time.perf_counter() - begin
         if baseline.aborted or baseline.snapshot is None:
             failure = baseline.failures[0] if baseline.failures else None
             raise CompactError(
@@ -415,7 +409,7 @@ class Trial:
         self._learn_noop(baseline.observations)
         if self.noop_data:
             self._say(
-                f"{_count(len(self.noop), 'data migration operation')} of"
+                f"{count_noun(len(self.noop), 'data migration operation')} of"
                 f" {self.noop_seen} did nothing on a fresh {self.server} database"
                 + (
                     f"; {len(self.noop_suspect)} more wrote nothing but are kept"
@@ -455,8 +449,8 @@ class Trial:
         self._say(
             f"The original history migrated in {baseline_seconds:.0f}s, and"
             " each run takes about as long. A trial can unlock up to"
-            f" {_count(len(candidates), 'removal')} that the static scan"
-            f" blocks, in at most {_count(more, 'more run')} (about"
+            f" {count_noun(len(candidates), 'removal')} that the static scan"
+            f" blocks, in at most {count_noun(more, 'more run')} (about"
             f" {_duration(baseline_seconds * more)} at most).",
             note=True,
         )
@@ -504,7 +498,7 @@ class Trial:
                 # one removal can change how others are expressed.
                 self._say(
                     "The trial's plan keeps"
-                    f" {_count(len(missing), 'operation')} that the static plan"
+                    f" {count_noun(len(missing), 'operation')} that the static plan"
                     " removes; using the static plan.",
                     note=True,
                 )
@@ -520,8 +514,8 @@ class Trial:
                 )
                 fresh = {k: r for k, r in blocks.items() if k not in trial_blocked}
             self._say(
-                f"Run {self.passes}: {_count(len(outcome[0]), 'failure')},"
-                f" {_count(len(outcome[1]), 'difference')}; blocked"
+                f"Run {self.passes}: {count_noun(len(outcome[0]), 'failure')},"
+                f" {count_noun(len(outcome[1]), 'difference')}; blocked"
                 f" {len(fresh)}"
                 + (": " + ", ".join(sorted(fresh)[:5]) if fresh else "")
                 + (", ..." if len(fresh) > 5 else "")
@@ -733,7 +727,6 @@ class Trial:
                     blocks.setdefault(u.key, reason)
                 continue
             targets: list[UnitInfo] = []
-            origin = self.origins.get(failure.seq) if failure.seq is not None else None
             if origin is not None and failure.seq in self.opaque:
                 targets = [u for u in units if origin in u.at_risk]
                 mentioned = [u for u in targets if _named_in(u, failure.error)]
@@ -978,10 +971,6 @@ ENVIRONMENT_HINT = (
 )
 
 
-def _count(n: int, noun: str) -> str:
-    return f"{n} {noun}{'' if n == 1 else 's'}"
-
-
 def _proven(solution: Solution) -> set[str]:
     """
     The static plan's removals blamed only when nothing else explains a
@@ -1011,26 +1000,3 @@ def shorten_error(message: str, limit: int = 200) -> str:
 def _trimmed(exc: BaseException) -> str:
     lines = traceback.format_exception(exc)
     return "".join(lines[-6:])
-
-
-def run_trial(
-    analysis: Analysis,
-    *,
-    alias: str = "default",
-    max_runs: int = 8,
-    progress: Progress | None = None,
-    single_baseline: bool = False,
-    noop_data: bool = False,
-    ignore_column_order: bool = False,
-    post_migrate: bool = False,
-) -> Result:
-    return Trial(
-        analysis,
-        alias,
-        max_runs,
-        progress,
-        single_baseline=single_baseline,
-        noop_data=noop_data,
-        ignore_column_order=ignore_column_order,
-        post_migrate=post_migrate,
-    ).run()

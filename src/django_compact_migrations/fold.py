@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 
 from django.db.migrations import operations as m
 from django.db.migrations.operations.base import Operation
+from django.db.migrations.writer import MigrationWriter
 from django.db.models import NOT_PROVIDED
 
 from django_compact_migrations import backends
@@ -34,16 +35,26 @@ from django_compact_migrations.timeline import (
     backs_foreign_key,
     first_field,
     lasting_foreign_key,
+    option_field_names,
 )
 
 if TYPE_CHECKING:
     from django_compact_migrations.solver import Solver
 
 
-def _occupied(fld: Any) -> tuple[Any, ...]:
-    from django_compact_migrations.solver import _occupied as occupied
-
-    return occupied(fld)
+def occupied(fld: Any) -> tuple[Any, ...]:
+    """What a field definition holds in shared namespaces, other than refs."""
+    remote = getattr(fld, "remote_field", None)
+    return (
+        getattr(fld, "db_column", None),
+        remote is not None,
+        repr(getattr(fld, "to_fields", None)),
+        repr(getattr(fld, "from_fields", None)),
+        repr(getattr(remote, "through", None)),
+        getattr(fld, "db_table", None),
+        getattr(fld, "db_tablespace", None),
+        bool(getattr(fld, "primary_key", False)),
+    )
 
 
 FOLD_KINDS = (
@@ -172,7 +183,7 @@ class Folder:
                 if (
                     renames
                     and not self.solver.removed(el)
-                    and self.solver._between(el, p.pos, e.pos)
+                    and self.solver.between(el.pos, p.pos, e.pos)
                 ):
                     return False
         return True
@@ -193,7 +204,7 @@ class Folder:
                 if (
                     type(el.rec.op) is m.AlterField
                     and not self.solver.removed(el)
-                    and self.solver._between(el, p.pos, e.pos)
+                    and self.solver.between(el.pos, p.pos, e.pos)
                 ):
                     return False
         return True
@@ -222,8 +233,8 @@ class Folder:
         if any(
             type(o.rec.op) is not m.RunPython
             and index.contains(o, p.pos, e.pos, p.pos)
-            and self.solver._between(
-                self.solver.opaque_elements[o.rec.seq], p.pos, e.pos
+            and self.solver.between(
+                self.solver.opaque_elements[o.rec.seq].pos, p.pos, e.pos
             )
             for o in index.ops
         ):
@@ -233,13 +244,13 @@ class Folder:
         timeline = self.solver.timeline
         return not any(
             type(rec.op).__module__ == POSTGRES_MODULE
-            and self.solver._between(timeline.elements[rec.seq][0], p.pos, e.pos)
+            and self.solver.between(timeline.elements[rec.seq][0].pos, p.pos, e.pos)
             for rec in self.history.ops
         )
 
     def _no_refs_between(self, life: Life, p: Element, e: Element) -> bool:
         return not any(
-            not self.solver.removed(r) and self.solver._between(r, p.pos, e.pos)
+            not self.solver.removed(r) and self.solver.between(r.pos, p.pos, e.pos)
             for r in life.referenced_by
             if r is not e and r is not p
         )
@@ -259,7 +270,7 @@ class Folder:
             isinstance(other, (IndexLife, ConstraintLife, TogetherLife))
             and other.end_pos is not None
             and first_field(other) is field
-            and self.solver._pos_between(other.end_pos, p.pos, e.pos)
+            and self.solver.between(other.end_pos, p.pos, e.pos)
             for other in field.model.children
         )
 
@@ -364,7 +375,7 @@ class Folder:
         de, _ = defs[id(e)]
         if getattr(dp, "many_to_many", False) or getattr(de, "many_to_many", False):
             return
-        if _occupied(dp) != _occupied(de) or not same_named_objects(dp, de):
+        if occupied(dp) != occupied(de) or not same_named_objects(dp, de):
             return
         if solver.backends and not mysql_safe_alters([dp, de], solver.backends):
             return
@@ -488,7 +499,7 @@ class Folder:
                 if (
                     el.info.get("rename")
                     and not self.solver.removed(el)
-                    and self.solver._between(el, create.pos, a.pos)
+                    and self.solver.between(el.pos, create.pos, a.pos)
                 ):
                     return False
         if not self._requirements(a.refs, create, model):
@@ -757,7 +768,7 @@ class Folder:
                     naming
                     and el.rec is not p.rec
                     and not self.solver.removed(el)
-                    and self.solver._between(el, p.pos, e.pos)
+                    and self.solver.between(el.pos, p.pos, e.pos)
                 ):
                     return False
         return True
@@ -815,7 +826,7 @@ class Folder:
         for other in own:
             # Whatever else happens to the model in between (options that
             # could make it managed, renames) keeps it as it is.
-            if other is not e and solver._between(other, create.pos, e.pos):
+            if other is not e and solver.between(other.pos, create.pos, e.pos):
                 return
         op = e.rec.op
         assert isinstance(op, m.AlterModelTable)
@@ -864,9 +875,7 @@ class Folder:
             for key in keys:
                 if key not in op.options:
                     options.pop(key, None)
-            from django_compact_migrations.timeline import _option_field_names
-
-            for name in _option_field_names(op.options):
+            for name in option_field_names(op.options):
                 life = model.fields.get(name) or next(
                     (
                         f
@@ -967,8 +976,6 @@ def _rename_keeps_names(field: Any) -> bool:
 
 def _mentions(value: Any, name: str) -> bool:
     """Whether a name appears in serialized options (ordering, indexes...)."""
-    from django.db.migrations.writer import MigrationWriter
-
     try:
         text = MigrationWriter.serialize(value)[0]
     except Exception:

@@ -31,6 +31,7 @@ from django_compact_migrations.ops import isolated
 from django_compact_migrations.prune import (
     PruneError,
     PrunePlan,
+    app_ends,
     check_ends,
     pruned_graph,
 )
@@ -138,7 +139,7 @@ def run_history(
         old_graph = executor.loader.graph
         executor.loader.graph = pruned_graph(old_graph, prune)
         try:
-            check_ends(old_graph, executor.loader.graph, prune.pruned)
+            check_ends(app_ends(old_graph), executor.loader.graph, prune.pruned)
         except PruneError as exc:
             raise RunError(f"The pruned migration graph is wrong: {exc}") from exc
     graph = executor.loader.graph

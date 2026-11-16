@@ -24,9 +24,9 @@ from django_compact_migrations.core import (
     Location,
     Removal,
     Result,
-    _read_text,
     sha256_text,
 )
+from django_compact_migrations.history import read_python
 from django_compact_migrations.patch import PatchError, apply_diff, make_diff
 
 FORMAT = "django-compact-migrations-plan"
@@ -177,7 +177,12 @@ def _without_none(value: Any) -> Any:
     return value
 
 
-def save_plan(result: Result, path: Path, *, blocked: bool = False) -> None:
+def save_plan(
+    result: Result, path: str | os.PathLike[str], *, blocked: bool = False
+) -> None:
+    """Write the plan as a reviewable TOML file; ``blocked`` includes what
+    was kept and why."""
+    path = Path(path)
     text = dumps(plan_data(result, path.resolve().parent, blocked=blocked))
     tmp = path.with_name(f".{path.name}.tmp")
     tmp.write_text(text, encoding="utf-8", newline="")
@@ -215,7 +220,7 @@ def _file_change(f: dict[str, Any], base: Path, deleted: bool) -> FileChange:
     # moved since; the hash checks catch any mix-up.
     file_path = _module_file(f["module"]) or _resolve(f["path"], base)
     try:
-        original, encoding = _read_text(file_path)
+        original, encoding = read_python(file_path)
     except (OSError, UnicodeDecodeError, SyntaxError, LookupError) as exc:
         raise CompactError(
             f"Migration file {f['path']} from the plan can't be read ({exc})."
@@ -253,7 +258,9 @@ def _file_change(f: dict[str, Any], base: Path, deleted: bool) -> FileChange:
     )
 
 
-def load_plan(path: Path) -> Result:
+def load_plan(path: str | os.PathLike[str]) -> Result:
+    """Read a plan saved by save_plan(); ``Result.write()`` applies it."""
+    path = Path(path)
     try:
         data = tomllib.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:

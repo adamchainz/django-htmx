@@ -75,8 +75,6 @@ class Snapshot:
     columns: dict[str, tuple[str, ...]] = field(default_factory=dict)
     """table -> its column names, sorted (physical order is compared as
     part of the schema, where it is meaningful)."""
-    exact: bool = True
-    """False when only Django's generic introspection was available."""
 
     def differences(
         self,
@@ -131,7 +129,7 @@ class Snapshot:
         data["django_migrations"] = rows - Counter(
             (_value(app), _value(name)) for app, name in keys
         )
-        return Snapshot(self.vendor, self.schema, data, self.columns, self.exact)
+        return Snapshot(self.vendor, self.schema, data, self.columns)
 
     def _rows(self, table: str, without: set[str]) -> Counter[tuple[str, ...]]:
         rows = self.data.get(table, Counter())
@@ -198,11 +196,10 @@ def take_snapshot(connection: BaseDatabaseWrapper) -> Snapshot:
             _sqlite_schema(connection, cursor, snapshot.schema)
         elif connection.vendor == "postgresql":
             _postgresql_schema(cursor, snapshot.schema)
-        elif connection.vendor == "mysql":
-            _mysql_schema(cursor, snapshot.schema)
         else:
-            snapshot.exact = False
-            _generic_schema(connection, cursor, snapshot.schema)
+            # Scratch databases exist only for these three vendors.
+            assert connection.vendor == "mysql"
+            _mysql_schema(cursor, snapshot.schema)
         _data(connection, cursor, snapshot.data, snapshot.columns)
     return snapshot
 
@@ -494,23 +491,6 @@ def _mysql_schema(cursor: Any, schema: dict[tuple[str, str | None, str], Any]) -
             r["routine_type"],
             r["routine_definition"],
         )
-
-
-def _generic_schema(
-    connection: Any, cursor: Any, schema: dict[tuple[str, str | None, str], Any]
-) -> None:
-    introspection = connection.introspection
-    for info in introspection.get_table_list(cursor):
-        name = info.name
-        schema[("table", name, name)] = info.type
-        if info.type != "t":
-            continue
-        schema[("columns", name, name)] = [
-            tuple(repr(v) for v in col)
-            for col in introspection.get_table_description(cursor, name)
-        ]
-        for cname, cinfo in introspection.get_constraints(cursor, name).items():
-            schema[("constraint", name, cname)] = repr(sorted(cinfo.items()))
 
 
 def _masked_columns(connection: Any, cursor: Any, table: str) -> set[int]:

@@ -22,6 +22,7 @@ from django_compact_migrations.locate import (
     normalize_together,
 )
 from django_compact_migrations.tokens import Container, Segment
+from django_compact_migrations.verify import model_states_equal, same_value
 
 _NEWLINES = ("NL", "NEWLINE")
 
@@ -438,8 +439,6 @@ def regeneration_problem(source: SourceFile | None, op: Operation) -> str | None
 
 def same_operation(a: Operation, b: Operation) -> bool:
     """Whether two operations have the same effect on the project state."""
-    from django_compact_migrations.verify import model_states_equal, same_value
-
     if type(a) is not type(b):
         return False
     if isinstance(a, m.CreateModel):

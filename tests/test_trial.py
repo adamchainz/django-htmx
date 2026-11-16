@@ -645,7 +645,16 @@ def bare_trial(project: Project) -> trial_module.Trial:
     project.migration("shop", "0003_more", 'migrations.RunSQL("SELECT 2"),')
     project.activate()
     with project.db_blocker.unblock():
-        return trial_module.Trial(analyse(), "default")
+        return trial_module.Trial(
+            analyse(),
+            "default",
+            8,
+            None,
+            single_baseline=False,
+            noop_data=False,
+            ignore_column_order=False,
+            post_migrate=False,
+        )
 
 
 def unit(key: str, start: int = 0, end: int | None = None, **kwargs: Any) -> UnitInfo:

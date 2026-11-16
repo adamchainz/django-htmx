@@ -333,7 +333,7 @@ def mentioned_names(obj: Any) -> set[str]:
     return out
 
 
-def _option_field_names(options: Any) -> set[str]:
+def option_field_names(options: Any) -> set[str]:
     values: list[Any] = []
     for key in ("ordering", "get_latest_by"):
         value = options.get(key)
@@ -652,7 +652,7 @@ class Timeline:
         for soft in model.active_soft:
             soft.end = pos
         model.active_soft = []
-        model.option_names = _option_field_names(options)
+        model.option_names = option_field_names(options)
         model.option_element = element
         for name in model.option_names:
             life = model.fields.get(name)

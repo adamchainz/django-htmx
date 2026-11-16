@@ -20,12 +20,6 @@ class PatchError(Exception):
     pass
 
 
-def _lines(text: str) -> list[str]:
-    """Lines ending after each "\\n" (so "\\r\\n" endings, form feeds and
-    the like stay inside lines), the last one possibly without."""
-    return _diff_lines(text)
-
-
 def make_diff(old: str, new: str, name: str, context: int = 3) -> str:
     """A unified diff from ``old`` to ``new`` (exact line endings kept)."""
     out: list[str] = []
@@ -48,7 +42,7 @@ def apply_diff(old: str, diff: str) -> str:
     source = _lines(old)
     result: list[str] = []
     position = 0
-    lines = _diff_lines(diff)
+    lines = _lines(diff)
     i = 0
     while i < len(lines) and not lines[i].startswith("@@"):
         if not lines[i].startswith(("---", "+++")):
@@ -93,9 +87,10 @@ def apply_diff(old: str, diff: str) -> str:
     return "".join(result)
 
 
-def _diff_lines(diff: str) -> list[str]:
-    """Split a diff into lines, keeping content line endings (a line of the
-    file may end with "\\r\\n", the diff's own lines end with "\\n")."""
+def _lines(diff: str) -> list[str]:
+    """Lines ending after each "\\n", the last one possibly without: "\\r\\n"
+    endings, form feeds and the like stay inside lines (of files, and of
+    diffs, whose own lines end with "\\n")."""
     lines: list[str] = []
     start = 0
     for index, char in enumerate(diff):

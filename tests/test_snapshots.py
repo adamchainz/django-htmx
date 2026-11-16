@@ -109,18 +109,6 @@ def test_sqlite_objects(django_db_blocker):
     )
 
 
-def test_generic_backend(django_db_blocker, monkeypatch):
-    with django_db_blocker.unblock(), scratch_database() as connection:
-        with connection.cursor() as cursor:
-            cursor.execute("CREATE TABLE t (a integer UNIQUE)")
-            cursor.execute("CREATE VIEW v AS SELECT a FROM t")
-        monkeypatch.setattr(connection, "vendor", "other")
-        snapshot = take_snapshot(connection)
-    assert not snapshot.exact
-    assert snapshot.schema[("table", "v", "v")] == "v"
-    assert ("columns", "t", "t") in snapshot.schema
-
-
 # Scratch databases without a server
 
 
