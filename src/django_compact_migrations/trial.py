@@ -29,7 +29,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-from django.db import transaction
+from django.db import router, transaction
 from django.db.backends.base.base import BaseDatabaseWrapper
 from django.db.migrations.operations import RunPython, RunSQL
 from django.db.migrations.operations.base import Operation
@@ -262,7 +262,13 @@ class Trial:
             )
             return PassResult(failures, None, True, observations)
         say(f"{label}: taking a snapshot")
-        return PassResult(failures, take_snapshot(connection), False, observations)
+        return PassResult(
+            failures,
+            # Two baselines show which values differ between runs.
+            take_snapshot(connection, mask_dates=self.single_baseline),
+            False,
+            observations,
+        )
 
     def _hook(
         self,
@@ -338,6 +344,8 @@ class Trial:
         return (
             (type(op) is RunPython or type(op) is RunSQL)
             and not opaque.state_changed
+            and (opaque.rec.migration.index, opaque.rec.original_index)
+            not in self.analysis.untrialled
             and opaque.rec.not_editable_reason() is None
             and app in scope.apps
             and not scope.app_excluded(app)
@@ -383,8 +391,28 @@ class Trial:
 
     # The loop
 
+    def _untrialled(self) -> dict[tuple[int, int], str]:
+        """
+        Data migrations that database routers keep from running on the
+        trial's alias: a trial run proves nothing about them (they would
+        run, as written, on another alias).
+        """
+        found: dict[tuple[int, int], str] = {}
+        for opaque in self.analysis.timeline.opaque:
+            rec = opaque.rec
+            op = rec.op
+            if isinstance(op, (RunPython, RunSQL)) and not router.allow_migrate(
+                self.alias, rec.migration.app_label, **op.hints
+            ):
+                found[(rec.migration.index, rec.original_index)] = (
+                    f"it doesn't run on the database {self.alias!r}, which the"
+                    " trial migrates (DATABASE_ROUTERS)"
+                )
+        return found
+
     def run(self) -> Result:
         begin = time.perf_counter()
+        self.analysis.untrialled = self._untrialled()
         # Every opaque operation is watched: what it writes to says which
         # removal to blame for a data difference, and finds no-ops.
         baseline = self._run("Baseline", None, observing=True)
@@ -862,6 +890,11 @@ class Trial:
             "vendor": self.vendor,
             "server": self.server,
             "database": self.alias,
+            "not_trialled": [
+                f"{rec.migration.label} #{rec.original_index + 1}"
+                for rec in self.analysis.history.ops
+                if (rec.migration.index, rec.original_index) in self.analysis.untrialled
+            ],
             "runs": self.passes + (1 if self.single_baseline else 2),
             "baseline_runs": 1 if self.single_baseline else 2,
             "at_risk": len(self.candidate_keys),

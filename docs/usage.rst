@@ -500,11 +500,11 @@ By default, the command decides whether a data migration (``RunPython``, ``RunSQ
 
 It works like this:
 
-1. The original history is migrated on an empty scratch database (as for ``profile``), and a snapshot is taken of the resulting schema (in far more detail than Django’s model state: columns, defaults, constraints, indexes, sequences, views, functions, triggers and more) and all data, except date and time values.
+1. The original history is migrated on an empty scratch database (as for ``profile``), and a snapshot is taken of the resulting schema (in far more detail than Django’s model state: columns, defaults, constraints, indexes, sequences and the next id of each table, views, functions, triggers and more) and all data.
 2. A candidate plan is made in which the name scan doesn’t block anything, but each removal remembers which data migrations mentioned it.
    The command says how many removals a trial could unlock at most: if that is none, only the default plan is trialled.
    Then the original history is migrated a second time: anything that differs between the two runs (random or time-based values in rows that migrations create, such as UUIDs, tokens or password hashes) is left out of every comparison: just the differing columns where that is enough, else the table’s data.
-   ``--trial-single-baseline`` skips that run; such differences are then only recognised when nothing else can be blamed, and may block removals.
+   ``--trial-single-baseline`` skips that run; date and time values are then left out of every comparison, and other such differences are only recognised when nothing else can be blamed, and may block removals.
 3. The candidate is migrated on a fresh scratch database, with the edited operations in memory: no files are touched.
    If a data migration fails, its savepoint is rolled back, the failure is recorded, and the run goes on, so one run finds many failures.
    (That needs a backend that can roll back schema changes, such as PostgreSQL or SQLite, and an atomic migration; otherwise the run stops at the first failure.)
@@ -530,6 +530,12 @@ Long error messages are shortened in the output and in plan files (``FieldError`
 ``apply --trial`` does the same and applies the result.
 The plan file records the trial: backend, number of runs, what it unlocked, and the failures it harvested (shown with ``-v 2``).
 ``--trial`` can’t be combined with ``--opaque``.
+
+A trial migrates the ``--database`` alias only (it says which).
+If ``DATABASE_ROUTERS`` keep a ``RunPython`` or ``RunSQL`` operation from running on that alias, the trial can’t check it: what it mentions stays blocked as without a trial, it is never taken for a no-op, and the command lists such operations.
+
+The rules for MySQL and MariaDB (see :doc:`how_it_works`) apply when a configured database uses them, and the plan records which did (``options.backends``).
+The command says when none is configured, and when the configured ones changed since a saved plan was made.
 
 .. warning::
 

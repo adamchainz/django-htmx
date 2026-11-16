@@ -360,8 +360,9 @@ If that fails, the command stops: the history doesn’t migrate from scratch, so
 The resulting snapshot covers, on SQLite, every table’s columns, foreign keys, indexes and check constraints (through ``PRAGMA`` statements, since the stored ``CREATE TABLE`` text depends on how a table was built), plus index, trigger and view definitions.
 On PostgreSQL it covers columns (type, length, precision, nullability, default, identity, collation, generation), constraints (``pg_get_constraintdef``), indexes (``pg_get_indexdef``), sequences and their owners, views, materialized views, functions and procedures, triggers, enum types, extensions and comments.
 On MySQL and MariaDB it covers what ``mysqldump --no-data`` shows, from ``information_schema``: tables (engine, collation, comment, options), columns in their order (type, nullability, default, extra, collation, comment, generation), indexes and their names (columns or expressions, order, prefix length, uniqueness, type, comment, visibility), constraints, foreign keys (columns, targets, ``ON UPDATE``/``ON DELETE``), check constraints by table, triggers, views and routines; the tests compare it on both servers.
-Other backends fall back to Django’s introspection, which is weaker.
-Data is compared as a multiset of rows per table, with date and time values masked, and ``django_migrations`` compared by app and name only.
+It also covers the next id each table gets: a PostgreSQL sequence’s last value, MySQL’s ``AUTO_INCREMENT``, SQLite’s ``sqlite_sequence`` (``django_migrations`` aside, whose ids follow how many migrations ran).
+Data is compared as a multiset of rows per table, with ``django_migrations`` compared by app and name only.
+Values that differ between the two baseline runs (times, random values) are left out of every comparison; with ``--trial-single-baseline``, date and time values are left out instead.
 
 A candidate run substitutes the edited operation lists on a private ``MigrationLoader`` and runs Django’s ``MigrationExecutor``, so the files on disk are untouched.
 Opaque operations that don’t change the project state are wrapped: an exception inside one rolls back to a savepoint and is recorded, and the run continues as if it did nothing.

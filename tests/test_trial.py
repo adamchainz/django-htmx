@@ -204,7 +204,7 @@ def test_plan_file_round_trip(project, tmp_path):
     )
     plan_path = tmp_path / "plan.toml"
     out, _ = project.command("plan", "--trial", "-o", str(plan_path))
-    assert "Trial: 3 migrate runs on SQLite in " in out
+    assert "Trial: 3 migrate runs on SQLite (database 'default') in " in out
     assert "unlocked 1 removal of 1 that the static scan blocks" in out
     data = tomllib.loads(plan_path.read_text())
     assert data["verification"]["mode"] == "trial"
@@ -453,10 +453,10 @@ def test_post_migrate_flag(project):
     (project.path("shop").parent / "models.py").write_text("")
     post_migrate.connect(create, dispatch_uid="test_post_migrate_flag")
     try:
-        # The history leaves no row behind: without post_migrate, the
-        # elidable operation's removal shows nowhere.
-        assert len(project.compact(trial=True).removals) == 2
-        # With it, the row post_migrate creates gets another id.
+        # The history leaves no row behind, but the table's next id shows
+        # the elidable operation's removal; with post_migrate, so does the
+        # id of the row it creates.
+        assert project.compact(trial=True).removals == []
         assert project.compact(trial=True, trial_post_migrate=True).removals == []
     finally:
         post_migrate.disconnect(dispatch_uid="test_post_migrate_flag")
@@ -831,3 +831,111 @@ def test_trial_blames_until_a_plan_passes(project, monkeypatch):
     assert result.removals == []
     assert result.verification["dropped"] == []
     assert "no such table: nowhere" in blocked(result)["shop.Item.legacy"][0]
+
+
+# Gaps the safety review found in what a trial compares
+
+
+def test_dates_compared(project):
+    # Seeded rows get the AddField's date; folded, the AlterField's.
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration(
+        "shop",
+        "0002_seed",
+        "migrations.RunPython(seed),",
+        extra="""
+        def seed(apps, schema_editor):
+            alias = schema_editor.connection.alias
+            apps.get_model("shop", "Item").objects.using(alias).create(name="a")
+        """,
+    )
+    project.migration(
+        "shop",
+        "0003_add",
+        'migrations.AddField("item", "starts", models.DateField('
+        "default=datetime.date(2000, 1, 1))),",
+        extra="import datetime",
+    )
+    project.migration(
+        "shop",
+        "0004_alter",
+        'migrations.AlterField("item", "starts", models.DateField('
+        "default=datetime.date(2020, 1, 1))),",
+        extra="import datetime",
+    )
+    result = project.compact(trial=True)
+    assert result.removals == []
+    assert (
+        result.verification["trial_blocked"] == 2
+    )  # the fold into the AddField, and the chain into CreateModel
+
+
+def test_times_that_differ_between_runs_masked(project):
+    project.migration(
+        "shop",
+        "0001_initial",
+        ITEM + 'migrations.AddField("item", "at", models.DateTimeField(null=True)),'
+        "migrations.RunPython(stamp),",
+        extra="""
+        def stamp(apps, schema_editor):
+            from django.utils import timezone
+
+            alias = schema_editor.connection.alias
+            apps.get_model("shop", "Item").objects.using(alias).create(
+                name="a", at=timezone.now()
+            )
+        """,
+    )
+    result = project.compact(trial=True)
+    assert result.verification["nondeterministic_columns"] == {"shop_item": ["at"]}
+
+
+def test_next_id_compared(project):
+    # An elidable operation, removed with the field it mentions, leaves the
+    # table's next id behind.
+    with_data_migration(
+        project,
+        'Item.objects.using(alias).create(name="probe").delete();'
+        " Item.objects.using(alias).filter(legacy=1).count()",
+    )
+    for path in project.path("shop").glob("0002_*.py"):
+        path.write_text(
+            path.read_text().replace(
+                "RunPython(forwards)", "RunPython(forwards, elidable=True)"
+            )
+        )
+    assert project.compact(**NO_FOLD).removals != []
+    result = project.compact(trial=True, **NO_FOLD)
+    assert kinds(result) == []
+
+
+ROUTER = """
+class Router:
+    def allow_migrate(self, db, app_label, **hints):
+        return hints.get("database", "default") == db
+"""
+
+
+def test_router_skipped_operations_not_trialled(project, settings):
+    (project.root / "trial_router.py").write_text(ROUTER)
+    settings.DATABASE_ROUTERS = ["trial_router.Router"]
+    with_data_migration(project, "Item.objects.using(alias).filter(legacy=1).count()")
+    path = project.path("shop", "0002_add")
+    path.write_text(
+        path.read_text().replace(
+            "RunPython(forwards)", 'RunPython(forwards, hints={"database": "other"})'
+        )
+    )
+    result = project.compact(trial=True, **NO_FOLD)
+    assert result.removals == []
+    assert result.verification["not_trialled"] == ["shop.0002_add #2"]
+    assert blocked(result)["shop.Item.legacy"] == (
+        "RunPython in shop.0002_add mentions 'legacy' (it doesn't run on the"
+        " database 'default', which the trial migrates (DATABASE_ROUTERS))",
+    )
+    out, _ = project.command_db("plan", "--trial", "--skip-kind", "fold")
+    assert (
+        "Database routers keep these data migrations from running on 'default',"
+        " so the trial can't check them and what they mention is kept:"
+        " shop.0002_add #2.\n"
+    ) in out

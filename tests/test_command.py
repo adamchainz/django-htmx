@@ -36,6 +36,9 @@ def test_dry_run(history):
         "Would remove 4 operations, fold 1 operation and edit 1 operation in 3"
         " migration files.\n"
         "Would edit migration files of: shop.\n"
+        "No MySQL or MariaDB database is configured: if production runs on one,"
+        " make the plan with it configured (some of its index names depend on"
+        " the history).\n"
         "On SQLite, this plan may change the physical order of columns in rebuilt"
         " tables (harmless for Django); --trial checks it.\n"
         "Run 'compact_migrations apply' to apply.\n"
@@ -98,6 +101,9 @@ def test_write(history):
     out, _ = history.command("apply")
     # Warnings before writing; the summary only once the files are written.
     assert out == PLAN_OUTPUT + (
+        "No MySQL or MariaDB database is configured: if production runs on one,"
+        " make the plan with it configured (some of its index names depend on"
+        " the history).\n"
         "On SQLite, this plan may change the physical order of columns in rebuilt"
         " tables (harmless for Django); --trial checks it.\n"
         "The migration files aren't in a Git work tree, so review and keep a copy"
@@ -125,7 +131,7 @@ def test_empty_migrations_summary(project):
     )
     project.migration("shop", "0003_remove", 'migrations.RemoveField("item", "x"),')
     out, _ = project.command("plan")
-    assert out.splitlines()[-3] == (
+    assert out.splitlines()[-4] == (
         "Would remove 2 operations in 2 migration files."
         " 2 migrations would be left with no operations."
     )
@@ -430,7 +436,7 @@ def test_summary_wording(project):
     )
     project.migration("shop", "0002_drop", 'migrations.RemoveField("item", "legacy"),')
     out, _ = project.command("plan")
-    assert out.splitlines()[-3] == (
+    assert out.splitlines()[-4] == (
         "Would remove 1 operation and edit 1 operation in 2 migration files."
         " 1 migration would be left with no operations."
     )
@@ -439,3 +445,24 @@ def test_summary_wording(project):
         "Removed 1 operation and edited 1 operation in 2 migration files."
         " 1 migration now has no operations."
     )
+
+
+def test_backends_changed_since_the_plan(history, monkeypatch):
+    from django_compact_migrations import backends
+
+    found = iter([frozenset(), frozenset({"mariadb"})])
+    monkeypatch.setattr(backends, "configured", lambda: next(found))
+    out, _ = history.command("plan")
+    assert (
+        "This plan was made with no MySQL or MariaDB database configured, and"
+        " MariaDB is configured now: some index names on MySQL and MariaDB depend"
+        " on the history, so make the plan again.\n"
+    ) in out
+
+
+def test_backends_configured(history, monkeypatch):
+    from django_compact_migrations import backends
+
+    monkeypatch.setattr(backends, "configured", lambda: frozenset({"mysql"}))
+    out, _ = history.command("plan")
+    assert "MySQL" not in out

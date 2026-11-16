@@ -541,6 +541,9 @@ class Analysis:
     scope: Scope
     options: dict[str, Any]
     texts: TextBuilder = field(default_factory=TextBuilder)
+    untrialled: dict[tuple[int, int], str] = field(default_factory=dict)
+    """(plan index, index on disk) of data migrations a trial can't run,
+    with why: what they mention stays blocked as without a trial."""
 
     def solve(
         self,
@@ -589,6 +592,7 @@ class Analysis:
                 texts=self.texts,
                 noop=noop if rounds == 1 else None,
                 backends=frozenset(self.options["backends"]),
+                untrialled=self.untrialled,
             )
             if solver.noop:
                 solver.drop_noop()

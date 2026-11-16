@@ -2,12 +2,15 @@
 Snapshots of a database after migrating: schema (much more detailed than
 Django's project state) and data, for comparing two runs of the history.
 
-Incidental ordering is normalised away; names never are. Values of date and
-time columns are masked, since they differ between runs.
+Incidental ordering is normalised away; names never are. Values that differ
+between two runs of the same history (times, random values) are found by
+comparing two baseline runs (``Snapshot.nondeterminism``); with a single
+baseline, date and time values are masked instead.
 """
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -18,6 +21,8 @@ from django.db.backends.base.base import BaseDatabaseWrapper
 _MASKED_FIELD_TYPES = frozenset(
     {"DateTimeField", "DateField", "TimeField", "DurationField"}
 )
+MIGRATIONS = "django_migrations"
+_AUTO_INCREMENT = re.compile(r"\bAUTO_INCREMENT=(\d+)")
 _PG_SYSTEM = "('pg_catalog', 'information_schema', 'pg_toast')"
 _MASK = "<masked>"
 COLUMN_ORDER = "column order"
@@ -189,7 +194,9 @@ def _column_changes(mine: Any, theirs: Any) -> tuple[str, ...]:
     return tuple(n for n, m in zip(order_a, order_b, strict=False) if n != m)
 
 
-def take_snapshot(connection: BaseDatabaseWrapper) -> Snapshot:
+def take_snapshot(
+    connection: BaseDatabaseWrapper, *, mask_dates: bool = False
+) -> Snapshot:
     snapshot = Snapshot(connection.vendor)
     with connection.cursor() as cursor:
         if connection.vendor == "sqlite":
@@ -200,7 +207,7 @@ def take_snapshot(connection: BaseDatabaseWrapper) -> Snapshot:
             # Scratch databases exist only for these three vendors.
             assert connection.vendor == "mysql"
             _mysql_schema(cursor, snapshot.schema)
-        _data(connection, cursor, snapshot.data, snapshot.columns)
+        _data(connection, cursor, snapshot.data, snapshot.columns, mask_dates)
     return snapshot
 
 
@@ -223,6 +230,14 @@ def _sqlite_schema(
         "SELECT type, name, tbl_name, sql FROM sqlite_master"
         " WHERE name NOT LIKE 'sqlite_%%'",
     )
+    # The next id each AUTOINCREMENT table gets. Rebuilding a table may
+    # leave a row at 0, which means the same as none.
+    if _fetch(cursor, "SELECT 1 FROM sqlite_master WHERE name = 'sqlite_sequence'"):
+        for name, seq in _fetch(
+            cursor, "SELECT name, seq FROM sqlite_sequence WHERE seq > 0"
+        ):
+            if name != MIGRATIONS:
+                schema[("next id", name, name)] = seq
     for kind, name, table, sql in rows:
         if kind == "table":
             q = connection.ops.quote_name(name)
@@ -300,11 +315,14 @@ def _postgresql_schema(
         schema[("index", table, f"{nsp}.{name}")] = definition
     for row in _fetch(
         cursor,
+        # last_value: the next id a table gets (NULL before the first).
         "SELECT schemaname || '.' || sequencename, data_type, start_value,"
-        " min_value, max_value, increment_by, cycle FROM pg_sequences"
+        " min_value, max_value, increment_by, cycle, last_value FROM pg_sequences"
         f" WHERE schemaname NOT IN {_PG_SYSTEM}",
     ):
-        schema[("sequence", None, row[0])] = row[1:]
+        # django_migrations' ids follow how many migrations ran (pruning).
+        last = None if row[0].endswith(f".{MIGRATIONS}_id_seq") else row[-1]
+        schema[("sequence", None, row[0])] = (*row[1:-1], last)
     for seq, table, column in _fetch(
         cursor,
         "SELECT s.relname, t.relname, a.attname FROM pg_class s"
@@ -387,6 +405,19 @@ def _mysql_schema(cursor: Any, schema: dict[tuple[str, str | None, str], Any]) -
             t["table_comment"],
             t["create_options"],
         )
+    for (table,) in _fetch(
+        cursor,
+        f"SELECT table_name FROM information_schema.tables {where}"
+        " AND table_type = 'BASE TABLE'",
+    ):
+        # The next id a table gets; information_schema.tables may hold a
+        # cached value.
+        (_, create) = _fetch(
+            cursor, "SHOW CREATE TABLE `{}`".format(table.replace("`", "``"))
+        )[0]
+        found = _AUTO_INCREMENT.search(create)
+        if found and table != MIGRATIONS:
+            schema[("next id", table, table)] = found.group(1)
     cols: dict[str, list[dict[str, Any]]] = {}
     for c in _rows(cursor, f"SELECT * FROM information_schema.columns {where}"):
         cols.setdefault(c["table_name"], []).append(c)
@@ -517,6 +548,7 @@ def _data(
     cursor: Any,
     data: dict[str, Counter[tuple[str, ...]]],
     columns: dict[str, tuple[str, ...]],
+    mask_dates: bool,
 ) -> None:
     quote = connection.ops.quote_name
     for table in connection.introspection.table_names(cursor):
@@ -525,7 +557,7 @@ def _data(
             data[table] = Counter(tuple(map(_value, r)) for r in cursor.fetchall())
             columns[table] = ("app", "name")
             continue
-        masked = _masked_columns(connection, cursor, table)
+        masked = _masked_columns(connection, cursor, table) if mask_dates else set()
         cursor.execute(f"SELECT * FROM {quote(table)}")
         names = [str(d[0]) for d in cursor.description]
         order = sorted(range(len(names)), key=lambda i: names[i])

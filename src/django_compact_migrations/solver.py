@@ -143,6 +143,7 @@ class Solver:
         texts: TextBuilder | None = None,
         noop: Mapping[tuple[int, int], str] | None = None,
         backends: frozenset[str] = frozenset(),
+        untrialled: Mapping[tuple[int, int], str] | None = None,
     ) -> None:
         """
         ``aggressive``: name-scan and soft-reference hits don't block but are
@@ -154,7 +155,10 @@ class Solver:
         are removed (drop_noop()) and don't count for the name scan.
         ``backends``: MySQL-family servers configured (see backends), whose
         history-dependent DDL keeps some removals and folds.
+        ``untrialled``: (plan index, index on disk) of data migrations a
+        trial can't run (see Analysis): they block even when aggressive.
         """
+        self.untrialled: Mapping[tuple[int, int], str] = untrialled or {}
         self.backends = backends
         self.noop: dict[int, str] = {}
         for rec in history.ops:
@@ -260,8 +264,11 @@ class Solver:
         In aggressive mode, what would block is recorded against ``unit``
         instead.
         """
-        record = self.aggressive and unit is not None
         for o, name in self.opaque.mentioning(names, start, end, known_from):
+            untrialled = self.untrialled.get(
+                (o.rec.migration.index, o.rec.original_index)
+            )
+            record = self.aggressive and unit is not None and untrialled is None
             if (
                 o.elidable
                 and hits is not None
@@ -294,10 +301,15 @@ class Solver:
                 continue
             if self.policy == "scan" or (o.elidable and self.policy == "block"):
                 generic = self.opaque.text(o).generic
-                if generic is not None:
-                    return f"{o.rec.describe()} acts on every model ({generic})"
-                return f"{o.rec.describe()} mentions {name!r}"
-        if self.policy == "block" and not record:
+                what = (
+                    f"acts on every model ({generic})"
+                    if generic is not None
+                    else f"mentions {name!r}"
+                )
+                return f"{o.rec.describe()} {what}" + (
+                    f" ({untrialled})" if untrialled else ""
+                )
+        if self.policy == "block" and not (self.aggressive and unit is not None):
             blocking = self.opaque.first_blocking(start, end, known_from)
             if blocking is not None:
                 return f"opaque {blocking.rec.describe()} may run meanwhile"

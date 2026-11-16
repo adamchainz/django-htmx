@@ -15,6 +15,7 @@ from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 
+from django_compact_migrations import backends
 from django_compact_migrations.core import (
     CompactError,
     Removal,
@@ -464,7 +465,8 @@ class Command(RichCommand):
         line = (
             ("Trial (recorded in the plan): " if result.from_plan else "Trial: ")
             + f"{count_noun(info['runs'], 'migrate run')} on"
-            f" {info.get('server') or info['vendor']} in {info['seconds']:.1f}s;"
+            f" {info.get('server') or info['vendor']} (database"
+            f" {info['database']!r}) in {info['seconds']:.1f}s;"
             f" unlocked {count_noun(info['unlocked'], 'removal')} of"
             f" {info['at_risk']} that the static scan blocks"
         )
@@ -477,6 +479,17 @@ class Command(RichCommand):
                 " database"
             )
         self._print(Text(line + ".", style="bold"))
+        if info["not_trialled"]:
+            self._print(
+                Text(
+                    "Database routers keep these data migrations from running on"
+                    f" {info['database']!r}, so the trial can't check them and"
+                    " what they mention is kept: "
+                    + ", ".join(info["not_trialled"])
+                    + ".",
+                    style="yellow",
+                )
+            )
         if info["fallback"]:
             self._print(
                 Text(
@@ -567,6 +580,29 @@ class Command(RichCommand):
             self._print("No operations to remove.")
 
     def _report_warnings(self, result: Result, options: dict[str, Any]) -> None:
+        made_for = sorted(result.options["backends"])
+        now = sorted(backends.configured())
+        if made_for != now:
+            self._print(
+                Text(
+                    "This plan was made with "
+                    + (backends.describe(made_for) or "no MySQL or MariaDB")
+                    + " database configured, and "
+                    + (backends.describe(now) or "none")
+                    + " is configured now: some index names on MySQL and"
+                    " MariaDB depend on the history, so make the plan again.",
+                    style="yellow",
+                )
+            )
+        elif not made_for:
+            self._print(
+                Text(
+                    "No MySQL or MariaDB database is configured: if production"
+                    " runs on one, make the plan with it configured (some of"
+                    " its index names depend on the history).",
+                    style="dim",
+                )
+            )
         order_warning = sqlite_order_warning(
             result, options.get("database") or "default"
         )
