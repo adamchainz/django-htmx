@@ -30,7 +30,7 @@ from django_compact_migrations.history import read_python
 from django_compact_migrations.patch import PatchError, apply_diff, make_diff
 
 FORMAT = "django-compact-migrations-plan"
-FORMAT_VERSION = 2
+FORMAT_VERSION = 1
 
 
 def tool_version() -> str:
@@ -74,9 +74,6 @@ def plan_data(result: Result, base: Path, *, blocked: bool = False) -> dict[str,
         "format": FORMAT,
         "version": FORMAT_VERSION,
         "tool_version": tool_version(),
-        # Which copy of the tool made the plan: an installed or older copy
-        # on the path can shadow the one meant.
-        "tool_path": str(Path(__file__).resolve().parent),
         "created": datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds"),
         "warnings": list(result.warnings),
         "summary": {
@@ -251,7 +248,7 @@ def _file_change(f: dict[str, Any], base: Path, deleted: bool) -> FileChange:
         module=f["module"],
         original=original,
         new=new,
-        operations_after=tuple(f.get("operations_after", ())),
+        operations_after=() if deleted else tuple(f["operations_after"]),
         expected_sha256=f["sha256_before"],
         deleted=deleted,
         encoding=encoding,
@@ -274,8 +271,8 @@ def load_plan(path: str | os.PathLike[str]) -> Result:
         )
     base = path.resolve().parent
     try:
-        files = [_file_change(f, base, False) for f in data.get("files", [])]
-        files += [_file_change(f, base, True) for f in data.get("deleted", [])]
+        files = [_file_change(f, base, False) for f in data["files"]]
+        files += [_file_change(f, base, True) for f in data["deleted"]]
         removals = [
             Removal(
                 kind=r["kind"],
@@ -290,7 +287,7 @@ def load_plan(path: str | os.PathLike[str]) -> Result:
                 note=r.get("note", ""),
                 targets=tuple(_location(loc, base) for loc in r.get("targets", [])),
             )
-            for r in data.get("removals", [])
+            for r in data["removals"]
         ]
         blocked = [
             Blocked(
@@ -307,11 +304,11 @@ def load_plan(path: str | os.PathLike[str]) -> Result:
         return Result(
             removals=removals,
             blocked=blocked,
-            warnings=list(data.get("warnings", [])),
+            warnings=list(data["warnings"]),
             files=files,
             removed_operations=summary["removed_operations"],
             edited_operations=summary["edited_operations"],
-            folded_operations=summary.get("folded_operations", 0),
+            folded_operations=summary["folded_operations"],
             empty_migrations=[(a, n) for a, n in summary["empty_migrations"]],
             pruned_migrations=[(a, n) for a, n in summary["pruned_migrations"]],
             options=data["options"],

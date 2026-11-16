@@ -203,7 +203,7 @@ def test_plan_file_round_trip(history, tmp_path):
     assert history.files() == before
     data = tomllib.loads(plan_path.read_text())
     assert data["format"] == "django-compact-migrations-plan"
-    assert data["version"] == 2
+    assert data["version"] == 1
     assert data["verification"] == {"mode": "static"}
     assert data["options"]["opaque"] == "scan"
     assert [f["migration"] for f in data["files"]] == [
@@ -248,7 +248,7 @@ def test_plan_file_invalid(history, tmp_path):
     bad.write_text('format = "django-compact-migrations-plan"\nversion = 99\n')
     with pytest.raises(CommandError, match="plan format version 99"):
         history.command("apply", "--plan", str(bad))
-    bad.write_text('format = "django-compact-migrations-plan"\nversion = 2\n')
+    bad.write_text('format = "django-compact-migrations-plan"\nversion = 1\n')
     with pytest.raises(CommandError, match="Malformed plan file"):
         history.command("apply", "--plan", str(bad))
     with pytest.raises(CommandError, match="Could not read plan file"):

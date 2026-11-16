@@ -62,7 +62,8 @@ def test_layout(project, tmp_path):
     assert "+                ('qty', models.IntegerField(default=1))," in edit["diff"]
     assert edit["sha256_before"] != edit["sha256_after"]
     assert [d["migration"] for d in data["deleted"]] == [["shop", "0002_add"]]
-    assert "tool_path" in data and "created" in data
+    assert "tool_version" in data and "created" in data
+    assert "tool_path" not in data
 
 
 def test_blocked_only_when_asked(project, tmp_path):

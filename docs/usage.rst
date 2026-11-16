@@ -95,19 +95,23 @@ A shortened example:
 .. code-block:: toml
 
     format = "django-compact-migrations-plan"
-    version = 2
+    version = 1
     tool_version = "1.0.0"
-    tool_path = "/home/me/venv/lib/python3.13/site-packages/django_compact_migrations"
-    created = "2026-11-14T17:40:02+00:00"
+    created = "2026-11-16T21:46:00+00:00"
     warnings = []
+    deleted = []
 
     [summary]
     removed_operations = 2
-    folded_operations = 0
-    edited_operations = 0
-    files_changed = 2
+    folded_operations = 1
+    edited_operations = 1
+    files_changed = 3
     files_deleted = 0
     empty_migrations = [
+        [
+            "shop",
+            "0002_add",
+        ],
         [
             "shop",
             "0003_remove",
@@ -129,6 +133,7 @@ A shortened example:
     ]
     opaque = "scan"
     elidable = false
+    backends = []
     noop_data = false
     prune = false
 
@@ -151,7 +156,7 @@ A shortened example:
         "0002_add",
     ]
     path = "shop/migrations/0002_add.py"
-    line = 11
+    line = 8
     operation = "AddField"
 
     [[removals.elements]]
@@ -160,7 +165,7 @@ A shortened example:
         "0003_remove",
     ]
     path = "shop/migrations/0003_remove.py"
-    line = 11
+    line = 8
     operation = "RemoveField"
 
     [[files]]
@@ -170,26 +175,26 @@ A shortened example:
     ]
     module = "shop.migrations.0002_add"
     path = "shop/migrations/0002_add.py"
-    operations_after = [
-        "AddField",
-    ]
-    sha256_before = "9c9c8531aea37e578e0e608a2da84742cfb1e7e112692c8621d08ad696fd5906"
-    sha256_after = "f6654a1f0172145d992a58cdaf1738c3f1d63a2c9301ea5d4ff4c6cbf3ab6a51"
+    operations_after = []
+    sha256_before = "714a3493d913690f8a82c6e9907a60a3f2e1f4b03c0f22c6d961e9e70e3e6061"
+    sha256_after = "12cd13439bf5d104b28f75eaef9d39fe2076a6de710d56a59941ffa71d9528f0"
     diff = """
     --- a/shop/migrations/0002_add.py
     +++ b/shop/migrations/0002_add.py
-    @@ -8,6 +8,5 @@
-         ]
+    @@ -4,7 +4,4 @@
+     class Migration(migrations.Migration):
+         dependencies = [(\"shop\", \"0001_initial\")]
 
-         operations = [
+    -    operations = [
     -        migrations.AddField(\"item\", \"legacy\", models.IntegerField(default=0)),
-             migrations.AddField(\"item\", \"qty\", models.IntegerField(default=1)),
-         ]
+    -        migrations.AddField(\"item\", \"qty\", models.IntegerField(default=1)),
+    -    ]
+    +    operations = []
     """
 
 With ``--show-blocked``, the file also lists what was kept and why (``[[blocked]]``).
 With ``--prune``, deleted files are listed under ``[[deleted]]``, with the hash of their content.
-Paths are relative to the plan file, and ``tool_path`` says which copy of django-compact-migrations made the plan.
+Paths are relative to the plan file, and ``tool_version`` says which version of django-compact-migrations made the plan.
 
 ``apply --plan`` finds each file through its module, as Python imports it now, so it can be run from any directory.
 It refuses to write anything if any file changed since the plan was made (its SHA-256 hash differs), if a diff doesn’t apply exactly (no fuzz: every context and removed line must match where the hunk says), or if applying it doesn’t give the file the plan was made for (``sha256_after``).
