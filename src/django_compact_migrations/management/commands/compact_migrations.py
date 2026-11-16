@@ -57,8 +57,8 @@ class Row:
 
 class Command(RichCommand):
     help = (
-        "Remove migration operations that cancel out over the whole history,"
-        " without changing the final schema."
+        "Remove or merge migration operations that cancel out over the whole"
+        " history, so that migrating a fresh database is faster."
     )
 
     def add_arguments(self, parser: ArgumentParser) -> None:
@@ -87,7 +87,7 @@ class Command(RichCommand):
             help="Exit with status 1 if anything is removable.",
         )
         _add_show_blocked(plan_parser)
-        _add_common_arguments(plan_parser)
+        _add_common_arguments(plan_parser, parser)
         apply_parser = subparsers.add_parser(
             "apply",
             help="Edit the migration files, from a plan file or a fresh analysis.",
@@ -105,7 +105,7 @@ class Command(RichCommand):
         _add_selection_arguments(apply_parser)
         _add_trial_arguments(apply_parser)
         _add_show_blocked(apply_parser)
-        _add_common_arguments(apply_parser)
+        _add_common_arguments(apply_parser, parser)
         profile_parser = subparsers.add_parser(
             "profile",
             help="Migrate a scratch database from scratch and report where the"
@@ -130,12 +130,12 @@ class Command(RichCommand):
         profile_parser.add_argument(
             "--json", action="store_true", help="Print the report as JSON."
         )
-        _add_common_arguments(profile_parser)
+        _add_common_arguments(profile_parser, parser)
         scratch_parser = subparsers.add_parser(
             "scratch",
             help="List (or drop) scratch databases left by interrupted runs.",
             description="Trial and profile runs drop their scratch databases"
-            " (named compactmig_...) when they end, even on Ctrl-C or SIGTERM."
+            " (named compactmig_...) when they end, even on Ctrl+C or SIGTERM."
             " A killed process can leave one behind: list them, and drop those"
             " that no running command is using.",
         )
@@ -157,7 +157,7 @@ class Command(RichCommand):
             help="Drop every scratch database found. Only when no other"
             " trial or profile run is going on against this server.",
         )
-        _add_common_arguments(scratch_parser)
+        _add_common_arguments(scratch_parser, parser)
 
     def handle(self, *args: Any, **options: Any) -> None:
         try:
@@ -198,8 +198,11 @@ class Command(RichCommand):
                 raise CommandError(str(exc)) from None
         else:
             result = self._analyse(options, verbosity)
+        self._report(result, verbosity, show_blocked, options)
         if subcommand == "plan":
-            self._report(result, verbosity, show_blocked, False, options)
+            if verbosity > 0 and result.changed:
+                self._print(Text(summary(result, False), style="bold green"))
+                self._report_warnings(result, options)
             if options["output"]:
                 save_plan(result, options["output"], blocked=show_blocked)
                 if verbosity > 0:
@@ -218,12 +221,18 @@ class Command(RichCommand):
             if options["check"] and result.changed:
                 raise SystemExit(1)
             return
-        self._report(result, verbosity, show_blocked, True, options)
-        if result.changed:
-            try:
-                result.write()
-            except CompactError as exc:
-                raise CommandError(str(exc)) from None
+        if not result.changed:
+            return
+        # Warnings first: the summary says what was done, so it comes once
+        # the files are written and verified.
+        if verbosity > 0:
+            self._report_warnings(result, options)
+        try:
+            result.write()
+        except CompactError as exc:
+            raise CommandError(str(exc)) from None
+        if verbosity > 0:
+            self._print(Text(summary(result, True), style="bold green"))
 
     def _scratch(self, options: dict[str, Any]) -> None:
         alias = options["database"]
@@ -450,9 +459,10 @@ class Command(RichCommand):
         if info["vendor"] == "sqlite":
             self._print(
                 Text(
-                    "SQLite trials can't compare constraint names or column"
-                    " order; if production doesn't run on SQLite, trial on its"
-                    " backend with --database.",
+                    "SQLite trials can't compare the names of unique and"
+                    " foreign key constraints, or what check constraints check;"
+                    " if production doesn't run on SQLite, trial on its backend"
+                    " with --database.",
                     style="yellow",
                 )
             )
@@ -508,7 +518,6 @@ class Command(RichCommand):
         result: Result,
         verbosity: int,
         show_blocked: bool,
-        write: bool,
         options: dict[str, Any],
     ) -> None:
         if verbosity == 0:
@@ -527,8 +536,8 @@ class Command(RichCommand):
         self._report_trial(result, verbosity)
         if not result.changed:
             self._print("No operations to remove.")
-            return
-        self._print(Text(summary(result, write), style="bold green"))
+
+    def _report_warnings(self, result: Result, options: dict[str, Any]) -> None:
         order_warning = sqlite_order_warning(
             result, options.get("database") or "default"
         )
@@ -660,26 +669,36 @@ def _add_selection_arguments(parser: ArgumentParser) -> None:
     )
 
 
-def _add_common_arguments(parser: ArgumentParser) -> None:
+def _add_common_arguments(parser: ArgumentParser, main: ArgumentParser) -> None:
     """
     Accept Django's display options after the subcommand too
-    (``compact_migrations plan -v 2``); SUPPRESS keeps the values given before
-    it when they aren't repeated.
+    (``compact_migrations plan -v 2``), with Django's help; SUPPRESS keeps
+    the values given before it when they aren't repeated.
     """
+    django_help = {
+        option: action.help
+        for action in main._actions
+        for option in action.option_strings
+    }
     parser.add_argument(
         "-v",
         "--verbosity",
         type=int,
         choices=[0, 1, 2, 3],
         default=argparse.SUPPRESS,
-        help="Verbosity level; 0=minimal output, 1=normal output, 2=verbose output.",
+        help=django_help.get("--verbosity"),
     )
     for flag in ("--traceback", "--no-color", "--force-color", "--skip-checks"):
-        parser.add_argument(flag, action="store_true", default=argparse.SUPPRESS)
+        parser.add_argument(
+            flag,
+            action="store_true",
+            default=argparse.SUPPRESS,
+            help=django_help.get(flag),
+        )
     # Read by manage.py before parsing; accepted here so they can follow the
     # subcommand too.
     for flag in ("--settings", "--pythonpath"):
-        parser.add_argument(flag, default=argparse.SUPPRESS)
+        parser.add_argument(flag, default=argparse.SUPPRESS, help=django_help.get(flag))
 
 
 def _add_trial_arguments(parser: ArgumentParser) -> None:

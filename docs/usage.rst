@@ -8,7 +8,8 @@ django-compact-migrations adds one management command, ``compact_migrations``, w
 
 Running ``compact_migrations`` without a subcommand prints the help.
 It reads your whole migration history and removes operations that cancel each other out, such as a model that is created and later deleted, or a field that is added and later removed.
-The migration files are edited in place: same files, same names, same dependencies, fewer operations.
+It also merges (folds) operations into earlier ones, and with ``--prune`` deletes migrations left empty.
+By default, the migration files are edited in place and keep their names and dependencies.
 
 Before you start
 ----------------
@@ -22,6 +23,11 @@ So, before running ``compact_migrations apply``:
 
 * Make sure production, staging, and any shared databases are up to date.
 * Commit your work, so you can review and revert the changes with Git.
+
+``plan`` and ``apply`` on their own only read and write migration files.
+Trial runs (``--trial``, ``--noop-data``) and ``profile`` also create and drop temporary databases on the server of the ``--database`` alias, and run your migrations, data migrations included, on them.
+So run them with development settings that point at a local server of the same backend as production, never at production itself.
+The database user needs permission to create databases (``CREATE DATABASE``), as for running tests.
 
 And afterwards:
 
@@ -53,23 +59,28 @@ It doesn’t touch any files:
       Product
         legacy_ref      field       0002_coupon_legacy_ref -> 0004_cleanup  2 operations
         sku             superseded  0003_widen_sku -> 0004_cleanup           1 operation
-    Would remove 11 operations and edit 1 operation in 5 migration files. 2 migrations would be left with no operations.
+        sku             fold        0004_cleanup -> 0001_initial             1 operation
+    Would remove 9 operations, fold 1 operation and edit 2 operations in 6 migration files. 4 migrations would be left with no operations.
+    On SQLite, this plan may change the physical order of columns in rebuilt tables (harmless for Django); --trial checks it.
+    Elidable operations are removed on trust: one that writes on a fresh database (a content type, a seed row) changes the data and later ids; --trial checks it.
     Run 'compact_migrations apply' to apply.
 
 Removals are grouped by app, then by model.
 Each line names the thing that would be removed, its kind, the migrations where it appeared and disappeared, and how many operations are involved.
 With colour enabled, kinds and names are highlighted and migration names are dimmed.
 The kind column is one of the kinds listed below.
-The summary counts operations removed outright, operations edited (for example a single field taken out of a ``CreateModel``), and migration files that end up with no operations at all.
+The summary counts operations removed outright, operations folded into earlier ones, operations edited (for example a single field taken out of a ``CreateModel``, or one that absorbed a fold), and migrations that end up with no operations at all.
+The warnings after it say what only a trial run (``--trial``) can check.
 Counts that are zero are left out.
 
-When you are happy with the plan, apply it with ``apply``, which takes the same targets and options as ``plan``:
+When you are happy with the plan, apply it with ``apply``, which takes the same targets and options as ``plan``.
+It prints the same report, writes and verifies the files, and then the summary:
 
 .. code-block:: console
 
     $ python manage.py compact_migrations apply
     ...
-    Removed 11 operations and edited 1 operation in 5 migration files. 2 migrations now have no operations.
+    Removed 9 operations, folded 1 operation and edited 2 operations in 6 migration files. 4 migrations now have no operations.
 
 Running ``plan`` again then reports that there’s nothing left to do:
 
@@ -198,7 +209,7 @@ Paths are relative to the plan file, and ``tool_version`` says which version of 
 
 ``apply --plan`` finds each file through its module, as Python imports it now, so it can be run from any directory.
 It refuses to write anything if any file changed since the plan was made (its SHA-256 hash differs), if a diff doesn’t apply exactly (no fuzz: every context and removed line must match where the hunk says), or if applying it doesn’t give the file the plan was made for (``sha256_after``).
-In the diffs, TOML escapes double quotes and backslashes (``\\"`` and ``\\\\``).
+In the diffs, TOML escapes double quotes and backslashes (``\"`` and ``\\``).
 Files are read and written back as Python reads them: with their line endings, their byte order mark or ``coding`` declaration, and without a final newline if they had none.
 It then writes the files and verifies them exactly as ``apply`` without a plan does.
 A plan file can’t be combined with targets or other analysis options.
@@ -225,9 +236,6 @@ Targets are case-insensitive and can be an app label, a model, or a field:
 * ``app.Model.field`` selects that field, including superseded ``AlterField`` operations on it.
 
 A model or field matches if *any* name it had during its life matches, so renamed models and fields can be selected by their old or new names.
-
-An unknown app label is an error.
-An unknown model or field name is not: it just matches nothing, and the command reports that there is nothing to remove.
 
 A target picks which things the command is trying to remove.
 Other things may still go too, if removing the selected thing requires it.
@@ -380,6 +388,7 @@ Using it in CI
 --------------
 
 ``plan --check`` exits with status 1 if anything is removable.
+As with ``makemigrations --check``, an error also exits with status 1.
 This lets you fail a CI job when new redundant operations creep in:
 
 .. code-block:: console
@@ -432,7 +441,6 @@ Warnings, such as migrations skipped because a squashed migration replaces them,
 What is left behind
 -------------------
 
-The command only removes operations.
 Some things remain for you to tidy up:
 
 **Empty migrations.**
@@ -445,12 +453,12 @@ When all the operations in a migration are removed, the file stays, with ``opera
 
         operations = []
 
-You must keep these files.
-Other migrations depend on them, and databases have recorded them as applied.
-They are fast to apply, and you can remove them later through squashing.
+They stay because other migrations depend on them, and databases have recorded them as applied.
+They are fast to apply.
+``--prune`` deletes them (see :ref:`pruning`).
 
 **Unused imports.**
-The command never edits imports, so migrations may end up importing modules that they no longer use, such as ``models``.
+The command never removes imports (a fold may add one), so migrations may end up importing modules that they no longer use, such as ``models``.
 Run a linter to remove them.
 For example, with `Ruff <https://docs.astral.sh/ruff/>`__:
 
@@ -459,13 +467,13 @@ For example, with `Ruff <https://docs.astral.sh/ruff/>`__:
     $ ruff check --select F401 --fix */migrations/
 
 **Stale dependencies.**
-Migration dependencies are left untouched, even if a migration no longer needs the dependency it declares.
+Without ``--prune``, migration dependencies are left untouched, even if a migration no longer needs the dependency it declares.
 This is harmless, but means the graph may order migrations more strictly than needed.
 
 **Helper code.**
-Functions that only an operation used, such as a ``RunPython`` callable, are left in place if the ``RunPython`` is not removed.
+When a ``RunPython`` operation is removed, the function it called stays in the file (unless ``--prune`` deletes the whole file).
 
-.. _verifying-your-schema:
+.. _trial-runs:
 
 Trial runs
 ----------
@@ -531,7 +539,8 @@ It is off by default because a project’s own ``post_migrate`` handlers run too
 .. warning::
 
     **A trial on SQLite verifies less than one on PostgreSQL.**
-    SQLite constraints and inline unique indexes have no names worth comparing (Django creates them as part of ``CREATE TABLE`` and rebuilds the table on most changes), so a change of constraint or index name, which matters on PostgreSQL and MySQL, can’t be seen there.
+    SQLite keeps no usable names for unique and foreign key constraints (Django creates them as part of ``CREATE TABLE`` and rebuilds the table on most changes), and a trial there compares only which columns a check constraint covers, not its condition.
+    So a change of constraint name, which matters on PostgreSQL and MySQL, or of a check condition, can’t be seen there.
     If your production database isn’t SQLite, run the trial against a scratch database of the same backend (``--database``).
 
 SQLite column order needs care of its own.
@@ -545,6 +554,8 @@ The removals the default plan makes on its own are blamed only when nothing else
 A problem is blamed on what it names (a field, a model, a table) when it can be, else on half of the suspects at a time, and the plan is solved again without what was blamed, until a plan passes its own trial run.
 Only when nothing is left to blame are ``--prune`` and then ``--noop-data`` given up, with a note.
 If even that plan fails, ``plan --trial`` exits with an error and ``apply --trial`` writes nothing.
+
+.. _pruning:
 
 Pruning empty migrations
 ------------------------
@@ -582,13 +593,19 @@ Rewritten dependency lists keep their other entries as written, ``swappable_depe
     Pruning changes the set of migration names:
 
     * Existing databases keep a row in ``django_migrations`` for each deleted migration.
-      It is harmless; ``python manage.py migrate --prune`` removes such rows.
+      It is harmless; ``python manage.py migrate --prune`` removes such rows, but only run it once the change is deployed everywhere (see below).
     * Branches, or other projects, with migrations that depend on a deleted migration need that dependency updated (to the deleted migration's dependencies) before they can be merged.
     * Tooling that names migrations, such as ``migrate app 0042_x`` in scripts or documentation, needs updating.
 
+To undo a pruning, revert the commit.
+Databases migrated before the change need nothing, as long as their ``django_migrations`` rows for the deleted migrations are still there.
+``migrate --prune`` removes those rows, so after it, ``migrate`` would run the restored migrations again (creating tables that already exist, and so on); mark them as applied first with ``python manage.py migrate --fake <app> <migration>``.
+So only run ``migrate --prune`` once the change is deployed everywhere and you won’t revert it.
+
 With ``--trial``, the trial runs use the pruned graph too, and expect exactly the pruned migrations to be missing from ``django_migrations``.
-If the plan fails its trial run and nothing more can be blamed, the trial doesn’t give up: it drops ``--prune``, then ``--noop-data``, then what it blocked itself, trying again each time, and says which layer it dropped and why (``verification.dropped`` in the plan file).
-If even the default plan differs, that plan is reported with a warning that the trial didn’t verify it.
+If the plan fails its trial run and nothing more can be blamed, the trial drops ``--prune``, then ``--noop-data``, and tries again each time.
+It says what it dropped and why (``verification.dropped`` in the plan file).
+If no plan passes, ``plan --trial`` exits with an error and ``apply --trial`` writes nothing.
 
 
 No-op data migrations
@@ -679,7 +696,8 @@ While migrating, *every* configured database alias is pointed at a scratch datab
   Multi-database projects that migrate several aliases are trialled and profiled one alias at a time;
 * aliases using the dummy backend are left alone; any alias on a backend that can’t have scratch databases (anything but SQLite, PostgreSQL and MySQL) makes the command refuse to run: remove it from ``DATABASES`` for the command.
 
-Every scratch database is dropped afterwards, after closing every connection, also on errors, Ctrl-C and ``SIGTERM``.
+Every scratch database is dropped afterwards, after closing every connection, also on errors, Ctrl+C and ``SIGTERM``.
+Ctrl+C ends any run with a short message and exit status 130, with no migration file changed.
 The real databases are never touched.
 
 Each migrate run happens in a child process of its own (``os.fork()``), which ends with the run, so nothing it leaves in the process (module-level caches of historical models, changed field objects, registered handlers) can affect the next run or the analysis.
@@ -688,6 +706,8 @@ Where ``os.fork()`` doesn’t exist (Windows), runs happen in-process, with a wa
 Only a hard kill (``SIGKILL``, a crash of the machine) can leave a scratch database behind.
 ``compact_migrations scratch`` lists any on the server (or, for SQLite, in the temporary directory), and ``--drop NAME`` or ``--drop-all`` drops them.
 Other trial or profile runs against the same server use scratch databases too, so only drop those you know are left over.
+
+.. _verifying-your-schema:
 
 Verifying your schema
 ---------------------

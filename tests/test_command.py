@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import dataclasses
 import tomllib
+from io import StringIO
 from typing import Any
 
 import pytest
-from django.core.management import CommandError
+from django.core.management import CommandError, call_command
 
-from django_compact_migrations.core import CompactError
+from django_compact_migrations.core import CompactError, Result
 from django_compact_migrations.management.commands.compact_migrations import (
     sqlite_order_warning,
 )
@@ -78,6 +79,9 @@ def test_force_color(history):
 def test_quiet(history):
     out, err = history.command("plan", verbosity=0)
     assert out == err == ""
+    out, err = history.command("apply", verbosity=0)
+    assert out == err == ""
+    assert "Coupon" not in history.read("shop", "0003_drop")
 
 
 def test_check(history):
@@ -91,11 +95,12 @@ def test_check(history):
 
 def test_write(history):
     out, _ = history.command("apply")
+    # Warnings before writing; the summary only once the files are written.
     assert out == PLAN_OUTPUT + (
-        "Removed 4 operations, folded 1 operation and edited 1 operation in 3"
-        " migration files.\n"
         "On SQLite, this plan may change the physical order of columns in rebuilt"
         " tables (harmless for Django); --trial checks it.\n"
+        "Removed 4 operations, folded 1 operation and edited 1 operation in 3"
+        " migration files.\n"
     )
     assert "('rank', models.IntegerField(default=0))" in history.read(
         "shop", "0001_initial"
@@ -213,10 +218,24 @@ def test_plan_file_round_trip(history, tmp_path):
     ]
     assert data["removals"][0]["elements"][0]["operation"] == "CreateModel"
     out, _ = history.command("apply", "--plan", str(plan_path))
-    assert out.startswith(PLAN_OUTPUT + "Removed 4 operations, folded 1 operation")
+    assert out.startswith(PLAN_OUTPUT)
+    assert out.splitlines()[-1].startswith("Removed 4 operations, folded 1 operation")
     assert "Coupon" not in history.read("shop", "0003_drop")
     out, _ = history.command("plan")
     assert out == "No operations to remove.\n"
+
+
+def test_no_summary_when_writing_fails(history, monkeypatch):
+    def fail(self: Result) -> None:
+        raise CompactError("boom")
+
+    monkeypatch.setattr(Result, "write", fail)
+    out = StringIO()
+    history.activate()
+    with history.db_blocker.unblock(), pytest.raises(CommandError, match="boom"):
+        call_command("compact_migrations", "apply", stdout=out)
+    assert out.getvalue().startswith(PLAN_OUTPUT)
+    assert "Removed" not in out.getvalue()
 
 
 def test_plan_file_stale(history, tmp_path):
@@ -333,7 +352,7 @@ def test_trial_report(history):
     # On a "terminal": a live status line, and notes printed above it.
     out, _ = history.command_db("plan", "--trial", "--force-color", verbosity=2)
     assert "harvested: shop.0002_coupon RunPython" in out
-    assert "SQLite trials can't compare constraint names" in out
+    assert "SQLite trials can't compare the names of unique and" in out
 
 
 def test_trial_masked_tables(project):

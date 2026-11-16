@@ -317,8 +317,9 @@ Conditions for every fold:
 
   - a field that gains ``unique=True`` from an ``AlterField`` gets a hashed ``..._uniq`` constraint, while a unique column created with the table (``CREATE TABLE`` or ``AddField``) gets the database’s own name (``..._key`` on PostgreSQL);
   - likewise, a check constraint added by an ``AlterField`` (``PositiveIntegerField``, ``JSONField`` on some backends, custom fields with ``db_check()``) is named ``..._check`` by Django, while an inline one is named by the database: so an ``AlterField`` is only folded or superseded when the definitions involved agree on ``unique`` and on the kind of field that decides the check;
-  - when an ``AlterField`` changes a field’s type, Django drops and recreates the foreign keys pointing at it with a ``..._fk`` suffix, instead of the usual ``..._fk_<table>_<column>``: so no foreign key or many-to-many field is folded, or created by a fold, before an ``AlterField`` of the field it points at, a field that foreign keys point at is never superseded or folded, and an ``AddField`` is only folded into a ``CreateModel`` when no such ``AlterField`` falls between.
-  - a field whose class doesn’t come from ``django.db.models`` (``HStoreField``, a custom field) may need something a ``RunSQL`` or custom operation sets up, such as an extension or a type: it isn’t folded across any opaque operation other than ``RunPython``, since its column would then be created first The same goes for a field with a ``db_collation``, since such an operation may create the collation (NetBox creates ``natural_sort`` that way).
+  - when an ``AlterField`` changes a field’s type, Django drops and recreates the foreign keys pointing at it with a ``..._fk`` suffix, instead of the usual ``..._fk_<table>_<column>``: so no foreign key or many-to-many field is folded, or created by a fold, before an ``AlterField`` of the field it points at, a field that foreign keys point at is never superseded or folded, and an ``AddField`` is only folded into a ``CreateModel`` when no such ``AlterField`` falls between;
+  - a field whose class doesn’t come from ``django.db.models`` (``HStoreField``, a custom field) may need something a ``RunSQL`` or custom operation sets up, such as an extension or a type: it isn’t folded across any opaque operation other than ``RunPython``, since its column would then be created first.
+    The same goes for a field with a ``db_collation``, since such an operation may create the collation (NetBox creates ``natural_sort`` that way).
 
   Index, foreign key and ``unique_together`` names come from the same functions either way, from the table and column names; those must not change in the window, which the rule above ensures.
   These rules were derived from Django’s ``BaseDatabaseSchemaEditor`` (``_iter_column_sql``, ``_alter_field``) and checked by comparing ``pg_dump --schema-only`` of databases migrated with the original and the folded histories of large projects.
@@ -327,7 +328,6 @@ Conditions for every fold:
 * The opaque operations in the window pass the name scan (for the field and its model, the model, the index or constraint name and, for anything enforced such as a constraint, the model), or, with ``--trial``, the trial runs.
 * P can be rewritten: Django’s migration writer must be able to serialize it, every import it needs must be a normal module path that doesn’t clash with a name the file already binds to something else, and the written source must load back to an operation with the same effect.
   For example, an ``AlterModelManagers`` setting just the default manager can’t be folded, since a ``CreateModel`` can’t state that.
-  ``AlterModelTable`` of a managed model is never folded: tables, sequences and indexes created under the new name from the start would get different names than in the original history.
 
 Folds enable each other, and can make more things removable (a foreign key retargeted at P leaves its old model unreferenced).
 So the command analyses the edited history again, removing, superseding and folding, until nothing changes.
@@ -419,10 +419,9 @@ Limitations
   Django uses the squashed migration, so that is the one the command processes.
   The migrations it replaces are neither scanned nor edited.
   Delete them first, once the squash is fully applied everywhere, if you want them compacted.
-* **No folding of operations.**
-  The command removes operations, but doesn’t merge them.
-  An ``AddField`` followed by an ``AlterField`` stays as two operations.
-  It will not rewrite them to a single ``AddField`` with the final definition.
+* **Folds rewrite operations.**
+  An operation that absorbs a fold is regenerated with Django’s migration writer, so it loses its formatting and comments.
+  Use ``--skip-kind fold`` to keep every operation as written.
 * **Conservative about a few things.**
   A field that was ever a primary key is never removed on its own, and ``AlterField`` operations on it, or on many-to-many fields, are never treated as superseded.
   ``order_with_respect_to`` blocks removing the field it names, unless the model goes too.
