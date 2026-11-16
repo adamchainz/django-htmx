@@ -9,11 +9,12 @@ from typing import Any
 import pytest
 from django.core.management import CommandError
 
+from django_compact_migrations import history as history_module
 from django_compact_migrations import planfile
-from django_compact_migrations.core import CompactError
+from django_compact_migrations.core import CompactError, sha256_text
 from django_compact_migrations.patch import PatchError, apply_diff, make_diff
 from django_compact_migrations.planfile import dumps
-from tests.project import ITEM, Project
+from tests.project import ITEM, Project, with_data_migration
 
 LEGACY = 'migrations.AddField("item", "legacy", models.IntegerField(default=0)),'
 REMOVE = 'migrations.RemoveField("item", "legacy"),'
@@ -220,12 +221,6 @@ def test_tool_version_not_installed(monkeypatch):
     assert planfile.tool_version() == "unknown"
 
 
-def test_module_file():
-    assert planfile._module_file("no.such.module") is None
-    assert planfile._module_file("nosuchtoplevelmodule") is None
-    assert planfile._module_file("") is None
-
-
 def test_plan_file_with_missing_migration(project, tmp_path):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
@@ -240,5 +235,124 @@ def test_plan_file_with_missing_migration(project, tmp_path):
     project.command("plan", "-o", str(plan_path))
     project.path("shop", "0002_add").unlink()
     project.purge()
-    with pytest.raises(CompactError, match="can't be read"):
+    with pytest.raises(CompactError, match="Could not load migrations"):
         planfile.load_plan(plan_path)
+
+
+# Plan files are input: they can only edit the project's migrations, and
+# only as the analysis would.
+
+
+def crafted(project: Project, tmp_path: Path) -> tuple[Path, dict[str, Any]]:
+    history(project)
+    plan_path = tmp_path / "plan.toml"
+    project.command("plan", "-o", str(plan_path))
+    return plan_path, tomllib.loads(plan_path.read_text())
+
+
+def retarget(entry: dict[str, Any], path: Path, new: str | None, base: Path) -> None:
+    """Point a plan entry at another file, with consistent hashes and diff."""
+    old = path.read_text()
+    entry["path"] = str(path)
+    entry["sha256_before"] = sha256_text(old)
+    if new is not None:
+        entry["sha256_after"] = sha256_text(new)
+        entry["diff"] = make_diff(old, new, str(path))
+
+
+def apply_refused(
+    project: Project, plan_path: Path, data: dict[str, Any], match: str
+) -> None:
+    plan_path.write_text(dumps(data))
+    before = project.files()
+    with pytest.raises(CommandError, match=match):
+        project.command("apply", "--plan", str(plan_path))
+    assert project.files() == before
+
+
+def test_crafted_plan_cant_edit_other_files(project, tmp_path):
+    plan_path, data = crafted(project, tmp_path)
+    settings_file = project.root / "settings_like.py"
+    settings_file.write_text("DEBUG = False\n")
+    entry = data["files"][0]
+    retarget(entry, settings_file, "DEBUG = False\nimport os\n", tmp_path)
+    # A module that isn't the migration's.
+    entry["module"] = "settings_like"
+    apply_refused(project, plan_path, data, "module of shop.0001_initial")
+    assert settings_file.read_text() == "DEBUG = False\n"
+    # The right module, but a path elsewhere: the path is never used.
+    entry["module"] = f"{project.package}.shop.migrations.0001_initial"
+    apply_refused(project, plan_path, data, "changed since the plan was made")
+    assert settings_file.read_text() == "DEBUG = False\n"
+
+
+def test_crafted_plan_cant_delete_other_files(project, tmp_path):
+    plan_path, data = crafted(project, tmp_path)
+    victim = tmp_path / "victim.txt"
+    victim.write_text("keep me")
+    entry = {
+        "migration": ["shop", "9999_nothing"],
+        "module": "no.such.module",
+        "path": str(victim),
+    }
+    retarget(entry, victim, None, tmp_path)
+    data["deleted"] = [entry]
+    apply_refused(project, plan_path, data, "isn't a migration of this project")
+    assert victim.read_text() == "keep me"
+    # Named twice.
+    data["deleted"] = [data["files"][0] | {}]
+    data["deleted"][0].pop("diff")
+    apply_refused(project, plan_path, data, "names shop.0001_initial twice")
+
+
+def test_plan_cant_edit_read_only_apps(project, tmp_path, monkeypatch):
+    plan_path, data = crafted(project, tmp_path)
+    monkeypatch.setattr(
+        history_module,
+        "read_only_reason",
+        lambda path, root, targeted: "installed package",
+    )
+    apply_refused(project, plan_path, data, r"not editable \(installed package\)")
+
+
+def test_static_plan_recomputed(project, tmp_path):
+    plan_path, data = crafted(project, tmp_path)
+    # A consistent edit (hashes and diff match) that the analysis doesn't make.
+    (entry,) = [f for f in data["files"] if f["migration"][1] == "0002_add"]
+    path = project.path("shop", "0002_add")
+    retarget(entry, path, path.read_text() + "\n# injected\n", tmp_path)
+    apply_refused(project, plan_path, data, "aren't the ones its options give")
+    # Made with other backends configured.
+    data = tomllib.loads(plan_path.read_text())
+    data["options"]["backends"] = ["mysql"]
+    (entry,) = [f for f in data["files"] if f["migration"][1] == "0002_add"]
+    retarget(entry, path, path.read_text() + "\n# injected\n", tmp_path)
+    apply_refused(project, plan_path, data, "other database backends configured")
+
+
+def test_trial_plan_verified_after_writing(project, tmp_path):
+    history(project)
+    plan_path = tmp_path / "plan.toml"
+    project.command_db("plan", "--trial", "-o", str(plan_path))
+    data = tomllib.loads(plan_path.read_text())
+    assert data["verification"]["mode"] == "trial"
+    # The same final state and operations, but the fields in another order:
+    # only the in-memory check after writing sees it.
+    (entry,) = [f for f in data["files"] if f["migration"][1] == "0001_initial"]
+    path = project.path("shop", "0001_initial")
+    rewritten = apply_diff(path.read_text(), entry["diff"])
+    name = "                ('name', models.CharField(max_length=10)),\n"
+    swapped = rewritten.replace(name, "").replace(
+        "            ],\n", name + "            ],\n", 1
+    )
+    assert swapped != rewritten
+    retarget(entry, path, swapped, tmp_path)
+    apply_refused(project, plan_path, data, "in another order.*may have been edited")
+
+
+def test_recorded_verification_labelled(project, tmp_path):
+    with_data_migration(project, "pass")
+    plan_path = tmp_path / "plan.toml"
+    project.command("plan", "--trial", "-o", str(plan_path))
+    out, _ = project.command("apply", "--plan", str(plan_path))
+    assert "Trial (recorded in the plan): " in out

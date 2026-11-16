@@ -35,6 +35,7 @@ def test_dry_run(history):
     assert out == PLAN_OUTPUT + (
         "Would remove 4 operations, fold 1 operation and edit 1 operation in 3"
         " migration files.\n"
+        "Would edit migration files of: shop.\n"
         "On SQLite, this plan may change the physical order of columns in rebuilt"
         " tables (harmless for Django); --trial checks it.\n"
         "Run 'compact_migrations apply' to apply.\n"
@@ -99,6 +100,9 @@ def test_write(history):
     assert out == PLAN_OUTPUT + (
         "On SQLite, this plan may change the physical order of columns in rebuilt"
         " tables (harmless for Django); --trial checks it.\n"
+        "The migration files aren't in a Git work tree, so review and keep a copy"
+        " of them yourself.\n"
+        "Editing migration files of: shop.\n"
         "Removed 4 operations, folded 1 operation and edited 1 operation in 3"
         " migration files.\n"
     )
@@ -121,7 +125,7 @@ def test_empty_migrations_summary(project):
     )
     project.migration("shop", "0003_remove", 'migrations.RemoveField("item", "x"),')
     out, _ = project.command("plan")
-    assert out.splitlines()[-2] == (
+    assert out.splitlines()[-3] == (
         "Would remove 2 operations in 2 migration files."
         " 2 migrations would be left with no operations."
     )
@@ -226,7 +230,7 @@ def test_plan_file_round_trip(history, tmp_path):
 
 
 def test_no_summary_when_writing_fails(history, monkeypatch):
-    def fail(self: Result) -> None:
+    def fail(self: Result, **kwargs: Any) -> None:
         raise CompactError("boom")
 
     monkeypatch.setattr(Result, "write", fail)
@@ -299,7 +303,7 @@ def test_library_round_trip(history, tmp_path):
 def test_apply_failure(history, monkeypatch):
     from django_compact_migrations.core import Result
 
-    def fail(self: Result) -> None:
+    def fail(self: Result, **kwargs: Any) -> None:
         raise CompactError("cannot write")
 
     monkeypatch.setattr(Result, "write", fail)
@@ -426,7 +430,7 @@ def test_summary_wording(project):
     )
     project.migration("shop", "0002_drop", 'migrations.RemoveField("item", "legacy"),')
     out, _ = project.command("plan")
-    assert out.splitlines()[-2] == (
+    assert out.splitlines()[-3] == (
         "Would remove 1 operation and edit 1 operation in 2 migration files."
         " 1 migration would be left with no operations."
     )

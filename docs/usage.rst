@@ -23,6 +23,10 @@ So, before running ``compact_migrations apply``:
 
 * Make sure production, staging, and any shared databases are up to date.
 * Commit your work, so you can review and revert the changes with Git.
+  ``apply`` refuses to edit migration files with uncommitted changes, so that its edit can be reviewed and reverted on its own (``--allow-dirty`` allows it), and warns when they aren’t in Git at all.
+
+``apply`` checks that every file can be written before it writes any (read-only files and symbolic links are refused).
+It keeps a copy of the originals in a ``.compact-migrations-journal`` directory at the project root until the result is verified; if it is killed in between, the next ``plan`` or ``apply`` restores the files it changed, unless they changed again since.
 
 ``plan`` and ``apply`` on their own only read and write migration files.
 Trial runs (``--trial``, ``--noop-data``) and ``profile`` also create and drop temporary databases on the server of the ``--database`` alias, and run your migrations, data migrations included, on them.
@@ -207,17 +211,23 @@ With ``--show-blocked``, the file also lists what was kept and why (``[[blocked]
 With ``--prune``, deleted files are listed under ``[[deleted]]``, with the hash of their content.
 Paths are relative to the plan file, and ``tool_version`` says which version of django-compact-migrations made the plan.
 
-``apply --plan`` finds each file through its module, as Python imports it now, so it can be run from any directory.
+A plan file is input like any other: ``apply --plan`` only uses it to edit the project’s own migrations, as the analysis would.
+It finds each migration through Django’s migration loader, by app label and name, never through the paths in the file, and refuses a plan that names anything that isn’t an editable migration of the project, or gives another module for it.
 It refuses to write anything if any file changed since the plan was made (its SHA-256 hash differs), if a diff doesn’t apply exactly (no fuzz: every context and removed line must match where the hunk says), or if applying it doesn’t give the file the plan was made for (``sha256_after``).
+A plan made without ``--trial`` is made again from its recorded options, and must give exactly the same edits, so it can’t have been edited, or made from other files or settings (such as other database backends).
+A trial plan can’t be made again without its trial runs: its edits are checked after writing, against the history as analysed now, as a plan is checked before it is reported, and its trial results are shown as “recorded in the plan”.
+Only apply trial plans that you made, or whose diffs you reviewed.
 In the diffs, TOML escapes double quotes and backslashes (``\"`` and ``\\``).
 Files are read and written back as Python reads them: with their line endings, their byte order mark or ``coding`` declaration, and without a final newline if they had none.
-It then writes the files and verifies them exactly as ``apply`` without a plan does.
+It then writes the files and verifies them as ``apply`` without a plan does.
 A plan file can’t be combined with targets or other analysis options.
 
 Django’s own options (``-v``, ``--no-color``, ``--force-color``, ``--traceback``, ``--skip-checks``, ``--settings``, ``--pythonpath``) can go before or after the subcommand.
 
-By default the command considers every app that has at least one migration file inside your project.
-Migrations installed from third-party packages are read, because their operations matter for working out what is safe, but they are never edited.
+By default the command edits the migrations of every app whose migration files are inside your project: under the top of the Git work tree you run it in, or, outside Git, the current directory, and not inside a virtual environment.
+Migrations elsewhere, such as editable installs in a virtual environment or packages added to ``sys.path``, are only read, with a warning; name the app as a target to edit them too.
+Migrations installed from packages (in ``site-packages``) are read, because their operations matter for working out what is safe, but they are never edited.
+The report says which apps’ migration files would be edited.
 
 Targets
 -------

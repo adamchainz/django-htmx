@@ -137,7 +137,11 @@ class TestThirdParty:
             deps=deps,
         )
         monkeypatch.setattr(
-            history, "is_editable_path", lambda path: "vendor" not in path.parts
+            history,
+            "read_only_reason",
+            lambda path, root, targeted: (
+                "installed package" if "vendor" in path.parts else ""
+            ),
         )
 
     def test_unordered_ignored(self, project, monkeypatch):

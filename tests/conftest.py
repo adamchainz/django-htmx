@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 
+from django_compact_migrations import worktree
 from tests.project import ITEM, Project, server_alias
 
 
@@ -17,7 +18,13 @@ def no_bytecode(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
-def project(tmp_path: Path, django_db_blocker: Any) -> Iterator[Project]:
+def project(
+    tmp_path: Path, django_db_blocker: Any, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[Project]:
+    # The command edits migrations under the project root only (the current
+    # directory's Git work tree); the forked runs' coverage data needs the
+    # current directory left alone.
+    monkeypatch.setattr(worktree, "project_root", lambda: tmp_path.resolve())
     p = Project(tmp_path, django_db_blocker)
     try:
         yield p

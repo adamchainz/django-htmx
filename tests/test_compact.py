@@ -1550,7 +1550,11 @@ class TestEditability:
             "shop", "0003_remove", 'migrations.RemoveField("item", "legacy"),'
         )
         monkeypatch.setattr(
-            history, "is_editable_path", lambda path: path.name != "0002_add.py"
+            history,
+            "read_only_reason",
+            lambda path, root, targeted: (
+                "installed package" if path.name == "0002_add.py" else ""
+            ),
         )
         result = project.compact()
         assert blocked(result)["shop.Item.legacy"] == (

@@ -277,7 +277,7 @@ def _static_block(
     migration = info.migration
     app = info.app_label
     if not info.editable or info.source is None or info.path is None:
-        return "it is not editable (installed package)"
+        return f"it is not editable ({info.read_only})"
     if app not in scope.apps or scope.app_excluded(app):
         return f"app {app!r} is not selected"
     if getattr(migration, "replaces", None):

@@ -8,7 +8,7 @@ import io
 import re
 import sys
 import tokenize
-from collections.abc import Iterable, Sequence
+from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
@@ -21,6 +21,7 @@ from django.db.migrations.operations.base import Operation
 from tokenize_rt import Token, src_to_tokens
 
 from django_compact_migrations import tokens as tk
+from django_compact_migrations import worktree
 
 Key = tuple[str, str]
 
@@ -115,6 +116,8 @@ class MigrationInfo:
     path: Path | None
     editable: bool
     source: SourceFile | None
+    read_only: str = ""
+    """Why it isn't editable, e.g. "installed package"."""
     op_nodes: list[ast.Call] | None = None
     ops_container: ast.List | ast.Tuple | None = None
     unlocatable_reason: str | None = None
@@ -180,7 +183,7 @@ class OpRecord:
     def not_editable_reason(self) -> str | None:
         mig = self.migration.on_disk
         if not mig.editable:
-            return f"{mig.label} is not editable (installed package)"
+            return f"{mig.label} is not editable ({mig.read_only})"
         if not mig.locatable:
             return (
                 f"operations list in {mig.label} could not be parsed"
@@ -256,8 +259,14 @@ def migration_path(migration: Migration) -> Path | None:
     return Path(filename)
 
 
-def is_editable_path(path: Path) -> bool:
-    return not any(part in ("site-packages", "dist-packages") for part in path.parts)
+def read_only_reason(path: Path, root: Path, targeted: bool) -> str:
+    """Why a migration file can't be edited ("" if it can): it must be part
+    of the project, unless its app is named as a target; never part of an
+    installed package."""
+    reason = worktree.read_only_reason(path, root)
+    if reason is None or (targeted and reason != "installed package"):
+        return ""
+    return reason
 
 
 def callee_name(node: ast.expr) -> str | None:
@@ -335,9 +344,16 @@ def locate_operations(info: MigrationInfo) -> None:
     info.op_nodes = nodes
 
 
-def load_history(loader: MigrationLoader | None = None) -> History:
+def load_history(
+    loader: MigrationLoader | None = None, *, targeted: Collection[str] = ()
+) -> History:
+    """
+    The migration history, in plan order. Migrations of apps in
+    ``targeted`` may be edited outside the project too.
+    """
     if loader is None:
         loader = MigrationLoader(None, ignore_no_migrations=True)
+    root = worktree.project_root()
     graph = loader.graph
     plan = generate_plan(graph)
     warnings: list[str] = []
@@ -357,7 +373,14 @@ def load_history(loader: MigrationLoader | None = None) -> History:
         migration = graph.nodes[key]
         path = migration_path(migration)
         source = _read_source(path) if path is not None else None
-        editable = path is not None and is_editable_path(path) and source is not None
+        read_only = (
+            "no source file"
+            if path is None
+            else "its source can't be read"
+            if source is None
+            else read_only_reason(path, root, key[0] in targeted)
+        )
+        editable = not read_only
         info = MigrationInfo(
             key=key,
             migration=migration,
@@ -365,12 +388,25 @@ def load_history(loader: MigrationLoader | None = None) -> History:
             path=path,
             editable=editable,
             source=source,
+            read_only=read_only,
         )
         locate_operations(info)
         migrations.append(info)
         by_key[key] = info
         for i, op in enumerate(migration.operations):
             ops.append(OpRecord(info, i, op, len(ops)))
+    outside = sorted(
+        {
+            m.app_label
+            for m in migrations
+            if m.read_only in ("outside the project", "in a virtual environment")
+        }
+    )
+    if outside:
+        warnings.append(
+            f"Migrations of {', '.join(outside)} are outside the project ({root}),"
+            " so they are only read; name the app as a target to edit them."
+        )
     return History(loader, plan, migrations, by_key, ops, warnings)
 
 

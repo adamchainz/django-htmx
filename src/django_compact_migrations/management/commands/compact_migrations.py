@@ -30,6 +30,7 @@ from django_compact_migrations.scratch import (
     list_leftovers,
 )
 from django_compact_migrations.solver import KINDS, OPAQUE_POLICIES
+from django_compact_migrations.writer import journal_dir, recover
 
 KIND_STYLES = {
     "model": "red",
@@ -101,6 +102,13 @@ class Command(RichCommand):
             dest="plan_file",
             help="A plan file saved by 'plan --output'. Refused if any"
             " migration file changed since.",
+        )
+        apply_parser.add_argument(
+            "--allow-dirty",
+            action="store_true",
+            help="Edit migration files that have changes Git hasn't committed"
+            " (refused by default, so the edit can be reviewed and reverted"
+            " on its own).",
         )
         _add_selection_arguments(apply_parser)
         _add_trial_arguments(apply_parser)
@@ -185,6 +193,18 @@ class Command(RichCommand):
         if subcommand == "scratch":
             self._scratch(options)
             return
+        # A write that was killed half-way is undone before anything else.
+        try:
+            restored = recover()
+        except (OSError, ValueError, KeyError) as exc:
+            raise CommandError(
+                f"An interrupted apply left {journal_dir()}, which can't be"
+                f" read ({exc}); restore its files by hand."
+            ) from None
+        for message in restored:
+            self._stderr_console(options).print(
+                message, style="yellow", soft_wrap=True, highlight=False
+            )
         show_blocked = options["show_blocked"] or verbosity >= 2
         if subcommand == "apply" and options["plan_file"]:
             if _has_selection(options):
@@ -202,6 +222,7 @@ class Command(RichCommand):
         if subcommand == "plan":
             if verbosity > 0 and result.changed:
                 self._print(Text(summary(result, False), style="bold green"))
+                self._print(Text(_edited_apps(result, False), style="dim"))
                 self._report_warnings(result, options)
             if options["output"]:
                 save_plan(result, options["output"], blocked=show_blocked)
@@ -225,10 +246,17 @@ class Command(RichCommand):
             return
         # Warnings first: the summary says what was done, so it comes once
         # the files are written and verified.
+        try:
+            notes = result.check_worktree(allow_dirty=options["allow_dirty"])
+        except CompactError as exc:
+            raise CommandError(str(exc)) from None
         if verbosity > 0:
             self._report_warnings(result, options)
+            for note in notes:
+                self._print(Text(note, style="yellow"))
+            self._print(Text(_edited_apps(result, True), style="dim"))
         try:
-            result.write()
+            result.write(allow_dirty=options["allow_dirty"])
         except CompactError as exc:
             raise CommandError(str(exc)) from None
         if verbosity > 0:
@@ -434,7 +462,8 @@ class Command(RichCommand):
         if info.get("mode") != "trial":
             return
         line = (
-            f"Trial: {count_noun(info['runs'], 'migrate run')} on"
+            ("Trial (recorded in the plan): " if result.from_plan else "Trial: ")
+            + f"{count_noun(info['runs'], 'migrate run')} on"
             f" {info.get('server') or info['vendor']} in {info['seconds']:.1f}s;"
             f" unlocked {count_noun(info['unlocked'], 'removal')} of"
             f" {info['at_risk']} that the static scan blocks"
@@ -772,6 +801,12 @@ def _has_selection(options: dict[str, Any]) -> bool:
         or options["noop_data"]
         or options["prune"]
     )
+
+
+def _edited_apps(result: Result, write: bool) -> str:
+    apps = sorted({c.migration[0] for c in result.files})
+    verb = "Editing" if write else "Would edit"
+    return f"{verb} migration files of: {', '.join(apps)}."
 
 
 def _ops(count: int) -> str:

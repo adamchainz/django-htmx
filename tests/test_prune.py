@@ -611,7 +611,7 @@ def test_empty_migration_not_editable(project, monkeypatch):
     unreadable(monkeypatch, "0002_nothing")
     result = project.compact(**PRUNE)
     assert prune_blocks(result)["shop.0002_nothing"] == (
-        "it is not editable (installed package)"
+        "it is not editable (its source can't be read)"
     )
 
 
@@ -818,6 +818,7 @@ def test_prune_independent_of_hash_seed(project):
                     project.package,
                 ],
                 env={**os.environ, "PYTHONHASHSEED": seed},
+                cwd=project.root,  # the project root: its migrations are edited
                 capture_output=True,
                 text=True,
                 check=True,

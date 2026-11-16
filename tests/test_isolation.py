@@ -6,6 +6,7 @@ from __future__ import annotations
 import os
 import pickle
 import signal
+import subprocess
 import sys
 import tomllib
 import warnings
@@ -248,7 +249,12 @@ def test_skip_checks_after_subcommand(project):
 
 
 def test_apply_plan_from_elsewhere(project, tmp_path, monkeypatch):
+    # The project root is the Git work tree, from any directory in it.
+    git = ["git", "-C", str(tmp_path), "-c", "user.name=t", "-c", "user.email=t@t"]
+    subprocess.run([*git, "init", "-q"], check=True)
     with_data_migration(project, "pass")
+    subprocess.run([*git, "add", "-A"], check=True)
+    subprocess.run([*git, "commit", "-qm", "init"], check=True)
     plans = tmp_path / "plans"
     plans.mkdir()
     monkeypatch.chdir(plans)

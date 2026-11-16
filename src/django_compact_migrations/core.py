@@ -8,8 +8,6 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import os
-import shutil
-import tempfile
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -73,6 +71,13 @@ from django_compact_migrations.verify import (
     state_from_disk,
     verify_in_memory,
     verify_on_disk,
+)
+from django_compact_migrations.worktree import uncommitted
+from django_compact_migrations.writer import (
+    Planned,
+    WriteError,
+    check_writable,
+    write_files,
 )
 
 __all__ = [
@@ -197,21 +202,52 @@ class Result:
     """Migrations deleted (--prune)."""
     _plan_keys: list[Key] | None = field(default=None, repr=False)
     _final_state: ProjectState | None = field(default=None, repr=False)
+    _reference: Analysis | None = field(default=None, repr=False)
+    """For a loaded plan: the history as analysed before writing, to check
+    the written one against in memory too."""
+    from_plan: bool = False
+    """Loaded from a plan file: its verification is as recorded there."""
 
     @property
     def changed(self) -> bool:
         return bool(self.files)
 
-    def write(self) -> None:
+    def check_worktree(self, *, allow_dirty: bool = False) -> list[str]:
+        """
+        Refuse files that can't be written, and, unless ``allow_dirty``,
+        files with changes Git hasn't committed (they would be mixed with
+        this edit). Return notes to show, such as files not in Git.
+        """
+        paths = [c.path for c in self.files]
+        try:
+            check_writable(paths)
+        except WriteError as exc:
+            raise CompactError(str(exc)) from exc
+        dirty = uncommitted(paths)
+        if dirty is None:
+            return [
+                "The migration files aren't in a Git work tree, so review and"
+                " keep a copy of them yourself."
+            ]
+        if dirty and not allow_dirty:
+            raise CompactError(
+                "These migration files have changes that aren't committed, so"
+                f" nothing was written: {', '.join(map(str, dirty))}. Commit or"
+                " stash them first (or pass --allow-dirty)."
+            )
+        return []
+
+    def write(self, *, allow_dirty: bool = False) -> None:
         """
         Write the rewritten files, then reload them from disk and check the
         resulting project state; on any failure restore every file and raise
-        CompactError.
+        CompactError. See ``check_worktree`` for ``allow_dirty``.
 
         For a loaded plan, every file must still have the content the plan
         was made from.
         """
         self._check_unchanged()
+        self.check_worktree(allow_dirty=allow_dirty)
         if self._final_state is None or self._plan_keys is None:
             _forget(self.files)
             try:
@@ -239,37 +275,36 @@ class Result:
         expected = {
             c.migration: list(c.operations_after) for c in self.files if not c.deleted
         }
-        # Registered before writing: a failure (or interrupt) mid-write must
-        # still restore that file.
-        touched: list[FileChange] = []
-        try:
-            for change in self.files:
-                touched.append(change)
-                if change.deleted:
-                    change.path.unlink()
-                else:
-                    _write_text(change.path, change.new, change.encoding)
+
+        def verify() -> None:
             _forget(self.files)
             verify_on_disk(plan_keys, final_state, expected, pruned, ancestors, ends)
-        except BaseException as exc:
-            unrestored: list[str] = []
-            for change in touched:
-                try:
-                    _write_text(change.path, change.original, change.encoding)
-                except OSError as restore_exc:
-                    unrestored.append(f"{change.path} ({restore_exc})")
+            if self._reference is not None:
+                _verify_written(self._reference, pruned)
+
+        planned = [
+            Planned(c.path, None if c.deleted else c.new.encode(c.encoding))
+            for c in self.files
+        ]
+        try:
+            write_files(planned, verify)
+        except WriteError as exc:
             _forget(self.files)
-            if unrestored:
-                raise CompactError(
-                    f"Writing the migration files failed ({exc!r}) and these"
-                    f" could not be restored: {', '.join(unrestored)}."
-                ) from exc
-            if not isinstance(exc, Exception):
-                raise
+            raise CompactError(str(exc)) from exc
+        except Exception as exc:
+            _forget(self.files)
             raise CompactError(
                 "Writing or verifying the rewritten migration files failed, so"
-                f" they were restored: {exc}. Please report this as a bug."
+                f" they were restored: {exc}. "
+                + (
+                    "The plan file may have been edited."
+                    if self.from_plan
+                    else "Please report this as a bug."
+                )
             ) from exc
+        except BaseException:
+            _forget(self.files)
+            raise
 
     def _check_unchanged(self) -> None:
         stale = []
@@ -288,23 +323,21 @@ class Result:
             )
 
 
-def _write_text(path: Path, text: str, encoding: str = "utf-8") -> None:
-    """Replace ``path`` atomically, keeping its permissions."""
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "wb") as f:
-            f.write(text.encode(encoding))
-        try:
-            shutil.copymode(path, tmp)
-        except OSError:
-            pass
-        os.replace(tmp, path)
-    except BaseException:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
+def _verify_written(reference: Analysis, pruned: Collection[Key]) -> None:
+    """The history on disk, checked in memory against ``reference`` as a
+    plan is checked before it is reported (dangling references, the order
+    of models and fields, the final state)."""
+    loader = MigrationLoader(None, ignore_no_migrations=True)
+    history = reference.history
+    edited = {
+        info.index: []
+        if info.key in pruned
+        else list(loader.graph.nodes[info.key].operations)
+        for info in history.migrations
+    }
+    verify_in_memory(
+        history, edited, reference.timeline.dangling, reference.timeline.state
+    )
 
 
 def _forget(changes: Sequence[FileChange]) -> None:
@@ -633,17 +666,19 @@ def analyse(
     except SelectionError as exc:
         raise CompactError(str(exc)) from exc
 
-    try:
-        history = load_history()
-    except Exception as exc:
-        raise CompactError(f"Could not load migrations: {exc}") from exc
-
     app_labels = [a.label for a in apps.get_app_configs()]
     try:
         target_list = [Target.parse(t, app_labels) for t in targets]
         exclude_list = [Target.parse(t, app_labels) for t in exclude]
     except SelectionError as exc:
         raise CompactError(str(exc)) from exc
+
+    try:
+        # The project's own migrations are edited, and those of apps
+        # named as targets.
+        history = load_history(targeted={t.app_label for t in target_list})
+    except Exception as exc:
+        raise CompactError(f"Could not load migrations: {exc}") from exc
     default_apps = frozenset(m.app_label for m in history.migrations if m.editable)
     scope = Scope(target_list, exclude_list, kind_set, default_apps)
 

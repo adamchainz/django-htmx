@@ -21,9 +21,10 @@ That is fine as long as every database has the squashed migration recorded as ap
 Which migrations are edited
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-A migration is a *project migration*, and may be edited, when the path of its file has no ``site-packages`` or ``dist-packages`` component.
+A migration is a *project migration*, and may be edited, when its file is under the project root (the top of the Git work tree holding the current directory, else the current directory), not inside a virtual environment (a directory with ``pyvenv.cfg``), and not part of an installed package (a ``site-packages``, ``dist-packages``, ``.dist-info`` or ``.egg`` path component).
+A migration outside the project is also editable when its app is named as a target; one in an installed package never is.
 It’s the file that counts, not the app, so if you point ``MIGRATION_MODULES`` at a package inside your project, those migrations are editable.
-Migrations from installed packages are replayed, because their operations affect which references exist, but never edited.
+Other migrations are replayed, because their operations affect which references exist, but never edited.
 
 To edit a file, the command also needs to find each operation in the source.
 It parses the file, and looks for a single ``operations = [...]`` assignment in ``class Migration``.

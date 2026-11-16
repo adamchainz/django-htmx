@@ -8,7 +8,6 @@ files, each edit as a unified diff.
 from __future__ import annotations
 
 import datetime
-import importlib.util
 import os
 import tomllib
 from importlib.metadata import PackageNotFoundError, version
@@ -16,17 +15,22 @@ from pathlib import Path
 from typing import Any
 
 import tomli_w
+from django.db.migrations.loader import MigrationLoader
 
 from django_compact_migrations.core import (
+    Analysis,
     Blocked,
     CompactError,
     FileChange,
     Location,
     Removal,
     Result,
+    analyse,
+    build,
+    make_result,
     sha256_text,
 )
-from django_compact_migrations.history import read_python
+from django_compact_migrations.history import History, Key, MigrationInfo
 from django_compact_migrations.patch import PatchError, apply_diff, make_diff
 
 FORMAT = "django-compact-migrations-plan"
@@ -186,43 +190,59 @@ def save_plan(
     os.replace(tmp, path)
 
 
-def _resolve(path: str, base: Path) -> Path:
-    p = Path(path)
-    return p if p.is_absolute() else base / p
-
-
-def _module_file(module: str) -> Path | None:
-    """Where the migration module is now, as Python would import it."""
-    try:
-        spec = importlib.util.find_spec(module)
-    except (ImportError, ValueError):
-        return None
-    if spec is None or not spec.origin or not os.path.isfile(spec.origin):
-        return None
-    return Path(spec.origin)
-
-
 def _location(loc: dict[str, Any], base: Path) -> Location:
+    path = loc.get("path")
     return Location(
         migration=(loc["migration"][0], loc["migration"][1]),
-        path=_resolve(loc["path"], base) if loc.get("path") else None,
+        path=(Path(path) if Path(path).is_absolute() else base / path)
+        if path
+        else None,
         line=loc.get("line"),
         operation=loc["operation"],
         detail=loc.get("detail"),
     )
 
 
-def _file_change(f: dict[str, Any], base: Path, deleted: bool) -> FileChange:
-    # The migration module, as imported now, wins: the plan may have been
-    # moved since; the hash checks catch any mix-up.
-    file_path = _module_file(f["module"]) or _resolve(f["path"], base)
-    try:
-        original, encoding = read_python(file_path)
-    except (OSError, UnicodeDecodeError, SyntaxError, LookupError) as exc:
+def _migration_file(f: dict[str, Any], history: History) -> MigrationInfo:
+    """
+    The file of the migration an entry names, as the project's migration
+    loader finds it now: the plan's ``module`` and ``path`` are never used
+    to find a file, only checked.
+    """
+    key = (str(f["migration"][0]), str(f["migration"][1]))
+    info = history.by_key.get(key)
+    if info is None:
         raise CompactError(
-            f"Migration file {f['path']} from the plan can't be read ({exc})."
-        ) from exc
-    migration = (f["migration"][0], f["migration"][1])
+            f"The plan names {key[0]}.{key[1]}, which isn't a migration of this"
+            " project, so nothing was written."
+        )
+    package, _ = MigrationLoader.migrations_module(key[0])
+    module = f"{package}.{key[1]}"
+    if f["module"] != module or type(info.migration).__module__ != module:
+        raise CompactError(
+            f"The plan gives {f['module']!r} as the module of {info.label},"
+            f" which is {module!r}, so nothing was written."
+        )
+    if not info.editable:
+        raise CompactError(
+            f"The plan edits {info.label}, which is not editable"
+            f" ({info.read_only}), so nothing was written."
+        )
+    return info
+
+
+def _file_change(
+    f: dict[str, Any], history: History, deleted: bool, seen: set[Key]
+) -> FileChange:
+    info = _migration_file(f, history)
+    key = info.key
+    if key in seen:
+        raise CompactError(f"The plan names {key[0]}.{key[1]} twice.")
+    seen.add(key)
+    # Editable: its source was read when the history was loaded.
+    assert info.source is not None and info.path is not None
+    file_path = info.path
+    original, encoding = info.source.text, info.source.encoding
     if sha256_text(original, encoding) != f["sha256_before"]:
         raise CompactError(
             f"{file_path} changed since the plan was made, so nothing was"
@@ -244,7 +264,7 @@ def _file_change(f: dict[str, Any], base: Path, deleted: bool) -> FileChange:
             )
     return FileChange(
         path=file_path,
-        migration=migration,
+        migration=key,
         module=f["module"],
         original=original,
         new=new,
@@ -253,6 +273,28 @@ def _file_change(f: dict[str, Any], base: Path, deleted: bool) -> FileChange:
         deleted=deleted,
         encoding=encoding,
     )
+
+
+def _check_recomputed(result: Result, analysis: Analysis) -> None:
+    """A static plan must be exactly what the project gives now with the
+    plan's options: anything else was edited, or made from other files."""
+    analysis.options["noop_data"] = False
+    analysis.options["prune"] = bool(result.options.get("prune"))
+    solution = analysis.solve()
+    fresh = make_result(analysis, solution, build(analysis, solution))
+    edits = {c.migration: (c.deleted, c.new) for c in result.files}
+    if edits != {c.migration: (c.deleted, c.new) for c in fresh.files}:
+        backends_note = ""
+        if sorted(result.options.get("backends", [])) != analysis.options["backends"]:
+            backends_note = (
+                " The plan was made with other database backends configured"
+                f" ({', '.join(result.options.get('backends', [])) or 'none'})."
+            )
+        raise CompactError(
+            "The plan's edits aren't the ones its options give for this"
+            " project now, so nothing was written: the plan was edited, or"
+            f" made from other files or settings.{backends_note} Make a new plan."
+        )
 
 
 def load_plan(path: str | os.PathLike[str]) -> Result:
@@ -271,8 +313,22 @@ def load_plan(path: str | os.PathLike[str]) -> Result:
         )
     base = path.resolve().parent
     try:
-        files = [_file_change(f, base, False) for f in data["files"]]
-        files += [_file_change(f, base, True) for f in data["deleted"]]
+        options = data["options"]
+        try:
+            analysis = analyse(
+                options["targets"],
+                exclude=options["exclude"],
+                kinds=options["kinds"],
+                opaque=options["opaque"],
+                elidable=options["elidable"],
+            )
+        except CompactError as exc:
+            raise CompactError(f"The plan's options don't apply here: {exc}") from exc
+        seen: set[Key] = set()
+        files = [_file_change(f, analysis.history, False, seen) for f in data["files"]]
+        files += [
+            _file_change(f, analysis.history, True, seen) for f in data["deleted"]
+        ]
         removals = [
             Removal(
                 kind=r["kind"],
@@ -301,7 +357,7 @@ def load_plan(path: str | os.PathLike[str]) -> Result:
             for b in data.get("blocked", [])
         ]
         summary = data["summary"]
-        return Result(
+        result = Result(
             removals=removals,
             blocked=blocked,
             warnings=list(data["warnings"]),
@@ -311,8 +367,13 @@ def load_plan(path: str | os.PathLike[str]) -> Result:
             folded_operations=summary["folded_operations"],
             empty_migrations=[(a, n) for a, n in summary["empty_migrations"]],
             pruned_migrations=[(a, n) for a, n in summary["pruned_migrations"]],
-            options=data["options"],
+            options=options,
             verification=data["verification"],
+            from_plan=True,
+            _reference=analysis,
         )
     except (KeyError, TypeError, ValueError, IndexError) as exc:
         raise CompactError(f"Malformed plan file {path}: {exc!r}") from exc
+    if result.verification.get("mode") != "trial":
+        _check_recomputed(result, analysis)
+    return result

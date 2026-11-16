@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from django_compact_migrations import core, planfile
+from django_compact_migrations import core, planfile, writer
 from django_compact_migrations.core import CompactError, Location
 from django_compact_migrations.prune import PruneError
 from django_compact_migrations.rewrite import RewriteError
@@ -60,10 +60,10 @@ def test_restore_failure(project, monkeypatch):
     dead_field(project)
     result = project.compact()
 
-    def fail(path: Path, text: str, encoding: str = "utf-8") -> None:
+    def fail(path: Path, data: bytes, mode: int) -> None:
         raise OSError("disk full")
 
-    monkeypatch.setattr(core, "_write_text", fail)
+    monkeypatch.setattr(writer, "_replace", fail)
     with pytest.raises(CompactError, match="could not be restored") as info:
         result.write()
     assert "disk full" in str(info.value)
@@ -79,7 +79,7 @@ def test_write_text_cleans_up(tmp_path, monkeypatch):
     monkeypatch.setattr(os, "replace", fail)
     monkeypatch.setattr(os, "unlink", fail)
     with pytest.raises(OSError, match="no"):
-        core._write_text(path, "new")
+        writer._replace(path, b"new", 0o644)
     assert path.read_text() == "old"
 
 
@@ -89,8 +89,21 @@ def test_loaded_plan_with_broken_module(project, tmp_path):
     project.command("plan", "-o", str(plan_path))
     project.migration("shop", "0004_broken", extra='raise ValueError("boom")')
     project.purge()
+    with (
+        project.db_blocker.unblock(),
+        pytest.raises(CompactError, match="Could not load migrations: boom"),
+    ):
+        planfile.load_plan(plan_path)
+
+
+def test_loaded_plan_then_broken_module(project, tmp_path):
+    dead_field(project)
+    plan_path = tmp_path / "plan.toml"
+    project.command("plan", "-o", str(plan_path))
     with project.db_blocker.unblock():
         result = planfile.load_plan(plan_path)
+        project.migration("shop", "0004_broken", extra='raise ValueError("boom")')
+        project.purge()
         with pytest.raises(CompactError, match="Could not load migrations: boom"):
             result.write()
 
@@ -291,17 +304,17 @@ class TestWriteRestores:
         self.dead_field(project)
         before = project.files()
         result = project.compact()
-        real = core._write_text
+        real = writer._replace
         calls = []
 
-        def flaky(path, text, encoding="utf-8"):
+        def flaky(path, data, mode):
             calls.append(path)
             if len(calls) == 2:
                 path.write_text("garbage")  # a torn write
                 raise OSError("disk full")
-            real(path, text, encoding)
+            real(path, data, mode)
 
-        monkeypatch.setattr(core, "_write_text", flaky)
+        monkeypatch.setattr(writer, "_replace", flaky)
         with pytest.raises(CompactError, match="restored: disk full"):
             result.write()
         assert project.files() == before
