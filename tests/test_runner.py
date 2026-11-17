@@ -3,9 +3,11 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from django.conf import settings
 from django.db import connections
 from django.db.migrations.loader import MigrationLoader
 from django.db.models.signals import post_migrate, pre_migrate
+from django.test import override_settings
 
 from django_compact_migrations.runner import RunError, run_history
 from django_compact_migrations.scratch import scratch_database
@@ -82,3 +84,49 @@ class RunnerTests(ProjectTestCase):
             finally:
                 signal_.disconnect(dispatch_uid="test_signal_handler_failures")
         assert connections["default"].vendor == "sqlite"
+
+    def test_post_migrate_models_in_state_order(self):
+        # A reloaded model moves to the end of the delayed apps cache;
+        # migrate clears it, so post_migrate handlers (create_permissions
+        # numbers permissions in this order) see the state's order.
+        self.project.migration(
+            "shop",
+            "0001_initial",
+            """
+            migrations.CreateModel("A", [("id", models.AutoField(primary_key=True)), ("x", models.IntegerField())]),
+            migrations.CreateModel("B", [("id", models.AutoField(primary_key=True))]),
+            migrations.AlterField("a", "x", models.BigIntegerField()),
+            """,
+        )
+        (self.project.path("shop").parent / "models.py").write_text("")
+        # An app without migrations: migrate renders its models again.
+        plain = self.project.root / self.project.package / "plain"
+        plain.mkdir()
+        (plain / "__init__.py").write_text("")
+        (plain / "models.py").write_text(
+            "from django.db import models\n\n\nclass Thing(models.Model):\n    pass\n"
+        )
+        self.project.activate()
+        self.enterContext(
+            override_settings(
+                INSTALLED_APPS=[
+                    *settings.INSTALLED_APPS,
+                    f"{self.project.package}.plain",
+                ]
+            )
+        )
+        seen: list[list[str]] = []
+
+        def record(sender: Any, apps: Any, **kwargs: Any) -> None:
+            if sender.label == "shop":
+                seen.append(
+                    [m.__name__ for m in apps.get_app_config("shop").get_models()]
+                )
+
+        post_migrate.connect(record, dispatch_uid="test_post_migrate_models")
+        try:
+            with scratch_database() as connection:
+                run_history(connection)
+        finally:
+            post_migrate.disconnect(dispatch_uid="test_post_migrate_models")
+        assert seen == [["A", "B"]]

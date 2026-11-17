@@ -14,6 +14,7 @@ import io
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, cast
 
+from django.apps import apps as global_apps
 from django.core.management.sql import (
     emit_post_migrate_signal,
     emit_pre_migrate_signal,
@@ -22,6 +23,7 @@ from django.db.backends.base.base import BaseDatabaseWrapper
 from django.db.migrations.executor import MigrationExecutor
 from django.db.migrations.migration import Migration
 from django.db.migrations.operations.base import Operation
+from django.db.migrations.state import ModelState, ProjectState
 
 from django_compact_migrations.history import Key, generate_plan
 from django_compact_migrations.ops import isolated
@@ -160,10 +162,32 @@ def run_history(
             False,
             connection.alias,
             stdout=io.StringIO(),
-            apps=final_state.apps,
+            apps=_post_migrate_apps(final_state),
             plan=migration_plan,
         )
     except Exception as exc:
         raise RunError(
             f"A post_migrate signal handler failed: {type(exc).__name__}: {exc}"
         ) from exc
+
+
+def _post_migrate_apps(state: ProjectState) -> Any:
+    """
+    The models post_migrate handlers see, as ``migrate`` builds them: the
+    delayed apps cache cleared, so models are in the state's order (reloads
+    during the history move models to the end of the registry, and
+    create_permissions numbers permissions in registry order), and the
+    real (unmigrated) apps' models rendered again.
+    """
+    state.clear_delayed_apps_cache()
+    post_migrate_apps = state.apps
+    with post_migrate_apps.bulk_update():
+        model_keys = []
+        for model_state in post_migrate_apps.real_models:
+            model_key = model_state.app_label, model_state.name_lower
+            model_keys.append(model_key)
+            post_migrate_apps.unregister_model(*model_key)
+    post_migrate_apps.render_multiple(
+        [ModelState.from_model(global_apps.get_model(*key)) for key in model_keys]
+    )
+    return post_migrate_apps
