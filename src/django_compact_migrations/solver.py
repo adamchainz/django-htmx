@@ -37,7 +37,6 @@ Unit = Life | Element
 """What a trial can block: an entity's whole removal, or one dropped element."""
 
 KINDS = ("model", "field", "index", "constraint", "together", "superseded", "fold")
-OPAQUE_POLICIES = ("scan", "block", "ignore")
 
 
 class SelectionError(ValueError):
@@ -135,7 +134,6 @@ class Solver:
         history: History,
         timeline: Timeline,
         scope: Scope,
-        opaque_policy: str = "scan",
         remove_all_elidable: bool = False,
         *,
         aggressive: bool = False,
@@ -168,7 +166,6 @@ class Solver:
         self.history = history
         self.timeline = timeline
         self.scope = scope
-        self.policy = opaque_policy
         self.remove_all_elidable = remove_all_elidable
         self.opaque = OpaqueIndex(
             history, [o for o in timeline.opaque if o.rec.seq not in self.noop], texts
@@ -291,8 +288,6 @@ class Solver:
                 if reason is None:
                     hits.append((o, name))
                     continue
-                if self.policy == "ignore":
-                    continue
                 if record:
                     assert unit is not None
                     self.at_risk.setdefault(unit, {})[o.rec.seq] = o
@@ -305,20 +300,15 @@ class Solver:
                 assert unit is not None
                 self.at_risk.setdefault(unit, {})[o.rec.seq] = o
                 continue
-            if self.policy == "scan" or (o.elidable and self.policy == "block"):
-                generic = self.opaque.text(o).generic
-                what = (
-                    f"acts on every model ({generic})"
-                    if generic is not None
-                    else f"mentions {name!r}"
-                )
-                return f"{o.rec.describe()} {what}" + (
-                    f" ({untrialled})" if untrialled else ""
-                )
-        if self.policy == "block" and not (self.aggressive and unit is not None):
-            blocking = self.opaque.first_blocking(start, end, known_from)
-            if blocking is not None:
-                return f"opaque {blocking.rec.describe()} may run meanwhile"
+            generic = self.opaque.text(o).generic
+            what = (
+                f"acts on every model ({generic})"
+                if generic is not None
+                else f"mentions {name!r}"
+            )
+            return f"{o.rec.describe()} {what}" + (
+                f" ({untrialled})" if untrialled else ""
+            )
         return None
 
     def _strictly_inside(self, pos: Pos, start: Pos, end: Pos) -> bool:
@@ -423,8 +413,6 @@ class Solver:
         return cached
 
     def _soft_blocker(self, life: FieldLife) -> str | None:
-        if self.policy == "ignore":
-            return None
         for soft in life.soft_refs:
             if self.removed(soft.element):
                 continue
@@ -808,13 +796,12 @@ def _same_kind(a: Any, ta: Life | None, b: Any, tb: Life | None) -> bool:
     return True
 
 
-def kinds_from(
-    kinds: Collection[str] | None, skip: Collection[str] = ()
-) -> frozenset[str]:
-    unknown = (set(kinds or ()) | set(skip)) - set(KINDS)
+def kinds_from(skip: Collection[str] = ()) -> frozenset[str]:
+    """Every kind of removal but those in ``skip``."""
+    unknown = set(skip) - set(KINDS)
     if unknown:
         raise SelectionError(f"Unknown kind(s): {', '.join(sorted(unknown))}")
-    return frozenset(kinds or KINDS) - frozenset(skip)
+    return frozenset(KINDS) - frozenset(skip)
 
 
 def _removal_names(life: Life) -> set[str]:

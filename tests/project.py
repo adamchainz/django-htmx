@@ -23,6 +23,7 @@ from django.db.migrations.executor import MigrationExecutor
 from django.test import override_settings
 
 from django_compact_migrations.core import Result, plan
+from django_compact_migrations.solver import KINDS
 from django_compact_migrations.trial import TrialFailure
 
 IMPORTS = """\
@@ -282,6 +283,11 @@ ITEM = """
 # Folding is on by default. Tests about what is removed turn it off with
 # this, since folds also rewrite what is kept.
 NO_FOLD: dict[str, Any] = {"skip_kinds": ["fold"]}
+
+
+def only(*wanted: str) -> dict[str, Any]:
+    """Options to consider only these kinds of removal."""
+    return {"skip_kinds": [k for k in KINDS if k not in wanted]}
 
 
 def kinds(result: Result) -> list[tuple[str, str]]:

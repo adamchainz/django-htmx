@@ -10,7 +10,7 @@ from django.db.models import F
 from django.db.models.functions import Lower
 
 from django_compact_migrations import backends
-from tests.project import Project, blocked, folds, kinds
+from tests.project import Project, blocked, folds, kinds, only
 
 PARENT = (
     'migrations.CreateModel("Parent", [("id", models.AutoField(primary_key=True))]),'
@@ -116,7 +116,7 @@ def test_constraint_on_foreign_key_dropped_later(project, server):
         migrations.RemoveField("child", "parent"),
         """,
     )
-    assert kinds(project.compact(kinds=["constraint"])) == [
+    assert kinds(project.compact(**only("constraint"))) == [
         ("constraint", "shop.Child"),
         ("constraint", "shop.Child"),
     ]

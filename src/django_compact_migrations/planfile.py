@@ -32,6 +32,7 @@ from django_compact_migrations.core import (
 )
 from django_compact_migrations.history import History, Key, MigrationInfo
 from django_compact_migrations.patch import PatchError, apply_diff, make_diff
+from django_compact_migrations.solver import KINDS
 
 FORMAT = "django-compact-migrations-plan"
 FORMAT_VERSION = 1
@@ -318,8 +319,7 @@ def load_plan(path: str | os.PathLike[str]) -> Result:
             analysis = analyse(
                 options["targets"],
                 exclude=options["exclude"],
-                kinds=options["kinds"],
-                opaque=options["opaque"],
+                skip_kinds=sorted(set(KINDS) - set(options["kinds"])),
                 elidable=options["elidable"],
             )
         except CompactError as exc:

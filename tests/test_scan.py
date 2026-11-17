@@ -78,23 +78,6 @@ def test_index_edges(project):
     assert index.contains(o, (0, 0), None, (o.pos[0], 0)) is False
 
 
-def test_block_policy_names_the_operation(project):
-    project.migration("shop", "0001_initial", ITEM)
-    project.migration(
-        "shop",
-        "0002_add",
-        'migrations.AddField("item", "legacy", models.IntegerField(default=0)),\n'
-        'migrations.RunSQL("SELECT 1"),',
-    )
-    project.migration(
-        "shop", "0003_remove", 'migrations.RemoveField("item", "legacy"),'
-    )
-    result = project.compact(opaque="block")
-    assert blocked(result)["shop.Item.legacy"] == (
-        "opaque RunSQL in shop.0002_add may run meanwhile",
-    )
-
-
 class TestReverseNames:
     def test_default_query_name(self, project):
         project.migration("shop", "0001_initial", ITEM + PERSON)

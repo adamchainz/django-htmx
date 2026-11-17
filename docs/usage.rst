@@ -212,7 +212,7 @@ A shortened example:
     +    operations = []
     """
 
-With ``--show-blocked``, the file also lists what was kept and why (``[[blocked]]``).
+With ``-v 2``, the file also lists what was kept and why (``[[blocked]]``).
 With ``--prune``, deleted files are listed under ``[[deleted]]``, with the hash of their content.
 Paths are relative to the plan file, and ``tool_version`` says which version of django-compact-migrations made the plan.
 
@@ -269,22 +269,11 @@ Excluding a field, for example ``shop.Coupon.code``, also keeps its model, since
 A target or exclusion naming a model or field that never existed in the migration history is an error, so typos don’t silently select nothing.
 Old names count: a model or field matches any name it had.
 
-.. note::
-
-    ``--kind`` doesn’t apply to ``--elidable``, described below, but an excluded app’s migrations are never touched by it.
-
 Kinds of removal
 ----------------
 
-The command finds several kinds of removable operations.
-Use ``--kind``, repeated as needed, to only consider some of them:
-
-.. code-block:: console
-
-    $ python manage.py compact_migrations plan --kind field --kind index
-
-The default is all kinds.
-``--skip-kind``, also repeatable, leaves some out instead, for example ``--skip-kind fold``.
+The command finds several kinds of removable operations, and considers all of them.
+``--skip-kind``, repeatable, leaves some out, for example ``--skip-kind fold``.
 
 .. list-table::
    :header-rows: 1
@@ -343,26 +332,8 @@ Some operations can do anything: ``RunPython``, ``RunSQL``, ``SeparateDatabaseAn
 The command calls these *opaque*.
 An opaque operation that runs while a model or field exists might use it, so removing that model or field could make the migration crash on a fresh database.
 
-The ``--opaque`` option sets how cautious the command is:
-
-``--opaque scan`` (the default)
-    Look through the opaque operation’s code for the names of the thing being removed.
-    If the code mentions it, the removal is blocked.
-    Otherwise it is allowed.
-
-``--opaque block``
-    Be strictly cautious: any opaque operation that might run while the thing exists blocks its removal, whether or not it mentions the names.
-    This blocks a lot, since migrations in different apps that aren’t ordered relative to each other might run in either order.
-
-``--opaque ignore``
-    Never let opaque operations block anything.
-    Only use this if you know your data migrations don’t touch the things being removed.
-
-.. warning::
-
-    With ``--opaque ignore``, a ``RunPython`` that refers to a removed field or model is left in place, and will fail when run on a fresh database.
-    It also turns off the check for a model’s default ``ordering`` (or ``get_latest_by``) naming a removed field: any ``RunPython`` that queries that model in the meantime, even without naming the field, then fails with ``Cannot resolve keyword``.
-    Run the whole history on a new database afterwards.
+With ``--static``, the command looks through each opaque operation’s code for the names of the things being removed, and keeps anything it mentions.
+A trial (the default) checks those removals by running the operations instead.
 
 Regardless of the policy, an opaque operation that changes the project state (for example, a ``SeparateDatabaseAndState`` that adds a field) makes the models and fields it touches permanently off limits.
 See :doc:`how_it_works` for details of how the scan works, and its limits.
@@ -397,7 +368,7 @@ Second, with ``--elidable``, *every* elidable ``RunPython`` and ``RunSQL`` opera
 
 This is the same as dropping them while squashing.
 Only operations that don’t change the project state are removed.
-``--elidable`` considers the apps you pass as targets (or all apps), minus apps passed to ``--exclude``, and ignores ``--kind``.
+``--elidable`` considers the apps you pass as targets (or all apps), minus apps passed to ``--exclude``, and ignores ``--skip-kind``.
 
 Using it in CI
 --------------
@@ -418,11 +389,11 @@ Seeing why things are kept
 --------------------------
 
 By default, only things that will be removed are listed.
-Add ``--show-blocked`` to also list things that cancel out in the history but were kept, with reasons:
+With ``-v 2``, things that cancel out in the history but were kept are listed too, with reasons:
 
 .. code-block:: console
 
-    $ python manage.py compact_migrations plan --show-blocked
+    $ python manage.py compact_migrations plan -v 2
     ...
     Blocked
       shop.Product.rank  field added in 0002_coupon_legacy_ref, removed in 0004_cleanup
@@ -436,7 +407,7 @@ The output also depends on the verbosity (``-v``):
 * ``-v 0`` prints nothing.
   Combine it with ``--check`` when you only want the exit status.
 * ``-v 1`` (the default) prints the removals and the summary shown above.
-* ``-v 2`` also lists each operation to remove as ``path:line  OperationName``, and implies ``--show-blocked``.
+* ``-v 2`` also lists what was kept and why, and each operation to remove as ``path:line  OperationName``.
   Paths are relative to the current directory.
   When a single entry is taken out of a larger operation, its detail is shown in parentheses:
 
@@ -509,7 +480,6 @@ It works like this:
 2. A candidate plan is made in which the name scan doesn’t block anything, but each removal remembers which data migrations mentioned it.
    The command says how many removals a trial could unlock at most: if that is none, only the default plan is trialled.
    Then the original history is migrated a second time: anything that differs between the two runs (random or time-based values in rows that migrations create, such as UUIDs, tokens or password hashes) is left out of every comparison: just the differing columns where that is enough, else the table’s data.
-   ``--trial-single-baseline`` skips that run; date and time values are then left out of every comparison, and other such differences are only recognised when nothing else can be blamed, and may block removals.
 3. The candidate is migrated on a fresh scratch database, with the edited operations in memory: no files are touched.
    If a data migration fails, its savepoint is rolled back, the failure is recorded, and the run goes on, so one run finds many failures.
    (That needs a backend that can roll back schema changes, such as PostgreSQL or SQLite, and an atomic migration; otherwise the run stops at the first failure.)
@@ -525,7 +495,7 @@ It works like this:
    This is why a project with many data migrations takes a few runs.
 5. The candidate is solved again, and run again, until a run has no failures and a snapshot identical to the original.
    That final clean run is required.
-   After ``--trial-max-runs`` runs (default 8), or when a run blames nothing new, the command falls back to the default plan, and still trials it.
+   After 8 runs, or when a run blames nothing new, the command falls back to the default plan, and still trials it.
    A trial never does worse than the default plan: candidates are solved on top of it (its removals and folds first, then what the trial unlocks), and a final check makes sure every operation the default plan removes is removed; if not, the default plan is used.
 
 The command prints how long the original history took to migrate, and so roughly how long each run takes, before the first trial run, then what each run found and blocked, and shows its progress (run, migration, elapsed time) as it goes.
@@ -534,7 +504,6 @@ Long error messages are shortened in the output and in plan files (``FieldError`
 
 ``apply`` does the same and applies the result.
 The plan file records the trial: backend, number of runs, what it unlocked, and the failures it harvested (shown with ``-v 2``).
-``--opaque`` needs ``--static``.
 
 A trial migrates the ``--database`` alias only (it says which).
 If ``DATABASE_ROUTERS`` keep a ``RunPython`` or ``RunSQL`` operation from running on that alias, the trial can’t check it: what it mentions stays blocked as without a trial, it is never taken for a no-op, and the command lists such operations.
@@ -552,10 +521,9 @@ If data from the original history itself differs between its two baseline runs (
 Any other difference in data is real.
 When rows are missing or different and the plan removes operations that may have written them (an elidable operation removed with what it mentions, or a no-op data migration), those removals are blamed first, half at a time, even when the default plan makes them: an elidable data migration that wrote something on a fresh database (Zulip’s ``confirmation.0016`` creates a content type) is kept, with what it mentions.
 
-By default, trial runs don’t send ``post_migrate``, so the content types and permissions it creates aren’t compared.
-Their ids follow the rows the history created first, and the order of the models; the default plan never changes the order of the models (that is verified), but dropping an operation that created and deleted such rows changes the ids of later ones.
-``--trial-post-migrate`` sends ``post_migrate`` at the end of every run, as ``migrate`` does, and compares what its handlers create.
-It is off by default because a project’s own ``post_migrate`` handlers run too, and may need services or settings a scratch database doesn’t have.
+Every trial run sends ``post_migrate`` at the end, as ``migrate`` does, so the content types and permissions it creates are compared too.
+Their ids follow the rows the history created first: dropping an operation that created and deleted such rows changes the ids of later ones.
+A project’s own ``post_migrate`` handlers run too.
 
 .. warning::
 
@@ -567,7 +535,6 @@ It is off by default because a project’s own ``post_migrate`` handlers run too
 SQLite column order needs care of its own.
 Django rebuilds SQLite tables in the order fields have in its model state, and an ``AlterField`` or ``RenameField`` moves its field to the end of that order; so removing or folding such operations, or folding a field past one, can change the physical order of columns in a table that is rebuilt later.
 Nothing in Django depends on that order, but a trial compares it anyway, so its result is exact on SQLite as on other backends (which never move columns): a difference blocks the removals and folds on that table, including ones the default plan makes, which are then left out of the plan.
-``--trial-ignore-column-order`` turns that comparison off.
 A plan made without a trial on SQLite says, in its summary, when it may change column order.
 
 Removals that the name scan would have kept, folds and no-op data migrations are the first suspects of a failure or difference.
@@ -596,7 +563,7 @@ Once operations are removed and folded, many migrations are left with no operati
 Every remaining migration still runs after exactly the same migrations as before (minus the deleted ones), ``migrate`` runs them in exactly the same order, and every app keeps its first and latest migrations: a dependency is only added where the migration didn't already have it through its other dependencies, and the result is checked, in memory and after writing the files.
 Migrations that were already empty are pruned too.
 
-A migration is kept, and listed with ``--show-blocked``, when:
+A migration is kept, and listed with ``-v 2``, when:
 
 * it is the first or the latest migration of its app, or marked ``initial`` (an app keeps its first and latest migrations, so merges, ``--fake-initial`` and ``__first__``/``__latest__`` dependencies behave as before);
 * it is a squashed migration, or a squashed migration replaces it;

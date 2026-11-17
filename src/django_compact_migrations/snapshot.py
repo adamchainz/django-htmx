@@ -4,8 +4,7 @@ Django's project state) and data, for comparing two runs of the history.
 
 Incidental ordering is normalised away; names never are. Values that differ
 between two runs of the same history (times, random values) are found by
-comparing two baseline runs (``Snapshot.nondeterminism``); with a single
-baseline, date and time values are masked instead.
+comparing two baseline runs (``Snapshot.nondeterminism``).
 """
 
 from __future__ import annotations
@@ -18,13 +17,9 @@ from typing import Any
 
 from django.db.backends.base.base import BaseDatabaseWrapper
 
-_MASKED_FIELD_TYPES = frozenset(
-    {"DateTimeField", "DateField", "TimeField", "DurationField"}
-)
 MIGRATIONS = "django_migrations"
 _AUTO_INCREMENT = re.compile(r"\bAUTO_INCREMENT=(\d+)")
 _PG_SYSTEM = "('pg_catalog', 'information_schema', 'pg_toast')"
-_MASK = "<masked>"
 COLUMN_ORDER = "column order"
 """Schema key kind of the physical column order of SQLite tables (other
 backends compare it as part of the columns)."""
@@ -85,10 +80,9 @@ class Snapshot:
         self,
         other: Snapshot,
         mask: Mask | None = None,
-        ignore_data: Iterable[str] = (),
     ) -> list[Difference]:
         mask = mask or Mask()
-        ignored = set(ignore_data) | mask.tables
+        ignored = mask.tables
         found: list[Difference] = []
         for key in sorted(self.schema.keys() | other.schema.keys(), key=repr):
             if key in mask.schema:
@@ -194,9 +188,7 @@ def _column_changes(mine: Any, theirs: Any) -> tuple[str, ...]:
     return tuple(n for n, m in zip(order_a, order_b, strict=False) if n != m)
 
 
-def take_snapshot(
-    connection: BaseDatabaseWrapper, *, mask_dates: bool = False
-) -> Snapshot:
+def take_snapshot(connection: BaseDatabaseWrapper) -> Snapshot:
     snapshot = Snapshot(connection.vendor)
     with connection.cursor() as cursor:
         if connection.vendor == "sqlite":
@@ -207,7 +199,7 @@ def take_snapshot(
             # Scratch databases exist only for these three vendors.
             assert connection.vendor == "mysql"
             _mysql_schema(cursor, snapshot.schema)
-        _data(connection, cursor, snapshot.data, snapshot.columns, mask_dates)
+        _data(connection, cursor, snapshot.data, snapshot.columns)
     return snapshot
 
 
@@ -245,8 +237,7 @@ def _sqlite_schema(
             # Definitions by name; the physical order separately: Django
             # rebuilds SQLite tables in the project state's field order, which
             # depends on the history (RenameField and some AlterFields move a
-            # field to the end), so removals and folds can change it, which
-            # matters little and can be ignored (Mask.column_order).
+            # field to the end), so removals and folds can change it.
             schema[("columns", name, name)] = sorted(r[1:] for r in xinfo)
             schema[(COLUMN_ORDER, name, name)] = [r[1] for r in xinfo]
             schema[("foreign keys", name, name)] = sorted(
@@ -524,19 +515,6 @@ def _mysql_schema(cursor: Any, schema: dict[tuple[str, str | None, str], Any]) -
         )
 
 
-def _masked_columns(connection: Any, cursor: Any, table: str) -> set[int]:
-    masked: set[int] = set()
-    description = connection.introspection.get_table_description(cursor, table)
-    for i, col in enumerate(description):
-        try:
-            field_type = connection.introspection.get_field_type(col.type_code, col)
-        except Exception:
-            continue
-        if isinstance(field_type, str) and field_type in _MASKED_FIELD_TYPES:
-            masked.add(i)
-    return masked
-
-
 def _value(value: Any) -> str:
     if isinstance(value, memoryview):
         value = value.tobytes()
@@ -548,7 +526,6 @@ def _data(
     cursor: Any,
     data: dict[str, Counter[tuple[str, ...]]],
     columns: dict[str, tuple[str, ...]],
-    mask_dates: bool,
 ) -> None:
     quote = connection.ops.quote_name
     for table in connection.introspection.table_names(cursor):
@@ -557,15 +534,10 @@ def _data(
             data[table] = Counter(tuple(map(_value, r)) for r in cursor.fetchall())
             columns[table] = ("app", "name")
             continue
-        masked = _masked_columns(connection, cursor, table) if mask_dates else set()
         cursor.execute(f"SELECT * FROM {quote(table)}")
         names = [str(d[0]) for d in cursor.description]
         order = sorted(range(len(names)), key=lambda i: names[i])
         columns[table] = tuple(names[i] for i in order)
         data[table] = Counter(
-            tuple(
-                _MASK if i in masked and row[i] is not None else _value(row[i])
-                for i in order
-            )
-            for row in cursor.fetchall()
+            tuple(_value(row[i]) for i in order) for row in cursor.fetchall()
         )

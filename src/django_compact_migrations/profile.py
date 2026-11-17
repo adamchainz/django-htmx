@@ -123,12 +123,11 @@ class Profile:
 def profile(alias: str = "default", progress: Progress | None = None) -> Profile:
     """
     Migrate a scratch database from scratch, timing every migration and
-    operation, in a forked child process. pre_migrate is sent, as ``migrate``
-    does; post_migrate (content types, permissions) isn't: it is outside the
-    history.
+    operation, in a forked child process. pre_migrate and post_migrate are
+    sent, as ``migrate`` does; post_migrate's time counts as other.
     """
     try:
-        static: Result | None = plan()
+        static: Result | None = plan(static=True)
         plan_error = None
     except CompactError as exc:
         static, plan_error = None, str(exc)
@@ -188,5 +187,8 @@ def profile(alias: str = "default", progress: Progress | None = None) -> Profile
         removable_count=removable_count,
         editable=editable if static is not None else None,
         plan_error=plan_error,
-        notes=["post_migrate signals (content types, permissions) are not run."],
+        notes=[
+            "post_migrate signals (content types, permissions) run at the end,"
+            " in the time counted as other."
+        ],
     )

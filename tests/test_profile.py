@@ -238,7 +238,7 @@ def test_signal_handler_failures(project):
                 scratch_database() as connection,
                 pytest.raises(RunError, match=f"A {name} signal handler failed"),
             ):
-                run_history(connection, post_migrate=True)
+                run_history(connection)
         finally:
             signal_.disconnect(dispatch_uid="test_signal_handler_failures")
     assert connections["default"].vendor == "sqlite"

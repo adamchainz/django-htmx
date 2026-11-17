@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests.project import ITEM, blocked, kinds
+from tests.project import ITEM, blocked, kinds, only
 
 ADD = 'migrations.AddField("item", "legacy", models.IntegerField(default=0)),'
 INDEX = 'migrations.AddIndex("item", models.Index(fields=["legacy"], name="l_idx")),'
@@ -40,7 +40,7 @@ def test_unrequired_requirement_restored(project):
         """,
     )
     # The field can't go, so neither goes the index it required.
-    result = project.compact(kinds=["field"])
+    result = project.compact(**only("field"))
     assert result.removals == []
     assert list(blocked(result)) == ["shop.Item.legacy"]
 
@@ -60,8 +60,7 @@ def test_elidable_hit_dropped_once(project):
     assert [k for k, _ in kinds(result)].count("elidable") == 1
 
 
-@pytest.mark.parametrize("policy", ["ignore", "scan"])
-def test_elidable_in_excluded_app(project, policy):
+def test_elidable_in_excluded_app(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration("shop", "0002_add", ADD)
     project.migration(
@@ -76,14 +75,11 @@ def test_elidable_in_excluded_app(project, policy):
         'migrations.RemoveField("item", "legacy"),',
         extra_deps=[("other", "0001_initial")],
     )
-    result = project.compact(exclude=["other"], opaque=policy)
-    if policy == "ignore":
-        assert ("field", "shop.Item.legacy") in kinds(result)
-    else:
-        assert blocked(result)["shop.Item.legacy"] == (
-            "elidable RunSQL in other.0001_initial mentions 'legacy' but cannot be"
-            " removed: app 'other' is excluded",
-        )
+    result = project.compact(exclude=["other"])
+    assert blocked(result)["shop.Item.legacy"] == (
+        "elidable RunSQL in other.0001_initial mentions 'legacy' but cannot be"
+        " removed: app 'other' is excluded",
+    )
 
 
 def test_poisoned_together_blocks_model(project):
@@ -106,7 +102,7 @@ def test_poisoned_together_blocks_model(project):
         migrations.DeleteModel("Coupon"),
         """,
     )
-    (reason,) = blocked(project.compact(opaque="ignore"))["shop.Coupon"]
+    (reason,) = blocked(project.compact())["shop.Coupon"]
     assert reason.startswith("its together shop.Coupon unique_together (id, code) was")
 
 

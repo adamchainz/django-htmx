@@ -103,22 +103,21 @@ class PassResult:
     """rec.seq -> what the operation did (--noop-data, baseline only)."""
 
 
+MAX_RUNS = 8
+"""Trial runs of candidate plans before falling back to the static plan."""
+
+
 class Trial:
     def __init__(
         self,
         analysis: Analysis,
         alias: str,
-        max_runs: int,
         progress: Progress | None,
         *,
-        single_baseline: bool,
         noop_data: bool,
-        ignore_column_order: bool,
-        post_migrate: bool,
     ) -> None:
         self.analysis = analysis
         self.alias = alias
-        self.max_runs = max(1, max_runs)
         self.progress = progress
         history = analysis.history
         self.records: dict[int, OpRecord] = {id(rec.op): rec for rec in history.ops}
@@ -133,16 +132,9 @@ class Trial:
         """The server's name ("MariaDB" for Django's "mysql" vendor)."""
         self.can_rollback_ddl = False
         self.harvested: list[TrialFailure] = []
-        self.masked: set[str] = set()
-        """Tables found nondeterministic late (see _mask_nondeterminism)."""
         self.mask = Mask()
         """What differs between two runs of the original history."""
-        self.single_baseline = single_baseline
         self.noop_data = noop_data
-        self.ignore_column_order = ignore_column_order
-        """Don't compare the physical column order of SQLite tables."""
-        self.post_migrate = post_migrate
-        """Send post_migrate at the end of every run, as migrate does."""
         self.noop: dict[tuple[int, int], str] = {}
         """(plan index, index on disk) of data migrations that did nothing on
         the baseline run, with what they did."""
@@ -244,7 +236,6 @@ class Trial:
                 hook=hook,
                 progress=on_progress,
                 prune=prune,
-                post_migrate=self.post_migrate,
             )
         except RunError as exc:
             where = current[0]
@@ -264,8 +255,7 @@ class Trial:
         say(f"{label}: taking a snapshot")
         return PassResult(
             failures,
-            # Two baselines show which values differ between runs.
-            take_snapshot(connection, mask_dates=self.single_baseline),
+            take_snapshot(connection),
             False,
             observations,
         )
@@ -432,8 +422,6 @@ class Trial:
                 + ENVIRONMENT_HINT
             )
         reference = baseline.snapshot
-        if self.ignore_column_order:
-            self.mask.schema.update(k for k in reference.schema if k[0] == COLUMN_ORDER)
         self._learn_noop(baseline.observations)
         if self.noop_data:
             self._say(
@@ -471,9 +459,7 @@ class Trial:
         self.first_static = static.unit_keys()
         self.candidate_keys = set(candidates)
         # The second baseline, the candidates, and the static plan.
-        more = (0 if self.single_baseline else 1) + (
-            self.max_runs + 1 if candidates else 1
-        )
+        more = 1 + (MAX_RUNS + 1 if candidates else 1)
         self._say(
             f"The original history migrated in {baseline_seconds:.0f}s, and"
             " each run takes about as long. A trial can unlock up to"
@@ -482,32 +468,29 @@ class Trial:
             f" {_duration(baseline_seconds * more)} at most).",
             note=True,
         )
-        if not self.single_baseline:
-            # Two runs of the same history: whatever differs between them is
-            # random or time-based, and is never blamed on a removal.
-            again = self._run("Baseline, again", None)
-            if again.snapshot is None:
-                failure = again.failures[0] if again.failures else None
-                raise CompactError(
-                    "The original migration history migrated a fresh database"
-                    " once, but not a second time"
-                    + (f": {failure.error}" if failure else "")
-                    + ENVIRONMENT_HINT
-                )
-            ignored = self.mask.schema
-            self.mask = reference.nondeterminism(again.snapshot)
-            self.mask.schema |= ignored
-            if self.mask:
-                self._say(
-                    f"Differs between two runs of the original history, so not"
-                    f" compared: {self.mask.describe()}.",
-                    note=True,
-                )
+        # Two runs of the same history: whatever differs between them is
+        # random or time-based, and is never blamed on a removal.
+        again = self._run("Baseline, again", None)
+        if again.snapshot is None:
+            failure = again.failures[0] if again.failures else None
+            raise CompactError(
+                "The original migration history migrated a fresh database"
+                " once, but not a second time"
+                + (f": {failure.error}" if failure else "")
+                + ENVIRONMENT_HINT
+            )
+        self.mask = reference.nondeterminism(again.snapshot)
+        if self.mask:
+            self._say(
+                f"Differs between two runs of the original history, so not"
+                f" compared: {self.mask.describe()}.",
+                note=True,
+            )
         trial_blocked: dict[str, str] = {}
         fallback = False
         solution: Solution | None = None
         while candidates:
-            if self.passes >= self.max_runs:
+            if self.passes >= MAX_RUNS:
                 fallback = True
                 break
             solution = self.analysis.solve(
@@ -670,40 +653,10 @@ class Trial:
             # Skipped failing operations explain any snapshot differences,
             # so only the failures are attributed this time.
             return result.failures, []
-        diffs = reference.differences(result.snapshot, self.mask, self.masked)
-        if diffs:
-            diffs = self._mask_nondeterminism(
-                solution, diffs, reference, result.snapshot
-            )
+        diffs = reference.differences(result.snapshot, self.mask)
         if not diffs:
             return None
         return [], diffs
-
-    def _mask_nondeterminism(
-        self,
-        solution: Solution,
-        diffs: list[Difference],
-        reference: Snapshot,
-        snapshot: Snapshot,
-    ) -> list[Difference]:
-        """
-        Data differences in tables no removal relates to, when nothing at risk
-        is left to blame, come from the history itself (random or time-based
-        values in seeded rows): mask those tables rather than loop.
-        """
-        if not self.single_baseline or any(u.at_risk for u in solution.units):
-            # With two baseline runs, what differs between runs of the
-            # original history is known: any other difference is real.
-            return diffs
-        for d in diffs:
-            if (
-                d.kind == "data"
-                and d.table
-                and d.table != "django_migrations"
-                and not _related(solution.units, d.table)
-            ):
-                self.masked.add(d.table)
-        return reference.differences(snapshot, self.mask, self.masked)
 
     # Attribution
 
@@ -895,8 +848,7 @@ class Trial:
                 for rec in self.analysis.history.ops
                 if (rec.migration.index, rec.original_index) in self.analysis.untrialled
             ],
-            "runs": self.passes + (1 if self.single_baseline else 2),
-            "baseline_runs": 1 if self.single_baseline else 2,
+            "runs": self.passes + 2,  # the two baseline runs
             "at_risk": len(self.candidate_keys),
             "unlocked": len(unlocked),
             "noop": [
@@ -916,7 +868,7 @@ class Trial:
             "dropped": list(self.dropped),
             "fallback": fallback,
             "can_rollback_ddl": self.can_rollback_ddl,
-            "nondeterministic_tables": sorted(self.masked | self.mask.tables),
+            "nondeterministic_tables": sorted(self.mask.tables),
             "nondeterministic_columns": {
                 t: sorted(c) for t, c in sorted(self.mask.columns.items())
             },

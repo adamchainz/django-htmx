@@ -286,13 +286,8 @@ class OpaqueIndex:
         self.texts = texts if texts is not None else TextBuilder()
         self.word_masks: dict[str, int] = {}
         self.match_all = 0
-        self.blocking_migrations = 0
-        self.by_migration: dict[int, list[OpaqueOp]] = {}
         for i, o in enumerate(ops):
-            self.by_migration.setdefault(o.rec.migration.index, []).append(o)
             bit = 1 << i
-            if not o.elidable:
-                self.blocking_migrations |= 1 << o.rec.migration.index
             text = self.texts.text(o)
             if text.match_all:
                 self.match_all |= bit
@@ -368,16 +363,3 @@ class OpaqueIndex:
                 ):
                     found[i] = name
         return [(self.ops[i], found[i]) for i in sorted(found)]
-
-    def first_blocking(
-        self, start: Pos, end: Pos | None, known_from: Pos
-    ) -> OpaqueOp | None:
-        """First non-elidable opaque op in the window, if any."""
-        mask = self.blocking_migrations & ~self._outside(start, end)
-        while mask:
-            low = mask & -mask
-            mask ^= low
-            for o in self.by_migration[low.bit_length() - 1]:
-                if not o.elidable and self.contains(o, start, end, known_from):
-                    return o
-        return None

@@ -147,7 +147,6 @@ class TestThirdParty:
     def test_unordered_ignored(self, project, monkeypatch):
         self.setup(project, monkeypatch, [("shop", "0001_initial")])
         assert kinds(project.compact()) == [("field", "shop.Item.legacy")]
-        assert kinds(project.compact(opaque="block")) == [("field", "shop.Item.legacy")]
 
     def test_descendant_counts(self, project, monkeypatch):
         self.setup(project, monkeypatch, [("shop", "0002_add")])
@@ -247,9 +246,7 @@ def test_blocked_lines_name_their_migrations(project):
     project.migration("shop", "0005_remove", 'migrations.RemoveField("item", "body"),')
     # Without folds: the kept AddField would fold into the CreateModel, and
     # the blocked field be reported as added there.
-    out, _ = project.command(
-        "plan", "--static", "--show-blocked", "--skip-kind", "fold"
-    )
+    out, _ = project.command("plan", "--static", "-v", "2", "--skip-kind", "fold")
     lines = out.splitlines()
     assert lines[2].split() == [
         "body",

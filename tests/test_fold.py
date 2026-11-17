@@ -425,9 +425,7 @@ def test_skip_kind_and_plan_file(project, tmp_path):
     out, _ = project.command("plan", "--static", "--skip-kind", "fold")
     assert out == "No operations to remove.\n"
     plan_path = tmp_path / "plan.toml"
-    out, _ = project.command(
-        "plan", "--static", "--kind", "fold", "-v", "2", "-o", str(plan_path)
-    )
+    out, _ = project.command("plan", "--static", "-v", "2", "-o", str(plan_path))
     lines = out.splitlines()
     assert lines[2].split() == [
         "qty",

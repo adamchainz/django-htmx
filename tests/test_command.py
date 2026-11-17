@@ -65,12 +65,6 @@ def test_verbose(history):
     assert "    RunPython in shop.0002_coupon mentions 'rank'" in lines
 
 
-def test_show_blocked(history):
-    out, _ = history.command("plan", "--static", "--show-blocked")
-    assert "    RunPython in shop.0002_coupon mentions 'rank'" in out.splitlines()
-    assert "0002_coupon.py:14" not in out
-
-
 def test_plain_output(history):
     out, _ = history.command("plan", "--static", verbosity=2)
     assert "\x1b" not in out
@@ -153,17 +147,16 @@ def test_unknown_app(history):
         history.command("plan", "--static", "nope")
 
 
-def test_kind_and_exclude(history):
-    out, _ = history.command("plan", "--static", "--kind", "field")
+def test_skip_kind_and_exclude(history):
+    out, _ = history.command(
+        "plan", "--static", "--skip-kind", "model", "--skip-kind", "fold"
+    )
     assert "legacy" in out
     assert "Coupon" not in out
     out, _ = history.command(
         "plan", "--static", "--exclude", "shop.Coupon", "--exclude", "shop.Item"
     )
     assert out == "No operations to remove.\n"
-    out, _ = history.command("plan", "--static", "--opaque", "ignore", "shop.Item")
-    assert "rank" in out
-    assert "Coupon" not in out
 
 
 def test_warning(project):
@@ -226,7 +219,6 @@ def test_plan_file_round_trip(history, tmp_path):
     assert data["format"] == "django-compact-migrations-plan"
     assert data["version"] == 1
     assert data["verification"] == {"mode": "static"}
-    assert data["options"]["opaque"] == "scan"
     assert [f["migration"] for f in data["files"]] == [
         ["shop", "0001_initial"],
         ["shop", "0002_coupon"],

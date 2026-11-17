@@ -50,7 +50,6 @@ from django_compact_migrations.rewrite import (
     unchanged,
 )
 from django_compact_migrations.solver import (
-    OPAQUE_POLICIES,
     Scope,
     SelectionError,
     Solver,
@@ -461,16 +460,10 @@ def plan(
     targets: Sequence[str] = (),
     *,
     exclude: Sequence[str] = (),
-    kinds: Collection[str] | None = None,
     skip_kinds: Collection[str] = (),
-    opaque: str = "scan",
     elidable: bool = False,
     static: bool = False,
     database: str = "default",
-    trial_max_runs: int = 8,
-    trial_single_baseline: bool = False,
-    trial_ignore_column_order: bool = False,
-    trial_post_migrate: bool = False,
     noop_data: bool = False,
     prune: bool = False,
     progress: Any = None,
@@ -492,33 +485,15 @@ def plan(
         raise CompactError(
             "--noop-data needs a trial run, so it can't be combined with --static."
         )
-    if not static and opaque != "scan":
-        raise CompactError("--opaque replaces the trial: it needs --static.")
     analysis = analyse(
-        targets,
-        exclude=exclude,
-        kinds=kinds,
-        skip_kinds=skip_kinds,
-        opaque=opaque,
-        elidable=elidable,
+        targets, exclude=exclude, skip_kinds=skip_kinds, elidable=elidable
     )
     analysis.options["noop_data"] = noop_data
     analysis.options["prune"] = prune
-    if trial_ignore_column_order:
-        analysis.options["trial_ignore_column_order"] = True
     if not static:
         from django_compact_migrations.trial import Trial  # imports this module
 
-        return Trial(
-            analysis,
-            database,
-            trial_max_runs,
-            progress,
-            single_baseline=trial_single_baseline,
-            ignore_column_order=trial_ignore_column_order,
-            post_migrate=trial_post_migrate,
-            noop_data=noop_data,
-        ).run()
+        return Trial(analysis, database, progress, noop_data=noop_data).run()
     solution = analysis.solve()
     return make_result(analysis, solution, build(analysis, solution))
 
@@ -626,7 +601,6 @@ class Analysis:
                 history,
                 timeline,
                 self.scope,
-                self.options["opaque"],
                 self.options["elidable"],
                 aggressive=aggressive,
                 trial_blocked=trial_blocked,
@@ -699,15 +673,11 @@ def analyse(
     targets: Sequence[str] = (),
     *,
     exclude: Sequence[str] = (),
-    kinds: Collection[str] | None = None,
     skip_kinds: Collection[str] = (),
-    opaque: str = "scan",
     elidable: bool = False,
 ) -> Analysis:
-    if opaque not in OPAQUE_POLICIES:
-        raise CompactError(f"Unknown opaque policy {opaque!r}.")
     try:
-        kind_set = kinds_from(kinds, skip_kinds)
+        kind_set = kinds_from(skip_kinds)
     except SelectionError as exc:
         raise CompactError(str(exc)) from exc
 
@@ -748,7 +718,6 @@ def analyse(
             "targets": list(targets),
             "exclude": list(exclude),
             "kinds": sorted(kind_set),
-            "opaque": opaque,
             "elidable": elidable,
             # MySQL-family servers configured: their history-dependent DDL
             # keeps some removals and folds (see backends).

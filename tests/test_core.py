@@ -13,7 +13,7 @@ from django_compact_migrations.core import CompactError, Location
 from django_compact_migrations.prune import PruneError
 from django_compact_migrations.rewrite import RewriteError
 from django_compact_migrations.timeline import Timeline
-from tests.project import ITEM, Project, blocked, kinds
+from tests.project import ITEM, Project, blocked, kinds, only
 
 ADD = 'migrations.AddField("item", "legacy", models.IntegerField(default=0)),'
 REMOVE = 'migrations.RemoveField("item", "legacy"),'
@@ -34,8 +34,6 @@ def test_static_conflicts(project):
     project.migration("shop", "0001_initial", ITEM)
     with pytest.raises(CompactError, match="can't be combined with --static"):
         project.compact(noop_data=True, static=True)
-    with pytest.raises(CompactError, match="--opaque replaces the trial"):
-        project.compact(opaque="block", static=False)
 
 
 def test_broken_migration_module(project):
@@ -206,7 +204,7 @@ def test_blocked_requirement_reported_with_root(project):
         """,
     )
     # Only fields are asked for: the index is no root of its own.
-    assert list(blocked(project.compact(kinds=["field"]))) == ["shop.Item.legacy"]
+    assert list(blocked(project.compact(**only("field")))) == ["shop.Item.legacy"]
 
 
 def test_fold_into_unlocatable_create_model(project):

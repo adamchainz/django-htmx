@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from django_compact_migrations.core import CompactError
-from tests.project import ITEM, NO_FOLD, Project, blocked, kinds
+from tests.project import ITEM, NO_FOLD, Project, blocked, kinds, only
 
 
 class TestModel:
@@ -420,13 +420,13 @@ class TestIndexAndConstraint:
             """,
         )
         # The constraint is not a selected kind but is required by the field.
-        result = project.compact("shop.Item.qty", kinds=["field"])
+        result = project.compact("shop.Item.qty", **only("field"))
         assert sorted(kinds(result)) == [
             ("constraint", "shop.Item"),
             ("field", "shop.Item.qty"),
         ]
         # Only constraints selected: the field stays, the constraint goes.
-        result = project.compact(kinds=["constraint"])
+        result = project.compact(**only("constraint"))
         assert kinds(result) == [("constraint", "shop.Item")]
 
 
@@ -891,7 +891,7 @@ class TestRelations:
             migrations.DeleteModel("Item"),
             """,
         )
-        result = project.compact("shop.Item", kinds=["model"])
+        result = project.compact("shop.Item", **only("model"))
         assert kinds(result) == [
             ("field", "shop.Line.item"),
             ("model", "shop.Item"),
@@ -1096,8 +1096,8 @@ class TestSuperseded:
         project.migration(
             "shop", "0003_b", 'migrations.AlterModelTableComment("item", "b"),'
         )
-        assert project.compact(kinds=["model", "field"]).removals == []
-        assert len(project.compact(kinds=["superseded"]).removals) == 1
+        assert project.compact(**only("model", "field")).removals == []
+        assert len(project.compact(**only("superseded")).removals) == 1
         assert len(project.compact("shop.Item", **NO_FOLD).removals) == 1
         assert project.compact("shop.Item.name", **NO_FOLD).removals == []
         assert project.compact(exclude=["shop.item"], **NO_FOLD).removals == []
@@ -1137,11 +1137,6 @@ class TestOpaque:
             "RunPython in shop.0002_add mentions 'legacy'",
         )
 
-    def test_scan_ignore(self, project):
-        self._history(project, "migrations.RunPython(forwards),\n")
-        result = project.compact(opaque="ignore")
-        assert kinds(result) == [("field", "shop.Item.legacy")]
-
     def test_scan_miss(self, project):
         self._history(project, "migrations.RunSQL('SELECT 1'),\n")
         project.migration(
@@ -1155,8 +1150,6 @@ class TestOpaque:
         )
         result = project.check_equivalence()
         assert kinds(result) == [("field", "shop.Item.legacy")]
-        result_block = project.compact(opaque="block")
-        assert result_block.removals == []
 
     def test_window(self, project):
         project.migration(
@@ -1177,7 +1170,7 @@ class TestOpaque:
             migrations.RunSQL("SELECT 'legacy'"),
             """,
         )
-        result = project.check_equivalence(opaque="block")
+        result = project.check_equivalence()
         assert kinds(result) == [("field", "shop.Item.legacy")]
 
     def test_external_function(self, project):
@@ -1573,12 +1566,10 @@ class TestOptions:
         with pytest.raises(CompactError, match="Invalid target"):
             project.compact("shop.a.b.c")
 
-    def test_bad_kind_and_policy(self, project):
+    def test_bad_kind(self, project):
         project.migration("shop", "0001_initial", ITEM)
         with pytest.raises(CompactError, match="Unknown kind"):
-            project.compact(kinds=["nope"])
-        with pytest.raises(CompactError, match="Unknown opaque policy"):
-            project.compact(opaque="nope")
+            project.compact(skip_kinds=["nope"])
 
     def test_target_matches_any_name(self, project):
         project.migration("shop", "0001_initial", ITEM)

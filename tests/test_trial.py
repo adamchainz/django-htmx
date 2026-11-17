@@ -1,16 +1,14 @@
 from __future__ import annotations
 
 import tomllib
-from collections import Counter
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from django.core.management import CommandError
 
 from django_compact_migrations import trial as trial_module
 from django_compact_migrations.core import CompactError, UnitInfo, analyse
-from django_compact_migrations.snapshot import Difference, Snapshot
+from django_compact_migrations.snapshot import Difference
 from tests.project import (
     FAILURE,
     ITEM,
@@ -214,13 +212,6 @@ def test_plan_file_round_trip(project, tmp_path):
     assert 'AddField("item", "legacy"' not in project.read("shop", "0002_add")
 
 
-def test_trial_with_opaque_policy(project):
-    with_data_migration(project, "pass")
-
-    with pytest.raises(CommandError, match="--opaque replaces the trial"):
-        project.command("plan", "--opaque", "block")
-
-
 def test_non_atomic_failure_ends_pass(project):
     project.migration("shop", "0001_initial", ITEM)
     project.migration(
@@ -383,11 +374,9 @@ def test_sqlite_column_order(project):
     assert result.removals == []
     assert result.verification["trial_blocked"] == 1
     assert result.verification["unlocked"] <= result.verification["at_risk"]
-    loose = project.compact(static=False, trial_ignore_column_order=True)
-    assert len(loose.removals) == 1
-    out, _ = project.command("plan", "--static", "--kind", "fold")
+    out, _ = project.command("plan", "--static")
     assert "physical order of columns" in out
-    out, _ = project.command("plan", "--kind", "fold")
+    out, _ = project.command("plan")
     assert "physical order of columns" not in out
 
 
@@ -422,7 +411,7 @@ def test_elidable_writer_kept(project):
     assert result.verification["nondeterministic_tables"] == []
 
 
-def test_post_migrate_flag(project):
+def test_post_migrate_sent(project):
     from django.db.models.signals import post_migrate
 
     project.migration("shop", "0001_initial", ITEM)
@@ -446,7 +435,12 @@ def test_post_migrate_flag(project):
         """,
     )
 
+    sent = project.root / "sent"
+
     def create(using: str, apps: Any, **kwargs: Any) -> None:
+        # Runs are forked: count them in a file.
+        with sent.open("a") as f:
+            f.write("x")
         apps.get_model("shop", "Item").objects.using(using).get_or_create(name="p")
 
     # post_migrate is only sent for apps with a models module.
@@ -454,10 +448,10 @@ def test_post_migrate_flag(project):
     post_migrate.connect(create, dispatch_uid="test_post_migrate_flag")
     try:
         # The history leaves no row behind, but the table's next id shows
-        # the elidable operation's removal; with post_migrate, so does the
-        # id of the row it creates.
+        # the elidable operation's removal, and so does the id of the row
+        # post_migrate creates, at the end of every run.
         assert project.compact(static=False).removals == []
-        assert project.compact(static=False, trial_post_migrate=True).removals == []
+        assert len(sent.read_text()) >= 3
     finally:
         post_migrate.disconnect(dispatch_uid="test_post_migrate_flag")
 
@@ -506,7 +500,8 @@ def test_max_runs_reached(project, monkeypatch):
         [([FAILURE], []), None],
         lambda self, solution, f, d, **kw: {legacy_key(solution): "x"},
     )
-    result = project.compact(static=False, trial_max_runs=1, **NO_FOLD)
+    monkeypatch.setattr(trial_module, "MAX_RUNS", 1)
+    result = project.compact(static=False, **NO_FOLD)
     assert result.verification["fallback"] is True
     assert kinds(result) == [("field", "shop.Item.dead")]
 
@@ -586,13 +581,6 @@ def test_noop_layer_dropped(project, monkeypatch):
     assert any(d.startswith("--noop-data") for d in result.verification["dropped"])
 
 
-def test_single_baseline(project):
-    with_data_migration(project, MENTIONED)
-    result = project.compact(static=False, trial_single_baseline=True, **NO_FOLD)
-    assert result.verification["runs"] == 2
-    assert kinds(result) == [("field", "shop.Item.legacy")]
-
-
 def test_second_baseline_fails(project, tmp_path):
     marker = tmp_path / "ran"
     with_data_migration(
@@ -648,12 +636,8 @@ def bare_trial(project: Project) -> trial_module.Trial:
         return trial_module.Trial(
             analyse(),
             "default",
-            8,
             None,
-            single_baseline=False,
             noop_data=False,
-            ignore_column_order=False,
-            post_migrate=False,
         )
 
 
@@ -710,21 +694,6 @@ def test_attribute_data_differences(project):
     assert list(trial._attribute(solution, [], [named])) == ["field:b"]  # type: ignore[arg-type]
     elsewhere = Difference("other", "data", "rows differ")
     assert list(trial._attribute(solution, [], [elsewhere])) == ["risky"]  # type: ignore[arg-type]
-
-
-def test_mask_nondeterminism(project):
-    trial = bare_trial(project)
-    trial.single_baseline = True
-    reference = Snapshot("sqlite", data={"t": Counter({("1",): 1}), "u": Counter()})
-    snapshot = Snapshot(
-        "sqlite", data={"t": Counter({("2",): 1}), "u": Counter({("1",): 1})}
-    )
-    diffs = reference.differences(snapshot, trial.mask, trial.masked)
-    solution = SimpleNamespace(units=[unit("u", tables=frozenset({"u"}))])
-    # t: no removal relates to it, so its rows are random; u's are not.
-    (left,) = trial._mask_nondeterminism(solution, diffs, reference, snapshot)  # type: ignore[arg-type]
-    assert left.table == "u"
-    assert trial.masked == {"t"}
 
 
 def test_duration():
@@ -827,7 +796,8 @@ def test_trial_blames_until_a_plan_passes(project, monkeypatch):
 
     monkeypatch.setattr(trial_module.Trial, "_run", sabotage)
     # Every edited migration fails: blamed until nothing is edited.
-    result = project.compact(static=False, trial_max_runs=1)
+    monkeypatch.setattr(trial_module, "MAX_RUNS", 1)
+    result = project.compact(static=False)
     assert result.removals == []
     assert result.verification["dropped"] == []
     assert "no such table: nowhere" in blocked(result)["shop.Item.legacy"][0]

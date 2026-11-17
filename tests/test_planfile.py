@@ -43,9 +43,7 @@ def round_trip(project: Project, tmp_path: Path) -> tuple[dict[str, Any], bytes]
 def test_layout(project, tmp_path):
     history(project)
     plan_path = tmp_path / "plan.toml"
-    project.command(
-        "plan", "--static", "--prune", "--show-blocked", "-o", str(plan_path)
-    )
+    project.command("plan", "--static", "--prune", "-v", "2", "-o", str(plan_path))
     text = plan_path.read_text()
     order = [
         text.index('format = "django-compact-migrations-plan"'),

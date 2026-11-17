@@ -90,7 +90,6 @@ def run_history(
     hook: OpHook | None = None,
     progress: Progress | None = None,
     prune: PrunePlan | None = None,
-    post_migrate: bool = False,
 ) -> RunReport:
     """
     Apply every migration to ``connection``, which must be empty, timing each
@@ -99,11 +98,10 @@ def run_history(
     from its graph. Failures raise RunError naming
     the migration.
 
-    pre_migrate is sent first, as ``migrate`` does. post_migrate only with
-    ``post_migrate``: it runs after the history, so it can't change how the
-    history migrates, but what its handlers create (content types and
-    permissions, numbered in order) shows the effect of rows the history
-    created first.
+    pre_migrate is sent first and post_migrate last, as ``migrate`` does:
+    post_migrate runs after the history, so it can't change how the history
+    migrates, but what its handlers create (content types and permissions,
+    numbered in order) shows the effect of rows the history created first.
     """
     report = RunReport()
     current: list[Key | None] = [None]
@@ -219,20 +217,19 @@ def run_history(
             op.__dict__.pop("state_forwards", None)
         if progress is not None:
             progress("done", None, done[0], len(report.plan))
-    if post_migrate:
-        try:
-            emit_post_migrate_signal(
-                0,
-                False,
-                connection.alias,
-                stdout=io.StringIO(),
-                apps=final_state.apps,
-                plan=migration_plan,
-            )
-        except Exception as exc:
-            raise RunError(
-                f"A post_migrate signal handler failed: {type(exc).__name__}: {exc}"
-            ) from exc
+    try:
+        emit_post_migrate_signal(
+            0,
+            False,
+            connection.alias,
+            stdout=io.StringIO(),
+            apps=final_state.apps,
+            plan=migration_plan,
+        )
+    except Exception as exc:
+        raise RunError(
+            f"A post_migrate signal handler failed: {type(exc).__name__}: {exc}"
+        ) from exc
     return report
 
 

@@ -99,29 +99,23 @@ def test_sqlite_objects(django_db_blocker):
             cursor.execute("CREATE VIEW v AS SELECT a FROM t")
             cursor.execute("CREATE TRIGGER tr AFTER INSERT ON t BEGIN SELECT 1; END")
             cursor.execute(
-                # An unknown column type isn't masked.
-                "CREATE TABLE s (id integer PRIMARY KEY AUTOINCREMENT, n frob)"
+                "CREATE TABLE s (id integer PRIMARY KEY AUTOINCREMENT, n int)"
             )
             cursor.execute("INSERT INTO s (n) VALUES (1)")
             cursor.execute("DELETE FROM s")
         snapshot = take_snapshot(connection)
-        masked = take_snapshot(connection, mask_dates=True)
     # The next id survives the deleted row.
     assert snapshot.schema[("next id", "s", "s")] == 1
     kinds = {key[0] for key in snapshot.schema}
     assert {"check", "view", "trigger"} <= kinds
     assert ("check", "t", "b_positive:['b']") in snapshot.schema
-    # Bytes are compared as bytes; dates too, unless masked (with a single
-    # baseline run, nothing shows which differ between runs).
+    # Dates and bytes are compared as values.
     assert snapshot.columns["t"] == ("a", "b", "c", "d", "e")
     assert list(snapshot.data["t"]) == [
         ("1", "1", "'x'", "datetime.datetime(2026, 1, 1, 0, 0)", "b'\\x00\\xff'")
     ]
-    assert list(masked.data["t"]) == [("1", "1", "'x'", "<masked>", "b'\\x00\\xff'")]
-    assert (
-        snap(data={"t": Counter({("1",): 1})}).differences(snap(), ignore_data=["t"])
-        == []
-    )
+    masked = Mask(tables={"t"})
+    assert snap(data={"t": Counter({("1",): 1})}).differences(snap(), masked) == []
 
 
 # Scratch databases without a server

@@ -32,7 +32,7 @@ from django_compact_migrations.scratch import (
     drop_leftover,
     list_leftovers,
 )
-from django_compact_migrations.solver import KINDS, OPAQUE_POLICIES
+from django_compact_migrations.solver import KINDS
 from django_compact_migrations.writer import journal_dir, recover
 
 KIND_STYLES = {
@@ -90,7 +90,6 @@ class Command(RichCommand):
             action="store_true",
             help="Exit with status 1 if anything is removable.",
         )
-        _add_show_blocked(plan_parser)
         _add_common_arguments(plan_parser, parser)
         apply_parser = subparsers.add_parser(
             "apply",
@@ -121,7 +120,6 @@ class Command(RichCommand):
         )
         _add_selection_arguments(apply_parser)
         _add_trial_arguments(apply_parser)
-        _add_show_blocked(apply_parser)
         _add_common_arguments(apply_parser, parser)
         profile_parser = subparsers.add_parser(
             "profile",
@@ -214,7 +212,7 @@ class Command(RichCommand):
             self._stderr_console(options).print(
                 message, style="yellow", soft_wrap=True, highlight=False
             )
-        show_blocked = options["show_blocked"] or verbosity >= 2
+        show_blocked = verbosity >= 2
         if subcommand == "apply" and options["plan_file"]:
             if _has_selection(options):
                 raise CommandError(
@@ -446,16 +444,10 @@ class Command(RichCommand):
         return plan(
             options["targets"],
             exclude=options["exclude"],
-            kinds=options["kinds"],
             skip_kinds=options["skip_kinds"] or (),
-            opaque=options["opaque"],
             elidable=options["elidable"],
             static=options["static"],
             database=options["database"],
-            trial_max_runs=options["trial_max_runs"],
-            trial_single_baseline=options["trial_single_baseline"],
-            trial_ignore_column_order=options["trial_ignore_column_order"],
-            trial_post_migrate=options["trial_post_migrate"],
             noop_data=options["noop_data"],
             prune=options["prune"],
             progress=progress,
@@ -714,24 +706,11 @@ def _add_selection_arguments(parser: ArgumentParser) -> None:
         help="Never remove anything matching this target (repeatable).",
     )
     parser.add_argument(
-        "--kind",
-        action="append",
-        choices=KINDS,
-        dest="kinds",
-        help="Only consider these kinds of removal (repeatable).",
-    )
-    parser.add_argument(
         "--skip-kind",
         action="append",
         choices=KINDS,
         dest="skip_kinds",
         help="Don't consider this kind of removal, e.g. fold (repeatable).",
-    )
-    parser.add_argument(
-        "--opaque",
-        choices=OPAQUE_POLICIES,
-        default="scan",
-        help="How RunPython/RunSQL/custom operations block removals.",
     )
     parser.add_argument(
         "--elidable",
@@ -794,48 +773,11 @@ def _add_trial_arguments(parser: ArgumentParser) -> None:
         " (default: 'default').",
     )
     parser.add_argument(
-        "--trial-max-runs",
-        type=int,
-        default=8,
-        metavar="N",
-        help="Trial runs of candidate plans before falling back to the"
-        " static plan (default 8).",
-    )
-    parser.add_argument(
         "--noop-data",
         action="store_true",
         help="Also remove RunPython/RunSQL operations that write nothing on a"
         " fresh database, as a trial run observes them (not with --static)."
         " Their reverse code and any effect outside the database are lost.",
-    )
-    parser.add_argument(
-        "--trial-post-migrate",
-        action="store_true",
-        help="Send post_migrate at the end of every trial run, as migrate"
-        " does, so the content types and permissions it creates are compared"
-        " too (their ids show rows the history created first).",
-    )
-    parser.add_argument(
-        "--trial-ignore-column-order",
-        action="store_true",
-        help="On SQLite, don't compare the physical order of table columns,"
-        " which removals and folds of AlterField and RenameField can change"
-        " (other backends never move columns).",
-    )
-    parser.add_argument(
-        "--trial-single-baseline",
-        action="store_true",
-        help="Migrate the original history once, not twice: saves a run, but"
-        " random or time-based data it creates is then only recognised late,"
-        " and may block removals.",
-    )
-
-
-def _add_show_blocked(parser: ArgumentParser) -> None:
-    parser.add_argument(
-        "--show-blocked",
-        action="store_true",
-        help="List removable-looking entities that are blocked, with reasons.",
     )
 
 
@@ -843,9 +785,7 @@ def _has_selection(options: dict[str, Any]) -> bool:
     return bool(
         options["targets"]
         or options["exclude"]
-        or options["kinds"]
         or options["skip_kinds"]
-        or options["opaque"] != "scan"
         or options["elidable"]
         or options["static"]
         or options["noop_data"]
@@ -916,9 +856,7 @@ def sqlite_order_warning(result: Result, alias: str) -> str | None:
     info = result.verification
     if alias not in connections or connections[alias].vendor != "sqlite":
         return None
-    if info.get("mode") == "trial" and not result.options.get(
-        "trial_ignore_column_order"
-    ):
+    if info.get("mode") == "trial":
         return None
     # Removing dead fields or models doesn't reorder the columns that stay;
     # dropping or moving an AlterField or RenameField (or folding anything

@@ -31,7 +31,7 @@ To edit a file, the command also needs to find each operation in the source.
 It parses the file, and looks for a single ``operations = [...]`` assignment in ``class Migration``.
 The migration is only editable if that is a plain list or tuple literal, with no ``*`` unpacking, whose entries are calls matching the real operations one-to-one.
 If a migration builds its operations dynamically, or has any other unusual shape, it can’t be edited, and anything that would need an edit there is kept.
-With ``--show-blocked``, you’ll see the reason, such as “operations list in app.0004_x could not be parsed”.
+With ``-v 2``, you’ll see the reason, such as “operations list in app.0004_x could not be parsed”.
 
 Files that start with a UTF-8 byte order mark (BOM) are edited like others, and keep it.
 
@@ -136,7 +136,7 @@ The name scan
 An opaque operation that doesn’t change state can still *use* things, such as a ``RunPython`` that queries a model.
 If a model or field is removed while this runs, the migration would fail.
 
-So under ``--opaque scan``, the command checks every opaque operation inside the window during which a thing exists.
+So the command checks every opaque operation inside the window during which a thing exists.
 If the operation’s text mentions one of the thing’s names, the removal is blocked.
 
 The *window* runs from the operation that creates the thing to the one that ends it.
@@ -191,10 +191,7 @@ This is a heuristic, and has limits:
 * If the source of a ``RunPython`` callable can’t be read at all, such as a C-implemented or dynamically created function, it counts as matching every name.
 * Names assembled by string concatenation or formatting are missed.
 
-The cases where it is unsafe to rely on the scan are exactly the ones where ``--opaque block`` is useful.
-It is stricter, since any opaque operation that might run in the window blocks.
-``--opaque ignore`` turns the checks off.
-State changes by opaque operations still poison things, and verification still runs.
+Where the scan can’t be relied on, the trial (the default) checks by running the operations instead.
 
 Elidable operations
 ~~~~~~~~~~~~~~~~~~~
@@ -363,7 +360,7 @@ On PostgreSQL it covers columns (type, length, precision, nullability, default, 
 On MySQL and MariaDB it covers what ``mysqldump --no-data`` shows, from ``information_schema``: tables (engine, collation, comment, options), columns in their order (type, nullability, default, extra, collation, comment, generation), indexes and their names (columns or expressions, order, prefix length, uniqueness, type, comment, visibility), constraints, foreign keys (columns, targets, ``ON UPDATE``/``ON DELETE``), check constraints by table, triggers, views and routines; the tests compare it on both servers.
 It also covers the next id each table gets: a PostgreSQL sequence’s last value, MySQL’s ``AUTO_INCREMENT``, SQLite’s ``sqlite_sequence`` (``django_migrations`` aside, whose ids follow how many migrations ran).
 Data is compared as a multiset of rows per table, with ``django_migrations`` compared by app and name only.
-Values that differ between the two baseline runs (times, random values) are left out of every comparison; with ``--trial-single-baseline``, date and time values are left out instead.
+Values that differ between the two baseline runs (times, random values) are left out of every comparison.
 
 A candidate run substitutes the edited operation lists on a private ``MigrationLoader`` and runs Django’s ``MigrationExecutor``, so the files on disk are untouched.
 Opaque operations that don’t change the project state are wrapped: an exception inside one rolls back to a savepoint and is recorded, and the run continues as if it did nothing.
