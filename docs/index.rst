@@ -20,6 +20,7 @@ It removes operations that cancel out, merges operations into earlier ones, and 
    installation
    usage
    how_it_works
+   benchmarks
    changelog
 
 
