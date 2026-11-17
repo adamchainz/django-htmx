@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import itertools
-import json
 import os
 import sys
 from argparse import ArgumentParser
@@ -14,7 +13,6 @@ from django.core.management.base import CommandError
 from django.db import connections
 from django_rich.management import RichCommand
 from rich.console import Console
-from rich.table import Table
 from rich.text import Text
 
 from django_compact_migrations import backends
@@ -26,7 +24,6 @@ from django_compact_migrations.core import (
     plan,
 )
 from django_compact_migrations.planfile import load_plan, save_plan
-from django_compact_migrations.profile import Profile, TypeStats, profile
 from django_compact_migrations.scratch import (
     ScratchDatabaseError,
     drop_leftover,
@@ -68,7 +65,7 @@ class Command(RichCommand):
     def add_arguments(self, parser: ArgumentParser) -> None:
         subparsers = parser.add_subparsers(
             dest="subcommand",
-            metavar="{plan,apply,profile,scratch}",
+            metavar="{plan,apply,scratch}",
             title="subcommands",
         )
         plan_parser = subparsers.add_parser(
@@ -121,35 +118,10 @@ class Command(RichCommand):
         _add_selection_arguments(apply_parser)
         _add_trial_arguments(apply_parser)
         _add_common_arguments(apply_parser, parser)
-        profile_parser = subparsers.add_parser(
-            "profile",
-            help="Migrate a scratch database from scratch and report where the"
-            " time goes.",
-            description="Create an empty scratch database, run the whole"
-            " migration history on it, report timings, and drop it. The real"
-            " database is never touched.",
-        )
-        profile_parser.add_argument(
-            "--database",
-            default="default",
-            help="Database alias whose backend and settings to use (default:"
-            " 'default').",
-        )
-        profile_parser.add_argument(
-            "--top",
-            type=int,
-            default=10,
-            metavar="N",
-            help="How many of the slowest migrations to list (default 10).",
-        )
-        profile_parser.add_argument(
-            "--json", action="store_true", help="Print the report as JSON."
-        )
-        _add_common_arguments(profile_parser, parser)
         scratch_parser = subparsers.add_parser(
             "scratch",
             help="List (or drop) scratch databases left by interrupted runs.",
-            description="Trial and profile runs drop their scratch databases"
+            description="Trial runs drop their scratch databases"
             " (named compactmig_...) when they end, even on Ctrl+C or SIGTERM."
             " A killed process can leave one behind: list them, and drop those"
             " that no running command is using.",
@@ -170,7 +142,7 @@ class Command(RichCommand):
             "--drop-all",
             action="store_true",
             help="Drop every scratch database found. Only when no other"
-            " trial or profile run is going on against this server.",
+            " trial run is going on against this server.",
         )
         _add_common_arguments(scratch_parser, parser)
 
@@ -194,9 +166,6 @@ class Command(RichCommand):
             self.print_help("manage.py", "compact_migrations")
             return
         verbosity: int = options["verbosity"]
-        if subcommand == "profile":
-            self._profile(options, verbosity)
-            return
         if subcommand == "scratch":
             self._scratch(options)
             return
@@ -287,121 +256,6 @@ class Command(RichCommand):
                     self._print(name)
             else:
                 self._print("No scratch databases found.")
-
-    def _profile(self, options: dict[str, Any], verbosity: int) -> None:
-        def progress(
-            event: str, key: tuple[str, str] | None, done: int, total: int
-        ) -> None:
-            if key is not None and status is not None:
-                status.update(f"Migrating {key[0]}.{key[1]} ({done + 1}/{total})...")
-
-        try:
-            if verbosity > 0 and not options["json"]:
-                with self.console.status(
-                    "Creating a scratch database...", spinner="dots"
-                ) as status:
-                    result = profile(options["database"], progress)
-            else:
-                status = None
-                result = profile(options["database"], progress)
-        except CompactError as exc:
-            raise CommandError(str(exc)) from None
-        if options["json"]:
-            self.stdout.write(json.dumps(result.as_dict(options["top"]), indent=2))
-            return
-        if verbosity > 0:
-            self._report_profile(result, options["top"])
-
-    def _report_profile(self, result: Profile, top: int) -> None:
-        total = result.total or 1e-9
-
-        def pct(seconds: float) -> str:
-            return f"{100 * seconds / total:.1f}%"
-
-        def table(title: str, first: str) -> Table:
-            t = Table(title=title, title_justify="left")
-            t.add_column(first)
-            for name in ("Count", "Database", "State", "Total", "Share"):
-                t.add_column(name, justify="right")
-            return t
-
-        def row(t: Table, name: str, stats: TypeStats) -> None:
-            t.add_row(
-                name,
-                str(stats.count),
-                f"{stats.seconds:.3f}",
-                f"{stats.state_seconds:.3f}",
-                f"{stats.total:.3f}",
-                pct(stats.total),
-            )
-
-        self._print(
-            Text(
-                f"Migrated {len(result.migrations)} migrations in"
-                f" {result.total:.2f}s on {result.server or result.vendor}:"
-                f" {result.operations_total:.2f}s"
-                f" in the database, {result.state_total:.2f}s updating the"
-                f" project state, {result.overhead:.2f}s other.",
-                style="bold",
-            )
-        )
-        t = Table(title=f"Slowest {top} migrations", title_justify="left")
-        t.add_column("Migration")
-        for name in ("Operations", "Database", "State", "Seconds", "Share"):
-            t.add_column(name, justify="right")
-        for key, seconds in result.slowest(top):
-            stats = result.by_migration.get(key, TypeStats())
-            t.add_row(
-                f"{key[0]}.{key[1]}",
-                str(result.migration_ops.get(key, 0)),
-                f"{stats.seconds:.3f}",
-                f"{stats.state_seconds:.3f}",
-                f"{seconds:.3f}",
-                pct(seconds),
-            )
-        self._table(t)
-        t = table("By operation type", "Operation")
-        for name, stats in sorted(result.by_type.items(), key=lambda kv: -kv[1].total):
-            row(t, name, stats)
-        self._table(t)
-        t = table("By app", "App")
-        for app, stats in sorted(result.by_app.items(), key=lambda kv: -kv[1].total):
-            row(t, app, stats)
-        self._table(t)
-        t = Table(
-            title=f"Top {top} operations by project state cost",
-            title_justify="left",
-        )
-        for name in ("Migration", "Operation", "State"):
-            t.add_column(name, justify="right" if name == "State" else "left")
-        for op in result.top_state[:top]:
-            t.add_row(
-                f"{op.migration[0]}.{op.migration[1]} #{op.index + 1}",
-                op.operation,
-                f"{op.state_seconds:.3f}",
-            )
-        self._table(t)
-        if result.removable is None:
-            self._print(
-                Text(
-                    f"Could not make the default plan: {result.plan_error}",
-                    style="yellow",
-                )
-            )
-        else:
-            assert result.editable is not None
-            self._print(
-                Text(
-                    f"The default plan removes {_ops(result.removable_count)}"
-                    f" taking {result.removable:.3f}s ({pct(result.removable)}),"
-                    f" and edits operations taking {result.editable:.3f}s"
-                    f" ({pct(result.editable)}), counting database and project"
-                    " state time.",
-                    style="bold green",
-                )
-            )
-        for note in result.notes:
-            self._print(Text(note, style="dim"))
 
     def _analyse(self, options: dict[str, Any], verbosity: int) -> Result:
         if verbosity > 0 and not options["static"]:
@@ -545,16 +399,6 @@ class Command(RichCommand):
         return Console(
             file=options.get("stderr") or sys.stderr, force_terminal=force_terminal
         )
-
-    def _table(self, table: Table) -> None:
-        # Not on a terminal (a pipe, a file, CI logs), rich would assume 80
-        # columns and cut the tables: let them take the room they need.
-        if self.console.is_terminal:
-            self.console.print(table)
-        else:
-            Console(file=self.console.file, width=1000, color_system=None).print(
-                table, crop=False
-            )
 
     def _print(self, text: Text | str, **kwargs: Any) -> None:
         self.console.print(text, soft_wrap=True, highlight=False, **kwargs)

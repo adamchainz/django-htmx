@@ -198,7 +198,7 @@ def test_no_subcommand_prints_help(history, capsys):
     before = history.files()
     history.command()
     out = capsys.readouterr().out
-    assert "{plan,apply,profile,scratch}" in out
+    assert "{plan,apply,scratch}" in out
     assert history.files() == before
 
 

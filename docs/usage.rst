@@ -33,7 +33,7 @@ It keeps a copy of the originals in a ``.compact-migrations-journal`` directory 
 
 ``plan`` and ``apply`` on their own only read and write migration files (and read which migrations each database has applied).
 With ``--static``, a plan is checked against Django’s model state only, not against a database, and the report says so.
-Trial runs (the default, unless ``--static``) and ``profile`` also create and drop temporary databases on the server of the ``--database`` alias, and run your migrations, data migrations included, on them.
+Trial runs (the default, unless ``--static``) also create and drop temporary databases on the server of the ``--database`` alias, and run your migrations, data migrations included, on them.
 So run them with development settings that point at a local server of the same backend as production, never at production itself.
 Before a trial, the command says which alias, server and settings it uses.
 The database user needs permission to create databases (``CREATE DATABASE``), as for running tests.
@@ -476,7 +476,7 @@ A trial, which runs unless you pass ``--static``, replaces that guess with evide
 
 It works like this:
 
-1. The original history is migrated on an empty scratch database (as for ``profile``), and a snapshot is taken of the resulting schema (in far more detail than Django’s model state: columns, defaults, constraints, indexes, sequences and the next id of each table, views, functions, triggers and more) and all data.
+1. The original history is migrated on an empty scratch database (see :ref:`scratch-databases`), and a snapshot is taken of the resulting schema (in far more detail than Django’s model state: columns, defaults, constraints, indexes, sequences and the next id of each table, views, functions, triggers and more) and all data.
 2. A candidate plan is made in which the name scan doesn’t block anything, but each removal remembers which data migrations mentioned it.
    The command says how many removals a trial could unlock at most: if that is none, only the default plan is trialled.
    Then the original history is migrated a second time: anything that differs between the two runs (random or time-based values in rows that migrations create, such as UUIDs, tokens or password hashes) is left out of every comparison: just the differing columns where that is enough, else the table’s data.
@@ -639,40 +639,10 @@ The plan file lists them under ``verification.noop``, with what was observed.
     So this is opt-in: review the removed operations before applying.
 
 
-Profiling migrations
---------------------
+.. _scratch-databases:
 
-``compact_migrations profile`` shows where the time goes when migrating from scratch.
-It creates an empty scratch database, runs the whole history on it with Django’s migration executor, prints timings, and drops the database:
-
-.. code-block:: console
-
-    $ python manage.py compact_migrations profile --top 5
-    Migrated 412 migrations in 68.50s on PostgreSQL: 14.85s in the database, 47.20s updating the project state, 6.45s other.
-    Slowest 5 migrations
-    ...
-    By operation type
-    ...
-    By app
-    ...
-    Top 5 operations by project state cost
-    ...
-    The default plan removes 151 operations taking 9.204s (13.4%), and edits operations taking 0.412s (0.6%), counting database and project state time.
-
-Time is split into:
-
-* **database**: inside each operation’s ``database_forwards()``, the schema change or data migration itself, including any rendering of models it triggers;
-* **project state**: updating Django’s in-memory model of the project for each operation, which ``migrate`` also has to do: the copy of the state Django takes before each operation, and the operation’s ``state_forwards()``, which re-renders the models it touches and every model related to them;
-* **other**: the rest of the executor’s work, such as transactions, recording applied migrations, and deferred SQL.
-
-On large projects the project state usually dominates: an operation on a model that many others relate to is expensive however small its SQL.
-The “by project state cost” table shows which operations, and so which models, those are.
-
-The tables show, per operation type, app and slowest migration, the count, database time, project state time and share of the total.
-The removable estimate counts both database and project state time of the operations the default ``plan`` would remove or fold away, and of those it edits.
-``pre_migrate`` is sent before migrating, as ``migrate`` does: handlers may prepare the database (a schema, an extension) or, like the content types app, add operations.
-``post_migrate`` handlers, such as creating content types and permissions, are not run: they come after the history, so they can’t change how it migrates, and what they create depends only on the final models, which the plan keeps.
-``--json`` prints the same report as JSON.
+Scratch databases
+-----------------
 
 The scratch database uses the backend and settings of the ``default`` database, or of ``--database ALIAS``.
 For SQLite it is a temporary file; for PostgreSQL and MySQL a new database named ``compactmig_<random>_<name>`` is created next to the real one, so the database user needs permission to create databases, as for running tests.
@@ -681,7 +651,7 @@ While migrating, *every* configured database alias is pointed at a scratch datab
 
 * the chosen alias, the aliases configured for the same database (same engine, host, port and name, such as a read replica alias), and test mirrors (``"TEST": {"MIRROR": ...}``) share one scratch database, so a replica sees what the history wrote;
 * every other database gets its own, empty scratch database: only the chosen alias is migrated, so a data migration that reads another database finds no tables there.
-  Multi-database projects that migrate several aliases are trialled and profiled one alias at a time;
+  Multi-database projects that migrate several aliases are trialled one alias at a time;
 * aliases using the dummy backend are left alone; any alias on a backend that can’t have scratch databases (anything but SQLite, PostgreSQL and MySQL) makes the command refuse to run: remove it from ``DATABASES`` for the command.
 
 Every scratch database is dropped afterwards, after closing every connection, also on errors, Ctrl+C and ``SIGTERM``.
@@ -693,7 +663,7 @@ Where ``os.fork()`` doesn’t exist (Windows), runs happen in-process, with a wa
 
 Only a hard kill (``SIGKILL``, a crash of the machine) can leave a scratch database behind.
 ``compact_migrations scratch`` lists any on the server (or, for SQLite, in the temporary directory), and ``--drop NAME`` or ``--drop-all`` drops them.
-Other trial or profile runs against the same server use scratch databases too, so only drop those you know are left over.
+Other trial runs against the same server use scratch databases too, so only drop those you know are left over.
 
 .. _verifying-your-schema:
 
