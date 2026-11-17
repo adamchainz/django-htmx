@@ -55,6 +55,7 @@ test = [
   "pytest>=9",
   "pytest-django",
   "pytest-randomly",
+  "unittest-parametrize",
 ]
 docs = [
   "furo>=2024.8.6",

@@ -67,3 +67,4 @@ repos:
     - tokenize-rt==6.2.0
     - tomli-w==1.2.0
     - types-PyMySQL==1.2.4.20261111
+    - unittest-parametrize==1.9.0

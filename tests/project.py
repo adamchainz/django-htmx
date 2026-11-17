@@ -9,19 +9,24 @@ from __future__ import annotations
 import importlib
 import itertools
 import sys
+import tempfile
 import textwrap
 from collections.abc import Iterator
-from contextlib import ExitStack, contextmanager
+from contextlib import AbstractContextManager, ExitStack, contextmanager, nullcontext
 from io import StringIO
 from pathlib import Path
 from typing import Any
 
+import pytest
 from django.conf import settings
 from django.core.management import call_command
 from django.db import connections
+from django.db.backends.base.base import BaseDatabaseWrapper
 from django.db.migrations.executor import MigrationExecutor
-from django.test import override_settings
+from django.test import SimpleTestCase, override_settings
+from unittest_parametrize import ParametrizedTestCase
 
+from django_compact_migrations import worktree
 from django_compact_migrations.core import Result, plan
 from django_compact_migrations.solver import KINDS
 from django_compact_migrations.trial import TrialFailure
@@ -380,3 +385,86 @@ def server_alias(alias: str, db_blocker: Any) -> Iterator[str]:
         del connections[alias]
         connections.settings.pop(alias, None)
         settings.DATABASES.pop(alias, None)
+
+
+class _NoBlocker:
+    """Stands for pytest-django's database blocker: test cases may use the
+    databases they declare."""
+
+    def unblock(self) -> AbstractContextManager[None]:
+        return nullcontext()
+
+
+class Base(ParametrizedTestCase, SimpleTestCase):
+    """A temporary directory (``tmp_path``) and a monkeypatch, undone after
+    each test."""
+
+    databases = "__all__"
+
+    @classmethod
+    def ensure_connection_patch_method(cls) -> Any:
+        # Scratch databases and the servers' aliases are configured during
+        # tests, which Django's check would refuse.
+        return BaseDatabaseWrapper.ensure_connection
+
+    def setUp(self) -> None:
+        super().setUp()
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.tmp_path = Path(directory.name).resolve()
+        self.monkeypatch = pytest.MonkeyPatch()
+        self.addCleanup(self.monkeypatch.undo)
+        # Files are rewritten within the same second as they are first
+        # imported.
+        self.monkeypatch.setattr(sys, "dont_write_bytecode", True)
+        self.db_blocker = _NoBlocker()
+
+    def server(self, alias: str) -> str:
+        """A database alias for a server of compose.yaml, for this test."""
+        return self.enterContext(server_alias(alias, self.db_blocker))
+
+
+class ProjectTestCase(Base):
+    """A temporary Django project (``project``) in ``tmp_path``."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        # The command edits migrations under the project root only (the
+        # current directory's Git work tree); forked runs' coverage data
+        # needs the current directory left alone.
+        root = self.tmp_path
+        self.monkeypatch.setattr(worktree, "project_root", lambda: root)
+        self.project = Project(self.tmp_path, self.db_blocker)
+        self.addCleanup(self.project.close)
+
+
+def shop_history(project: Project) -> Project:
+    """shop: a dead model, a dead field, and a field a RunPython uses."""
+    project.migration("shop", "0001_initial", ITEM)
+    project.migration(
+        "shop",
+        "0002_coupon",
+        """
+        migrations.CreateModel(
+            name="Coupon",
+            fields=[("id", models.AutoField(primary_key=True))],
+        ),
+        migrations.AddField("item", "legacy", models.IntegerField(default=0)),
+        migrations.AddField("item", "rank", models.IntegerField(default=0)),
+        migrations.RunPython(rank),
+        """,
+        extra="""
+        def rank(apps, schema_editor):
+            apps.get_model("shop", "Item").objects.update(rank=1)
+        """,
+    )
+    project.migration(
+        "shop",
+        "0003_drop",
+        """
+        migrations.DeleteModel("Coupon"),
+        migrations.RemoveField("item", "legacy"),
+        migrations.RemoveField("item", "rank"),
+        """,
+    )
+    return project
