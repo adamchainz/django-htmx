@@ -187,7 +187,7 @@ Runs of the original and the two compacted histories were interleaved, one at a 
 For each compacted history, a fresh database was compared with one made by the original history:
 
 * the schema dump (``pg_dump --schema-only``, or a sorted dump of ``sqlite_master`` for SQLite),
-* the ids of all content types and permissions,
+* the content types and permissions,
 * the output of ``makemigrations --check --dry-run``.
 
 All were identical for all nine projects in both configurations, and ``migrate --check`` passed.

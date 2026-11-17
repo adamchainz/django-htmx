@@ -27,10 +27,10 @@ def _pattern(name: str) -> re.Pattern[str]:
 
 GENERIC = re.compile(
     r"(?<![^\W_])(create_permissions|create_contenttypes|emit_post_migrate_signal"
-    r"|get_for_models?|update_contenttypes)(?![^\W_])"
+    r"|update_contenttypes)(?![^\W_])"
 )
-"""Calls that act on every model the app registry holds (content types and
-permissions, whose ids follow the models that existed when they ran)."""
+"""Calls that act on every model the app registry holds: they create content
+type and permission rows for the models that existed when they ran."""
 
 
 class Text:

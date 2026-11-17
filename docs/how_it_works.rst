@@ -188,7 +188,7 @@ The names that are looked for are:
 * For an index or constraint: every name it had.
   A constraint or ``unique_together`` entry is enforced, so a data migration writing the table may rely on it without naming it (``bulk_create(..., ignore_conflicts=True)``, a caught ``IntegrityError``): its model’s names and the names of its fields are looked for too.
 
-An operation that calls ``create_permissions``, ``create_contenttypes``, ``update_contenttypes``, ``emit_post_migrate_signal``, ``get_for_model`` or ``get_for_models`` acts on every model that exists when it runs, without naming them: content type and permission rows, whose ids follow the models that existed.
+An operation that calls ``create_permissions``, ``create_contenttypes``, ``update_contenttypes`` or ``emit_post_migrate_signal`` acts on every model that exists when it runs, without naming them: it creates content type and permission rows for the models that existed.
 It counts as mentioning every name, and an elidable one is never removed alongside something it mentions.
 
 Matching ignores case.
@@ -411,7 +411,9 @@ The static plan’s own removals are blamed only when nothing else explains a fa
 Only when nothing is left to blame are ``--prune`` and then ``--noop-data`` given up, with a note (``verification.dropped`` in the plan file).
 If even that plan fails, ``plan`` exits with an error and ``apply`` writes nothing.
 
-Every run sends ``pre_migrate`` first and ``post_migrate`` at the end, as ``migrate`` does, so the content types and permissions it creates are compared too: their ids follow the rows the history created first.
+Every run sends ``pre_migrate`` first and ``post_migrate`` at the end, as ``migrate`` does, so the content types and permissions it creates are compared too.
+Their ids are not: they follow which rows the history happened to create first, and may change, as they can after squashing.
+Content types and permissions are compared by app label, model and codename, and so are foreign keys to them, so a row that points at one must still point at the same one.
 
 A trial migrates the ``--database`` alias only.
 A ``RunPython`` or ``RunSQL`` operation that ``DATABASE_ROUTERS`` keep from running on that alias can’t be checked: what it mentions stays blocked as in the static plan, and it is never taken for a no-op.

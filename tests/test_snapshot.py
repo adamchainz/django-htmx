@@ -122,6 +122,58 @@ class SnapshotTests(ProjectTestCase):
         masked = Mask(tables={"t"})
         assert snap(data={"t": Counter({("1",): 1})}).differences(snap(), masked) == []
 
+    def test_content_type_and_permission_ids_not_compared(self):
+        def snapshot(first: int, second: int, permissions: bool = True) -> Snapshot:
+            with self.db_blocker.unblock(), scratch_database() as connection:
+                with connection.cursor() as cursor:
+                    statements = [
+                        "CREATE TABLE django_content_type (id integer PRIMARY KEY"
+                        " AUTOINCREMENT, app_label text, model text)",
+                        "CREATE TABLE owner (id integer PRIMARY KEY)",
+                        "CREATE TABLE note (id integer PRIMARY KEY,"
+                        " content_type_id integer REFERENCES django_content_type (id),"
+                        " owner_id integer REFERENCES owner (id),"
+                        " permission_id integer, plain integer)",
+                        "INSERT INTO owner (id) VALUES (1)",
+                        f"INSERT INTO django_content_type (id, app_label, model)"
+                        f" VALUES ({first}, 'shop', 'item'), ({second}, 'shop', 'tag')",
+                        f"INSERT INTO note VALUES (1, {first}, 1, NULL, {first})",
+                    ]
+                    if permissions:
+                        statements += [
+                            "CREATE TABLE auth_permission (id integer PRIMARY KEY"
+                            " AUTOINCREMENT, content_type_id integer REFERENCES"
+                            " django_content_type (id), codename text)",
+                            "CREATE TABLE grants (permission_id integer"
+                            " REFERENCES auth_permission (id))",
+                            f"INSERT INTO auth_permission VALUES"
+                            f" ({second}, {first}, 'add_item')",
+                            f"INSERT INTO grants VALUES ({second})",
+                        ]
+                    for sql in statements:
+                        cursor.execute(sql)
+                return take_snapshot(connection)
+
+        a, b = snapshot(1, 2), snapshot(2, 1)
+        assert not any(key[0] == "next id" for key in a.schema)
+        assert a.data["django_content_type"] == Counter(
+            {
+                ("'shop'", "'<content type shop.item>'", "'item'"): 1,
+                ("'shop'", "'<content type shop.tag>'", "'tag'"): 1,
+            }
+        )
+        assert a.data["grants"] == Counter(
+            {("'<permission <content type shop.item> add_item>'",): 1}
+        )
+        # Only ids and foreign keys are translated: the plain column differs.
+        plain = Mask(columns={"note": {"plain"}})
+        assert [str(d) for d in a.differences(b)] == [
+            "data of table note differs (1 row(s) missing, 1 unexpected)"
+        ]
+        assert a.differences(b, plain) == []
+        c, d = snapshot(1, 2, permissions=False), snapshot(2, 1, permissions=False)
+        assert c.differences(d, plain) == []
+
     def test_postgres_snapshot(self):
         pg = self.server("pg")
         with scratch_database(pg) as connection:
