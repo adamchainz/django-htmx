@@ -35,7 +35,7 @@ def test_mention_without_effect_is_unlocked(project):
         """,
     )
     assert project.compact(**NO_FOLD).removals == []
-    result = project.check_equivalence(trial=True, **NO_FOLD)
+    result = project.check_equivalence(static=False, **NO_FOLD)
     assert kinds(result) == [("field", "shop.Item.legacy")]
     info = result.verification
     assert info["mode"] == "trial"
@@ -58,7 +58,7 @@ def test_failure_harvested_and_blocked(project):
         migrations.DeleteModel("Coupon"),
         """,
     )
-    result = project.check_equivalence(trial=True, **NO_FOLD)
+    result = project.check_equivalence(static=False, **NO_FOLD)
     assert kinds(result) == [("model", "shop.Coupon")]
     (reason,) = blocked(result)["shop.Item.legacy"]
     assert reason.startswith(
@@ -97,7 +97,7 @@ def test_seeded_rows(project):
         migrations.RemoveField("item", "spare"),
         """,
     )
-    result = project.check_equivalence(trial=True, **NO_FOLD)
+    result = project.check_equivalence(static=False, **NO_FOLD)
     # "spare" is only mentioned through its name in the seed function's
     # source; seeding works without it and leaves identical rows.
     assert kinds(result) == [("field", "shop.Item.spare")]
@@ -142,7 +142,7 @@ def test_soft_reference_crash_blocked_by_trial(project):
         migrations.RemoveField("item", "_name"),
         """,
     )
-    result = project.check_equivalence(trial=True, **NO_FOLD)
+    result = project.check_equivalence(static=False, **NO_FOLD)
     assert result.removals == []
     (reason,) = blocked(result)["shop.Item._name"]
     assert "FieldError: Cannot resolve keyword '_name'" in reason
@@ -176,7 +176,7 @@ def test_schema_difference_detected(project):
         "0004_index",
         'migrations.AddIndex("item", models.Index(fields=["name"], name="name_idx")),',
     )
-    result = project.check_equivalence(trial=True, **NO_FOLD)
+    result = project.check_equivalence(static=False, **NO_FOLD)
     assert result.removals == []
     (reason,) = blocked(result)["shop.Item.legacy"]
     assert reason == (
@@ -191,7 +191,7 @@ def test_baseline_failure(project):
     with pytest.raises(
         CompactError, match="original migration history doesn't migrate"
     ):
-        project.compact(trial=True)
+        project.compact(static=False)
 
 
 def test_plan_file_round_trip(project, tmp_path):
@@ -203,7 +203,7 @@ def test_plan_file_round_trip(project, tmp_path):
         """,
     )
     plan_path = tmp_path / "plan.toml"
-    out, _ = project.command("plan", "--trial", "-o", str(plan_path))
+    out, _ = project.command("plan", "-o", str(plan_path))
     assert "Trial: 3 migrate runs on SQLite (database 'default') in " in out
     assert "unlocked 1 removal of 1 that the static scan blocks" in out
     data = tomllib.loads(plan_path.read_text())
@@ -217,8 +217,8 @@ def test_plan_file_round_trip(project, tmp_path):
 def test_trial_with_opaque_policy(project):
     with_data_migration(project, "pass")
 
-    with pytest.raises(CommandError, match="--trial replaces the --opaque"):
-        project.command("plan", "--trial", "--opaque", "block")
+    with pytest.raises(CommandError, match="--opaque replaces the trial"):
+        project.command("plan", "--opaque", "block")
 
 
 def test_non_atomic_failure_ends_pass(project):
@@ -250,7 +250,7 @@ def test_non_atomic_failure_ends_pass(project):
         'migrations.RemoveField("item", "legacy"),',
         deps=[("shop", "0002_add")],
     )
-    result = project.check_equivalence(trial=True, **NO_FOLD)
+    result = project.check_equivalence(static=False, **NO_FOLD)
     assert result.removals == []
     assert [f["harvested"] for f in result.verification["failures"]] == [False]
     assert blocked(result)["shop.Item.legacy"][0].startswith(
@@ -288,7 +288,7 @@ def two_fields(project: Project, check: str) -> None:
 
 def test_vague_failure_bisected(project):
     two_fields(project, "alpha")
-    result = project.check_equivalence(trial=True, **NO_FOLD)
+    result = project.check_equivalence(static=False, **NO_FOLD)
     # The first half of the suspects is blocked; the failure goes away, so
     # the other half stays removed.
     assert kinds(result) == [("field", "shop.Item.beta")]
@@ -298,7 +298,7 @@ def test_vague_failure_bisected(project):
 
 def test_vague_failure_bisected_second_half(project):
     two_fields(project, "beta")
-    result = project.check_equivalence(trial=True, **NO_FOLD)
+    result = project.check_equivalence(static=False, **NO_FOLD)
     # Blocking the first half didn't help: the failure came back, so the
     # rest is blocked (the innocent first half stays blocked: conservative).
     assert result.removals == []
@@ -379,15 +379,15 @@ def test_sqlite_column_order(project):
     assert [r.kind for r in static.removals] == ["fold"]
     # Folding keeps the column where CreateModel had it, while the
     # AlterField rebuilt the SQLite table with its field last.
-    result = project.compact(trial=True)
+    result = project.compact(static=False)
     assert result.removals == []
     assert result.verification["trial_blocked"] == 1
     assert result.verification["unlocked"] <= result.verification["at_risk"]
-    loose = project.compact(trial=True, trial_ignore_column_order=True)
+    loose = project.compact(static=False, trial_ignore_column_order=True)
     assert len(loose.removals) == 1
-    out, _ = project.command("plan", "--kind", "fold")
+    out, _ = project.command("plan", "--static", "--kind", "fold")
     assert "physical order of columns" in out
-    out, _ = project.command("plan", "--kind", "fold", "--trial")
+    out, _ = project.command("plan", "--kind", "fold")
     assert "physical order of columns" not in out
 
 
@@ -415,9 +415,9 @@ def test_elidable_writer_kept(project):
     # The elidable operation goes with the model it mentions...
     assert [r.kind for r in static.removals] == ["elidable", "model"]
     # ...but it wrote a row on a fresh database: the trial keeps both.
-    out, _ = project.command("plan")
+    out, _ = project.command("plan", "--static")
     assert "Elidable operations are removed on trust" in out
-    result = project.check_equivalence(trial=True)
+    result = project.check_equivalence(static=False)
     assert result.removals == []
     assert result.verification["nondeterministic_tables"] == []
 
@@ -456,8 +456,8 @@ def test_post_migrate_flag(project):
         # The history leaves no row behind, but the table's next id shows
         # the elidable operation's removal; with post_migrate, so does the
         # id of the row it creates.
-        assert project.compact(trial=True).removals == []
-        assert project.compact(trial=True, trial_post_migrate=True).removals == []
+        assert project.compact(static=False).removals == []
+        assert project.compact(static=False, trial_post_migrate=True).removals == []
     finally:
         post_migrate.disconnect(dispatch_uid="test_post_migrate_flag")
 
@@ -506,7 +506,7 @@ def test_max_runs_reached(project, monkeypatch):
         [([FAILURE], []), None],
         lambda self, solution, f, d, **kw: {legacy_key(solution): "x"},
     )
-    result = project.compact(trial=True, trial_max_runs=1, **NO_FOLD)
+    result = project.compact(static=False, trial_max_runs=1, **NO_FOLD)
     assert result.verification["fallback"] is True
     assert kinds(result) == [("field", "shop.Item.dead")]
 
@@ -514,7 +514,7 @@ def test_max_runs_reached(project, monkeypatch):
 def test_nothing_new_to_blame(project, monkeypatch):
     unlockable(project)
     script(monkeypatch, [([FAILURE], []), None], lambda *args, **kwargs: {})
-    result = project.compact(trial=True)
+    result = project.compact(static=False)
     assert result.verification["fallback"] is True
 
 
@@ -534,7 +534,7 @@ def test_trial_plan_worse_than_static(project, monkeypatch):
     monkeypatch.setattr(trial_module, "make_result", make_result)
     messages: list[str] = []
     result = project.compact(
-        trial=True, progress=lambda m, note=False: messages.append(m)
+        static=False, progress=lambda m, note=False: messages.append(m)
     )
     assert result.verification["fallback"] is True
     assert any("using the static plan" in m for m in messages)
@@ -554,7 +554,7 @@ def test_static_part_blamed(project, monkeypatch):
         return {static_key(solution): "x", legacy_key(solution): "y"}
 
     keys = script(monkeypatch, [([FAILURE], []), None], attribute)
-    result = project.compact(trial=True, **NO_FOLD)
+    result = project.compact(static=False, **NO_FOLD)
     assert ":dead" not in keys[-1]
     assert result.removals == []
 
@@ -569,7 +569,7 @@ def test_static_plan_blamed(project, monkeypatch):
         return {static_key(solution): "x"}
 
     script(monkeypatch, [([FAILURE], []), None], attribute)
-    assert project.compact(trial=True, **NO_FOLD).removals == []
+    assert project.compact(static=False, **NO_FOLD).removals == []
 
 
 def test_noop_layer_dropped(project, monkeypatch):
@@ -582,13 +582,13 @@ def test_noop_layer_dropped(project, monkeypatch):
         return {}
 
     script(monkeypatch, [([FAILURE], []), None], attribute)
-    result = project.compact(trial=True)
+    result = project.compact(static=False)
     assert any(d.startswith("--noop-data") for d in result.verification["dropped"])
 
 
 def test_single_baseline(project):
     with_data_migration(project, MENTIONED)
-    result = project.compact(trial=True, trial_single_baseline=True, **NO_FOLD)
+    result = project.compact(static=False, trial_single_baseline=True, **NO_FOLD)
     assert result.verification["runs"] == 2
     assert kinds(result) == [("field", "shop.Item.legacy")]
 
@@ -604,7 +604,7 @@ def test_second_baseline_fails(project, tmp_path):
         "marker.write_text('')\n",
     )
     with pytest.raises(CompactError, match="not a second time: .*second run"):
-        project.compact(trial=True)
+        project.compact(static=False)
 
 
 def test_scratch_database_failure(project, monkeypatch):
@@ -617,7 +617,7 @@ def test_scratch_database_failure(project, monkeypatch):
 
     monkeypatch.setattr(trial_module, "scratch_database", fail)
     with pytest.raises(CompactError, match="no room"):
-        project.compact(trial=True)
+        project.compact(static=False)
 
 
 def test_child_crash(project, monkeypatch):
@@ -633,7 +633,7 @@ def test_child_crash(project, monkeypatch):
 
     monkeypatch.setattr(trial_module.Trial, "_migrate", migrate)
     with pytest.raises(CompactError, match="crashed: Odd: odd"):
-        project.compact(trial=True)
+        project.compact(static=False)
 
 
 # Attribution, directly
@@ -747,7 +747,7 @@ def test_elidable_in_excluded_app_at_risk(project):
         'migrations.RemoveField("item", "legacy"),',
         extra_deps=[("other", "0001_initial")],
     )
-    result = project.compact(exclude=["other"], trial=True, **NO_FOLD)
+    result = project.compact(exclude=["other"], static=False, **NO_FOLD)
     # Kept: removing the column breaks the UPDATE, which can't go.
     assert result.removals == []
     assert "no such column: legacy" in blocked(result)["shop.Item.legacy"][0]
@@ -772,7 +772,7 @@ def test_static_removal_blamed(project):
         "    apps.get_model('shop', 'Cou' + 'pon').objects.using(alias).count()\n",
     )
     assert kinds(project.compact()) == [("model", "shop.Coupon")]
-    result = project.check_equivalence(trial=True)
+    result = project.check_equivalence(static=False)
     assert result.removals == []
     (reason,) = blocked(result)["shop.Coupon"]
     assert "doesn't have a 'Coupon' model" in reason
@@ -784,7 +784,7 @@ def test_no_plan_passes(project, monkeypatch):
     project.migration("shop", "0003_dead", 'migrations.RemoveField("item", "dead"),')
     script(monkeypatch, [([FAILURE], [])], lambda *args, **kwargs: {})
     with pytest.raises(trial_module.TrialFailed, match="found no plan") as info:
-        project.compact(trial=True)
+        project.compact(static=False)
     assert "boom" in str(info.value)
 
 
@@ -827,7 +827,7 @@ def test_trial_blames_until_a_plan_passes(project, monkeypatch):
 
     monkeypatch.setattr(trial_module.Trial, "_run", sabotage)
     # Every edited migration fails: blamed until nothing is edited.
-    result = project.compact(trial=True, trial_max_runs=1)
+    result = project.compact(static=False, trial_max_runs=1)
     assert result.removals == []
     assert result.verification["dropped"] == []
     assert "no such table: nowhere" in blocked(result)["shop.Item.legacy"][0]
@@ -863,7 +863,7 @@ def test_dates_compared(project):
         "default=datetime.date(2020, 1, 1))),",
         extra="import datetime",
     )
-    result = project.compact(trial=True)
+    result = project.compact(static=False)
     assert result.removals == []
     assert (
         result.verification["trial_blocked"] == 2
@@ -886,7 +886,7 @@ def test_times_that_differ_between_runs_masked(project):
             )
         """,
     )
-    result = project.compact(trial=True)
+    result = project.compact(static=False)
     assert result.verification["nondeterministic_columns"] == {"shop_item": ["at"]}
 
 
@@ -905,7 +905,7 @@ def test_next_id_compared(project):
             )
         )
     assert project.compact(**NO_FOLD).removals != []
-    result = project.compact(trial=True, **NO_FOLD)
+    result = project.compact(static=False, **NO_FOLD)
     assert kinds(result) == []
 
 
@@ -926,14 +926,14 @@ def test_router_skipped_operations_not_trialled(project, settings):
             "RunPython(forwards)", 'RunPython(forwards, hints={"database": "other"})'
         )
     )
-    result = project.compact(trial=True, **NO_FOLD)
+    result = project.compact(static=False, **NO_FOLD)
     assert result.removals == []
     assert result.verification["not_trialled"] == ["shop.0002_add #2"]
     assert blocked(result)["shop.Item.legacy"] == (
         "RunPython in shop.0002_add mentions 'legacy' (it doesn't run on the"
         " database 'default', which the trial migrates (DATABASE_ROUTERS))",
     )
-    out, _ = project.command_db("plan", "--trial", "--skip-kind", "fold")
+    out, _ = project.command_db("plan", "--skip-kind", "fold")
     assert (
         "Database routers keep these data migrations from running on 'default',"
         " so the trial can't check them and what they mention is kept:"

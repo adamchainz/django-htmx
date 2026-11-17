@@ -227,7 +227,7 @@ An ``AlterField`` is removed when the next ``AlterField`` or ``RemoveField`` on 
 * Nothing between them refers to the field, and no ``RenameField`` falls between.
 * The scan of opaque operations between them, for both the field’s and its model’s names, finds nothing.
   Models are scanned too, since a data migration may use the field through the model.
-* If the ``AlterField`` rewrites existing rows (it makes the field ``NOT NULL``, so Django fills ``NULL`` with its default, or it changes the field class), no data migration mentioning the model may run between the model’s creation and the ``AlterField`` (or, with ``--trial``, the trial runs pass): rows written by one would keep their old values.
+* If the ``AlterField`` rewrites existing rows (it makes the field ``NOT NULL``, so Django fills ``NULL`` with its default, or it changes the field class), no data migration mentioning the model may run between the model’s creation and the ``AlterField`` (or the trial runs pass): rows written by one would keep their old values.
 * The field is not many-to-many, and was never a primary key.
   The primary key flag can’t change between the definitions involved.
 * The type change is safe.
@@ -337,9 +337,9 @@ Conditions for every fold:
   These rules were derived from Django’s ``BaseDatabaseSchemaEditor`` (``_iter_column_sql``, ``_alter_field``) and checked by comparing ``pg_dump --schema-only`` of databases migrated with the original and the folded histories of large projects.
 * Fields, indexes and constraints keep their order: they are folded in the order they were added, stopping at the first that can’t be.
   A model with ``order_with_respect_to`` is left alone.
-* The opaque operations in the window pass the name scan (for the field and its model, the model, the index or constraint name and, for anything enforced such as a constraint, the model), or, with ``--trial``, the trial runs.
+* The opaque operations in the window pass the name scan (for the field and its model, the model, the index or constraint name and, for anything enforced such as a constraint, the model), or the trial runs.
 * An ``AlterField`` folded into an earlier ``AddField`` gives rows that already exist when the column is added the folded definition’s default instead of the ``AddField``’s.
-  Unless the type and defaults are the same, no data migration mentioning the model may run between the model’s creation and the ``AddField`` (or, with ``--trial``, the trial runs pass).
+  Unless the type and defaults are the same, no data migration mentioning the model may run between the model’s creation and the ``AddField`` (or the trial runs pass).
 * P can be rewritten: Django’s migration writer must be able to serialize it, every import it needs must be a normal module path that doesn’t clash with a name the file already binds to something else, and the written source must load back to an operation with the same effect.
   For example, an ``AlterModelManagers`` setting just the default manager can’t be folded, since a ``CreateModel`` can’t state that.
 
@@ -352,7 +352,7 @@ Model state replays use copies of the field objects, since Django’s ``RenameFi
 Trial mode
 ----------
 
-With ``--trial``, the name scan and the soft-reference rule stop being blockers.
+In a trial (unless ``--static``), the name scan and the soft-reference rule stop being blockers.
 Their hits are recorded instead: each removal (a whole life, or a superseded operation) keeps the list of opaque operations that mentioned it.
 Every other rule stays: references, poisoning, editability, the primary key rule, exclusions and the superseded guards.
 
@@ -425,7 +425,7 @@ On MySQL and MariaDB, two parts of the schema also depend on how the database go
 A plan doesn’t know which database production runs, so the rules apply when any configured database uses the MySQL backend; telling MySQL from MariaDB needs the server, which is asked for its version (a server that can’t be reached counts as MySQL, whose rules are a superset).
 Plans for projects without MySQL or MariaDB are unchanged.
 The plan file records the servers the rules were applied for, under ``options.backends``.
-A trial run on a MySQL or MariaDB database (``--trial --database …``) compares index names, defaults and column order, so it checks what these rules can’t foresee.
+A trial run on a MySQL or MariaDB database (``--database …``) compares index names, defaults and column order, so it checks what these rules can’t foresee.
 
 Limitations
 -----------

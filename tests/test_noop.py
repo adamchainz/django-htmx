@@ -158,8 +158,8 @@ def test_plan_file(project, tmp_path):
 
 def test_needs_trial_backend(project):
     data_migration(project, "pass")
-    with pytest.raises(CommandError, match="can't be combined"):
-        project.command("plan", "--noop-data", "--opaque", "ignore")
+    with pytest.raises(CommandError, match="can't be combined with --static"):
+        project.command("plan", "--noop-data", "--static")
 
 
 @pytest.mark.parametrize(

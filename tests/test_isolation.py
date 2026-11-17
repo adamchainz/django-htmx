@@ -133,7 +133,7 @@ def test_runs_isolated_from_each_other(project):
     project.migration(
         "shop", "0003_remove", 'migrations.RemoveField("item", "legacy"),'
     )
-    result = project.check_equivalence(trial=True)
+    result = project.check_equivalence(static=False)
     # The static plan folds the AddField (its removal is blocked by the
     # mention); the trial then removes the field too.
     assert kinds(result) == [
@@ -159,7 +159,7 @@ def test_pre_migrate_sent(project):
         )
         # pre_migrate is only sent for apps with a models module.
         (project.path("shop").parent / "models.py").write_text("")
-        result = project.compact(trial=True)
+        result = project.compact(static=False)
     finally:
         pre_migrate.disconnect(dispatch_uid="test_pre_migrate_sent")
     assert result.verification["failures"] == []
@@ -191,7 +191,7 @@ def test_nondeterministic_rows_not_blamed(project):
     project.migration(
         "shop", "0003_remove", 'migrations.RemoveField("item", "legacy"),'
     )
-    result = project.check_equivalence(trial=True)
+    result = project.check_equivalence(static=False)
     assert kinds(result) == [
         ("field", "shop.Item.legacy"),
         ("fold", "shop.Item.legacy"),
@@ -224,7 +224,7 @@ def test_never_worse_than_static(project, monkeypatch):
         return original(self, aggressive=aggressive, **kwargs)
 
     monkeypatch.setattr(Analysis, "solve", solve)
-    result = project.compact(trial=True)
+    result = project.compact(static=False)
     # Candidates are solved on top of the static plan: whatever a trial
     # blocks, the static plan's removals stay.
     assert set(kinds(static)) <= set(kinds(result))
@@ -235,7 +235,7 @@ def test_baseline_error_explains(project):
         "shop", "0001_initial", "migrations.RunSQL('SELECT * FROM nope'),"
     )
     with pytest.raises(CompactError, match="another database alias") as info:
-        project.compact(trial=True)
+        project.compact(static=False)
     assert "nope" in str(info.value)
 
 
@@ -244,7 +244,7 @@ def test_baseline_error_explains(project):
 
 def test_skip_checks_after_subcommand(project):
     project.migration("shop", "0001_initial", ITEM)
-    out, _ = project.command("plan", "--skip-checks", "-v", "0")
+    out, _ = project.command("plan", "--static", "--skip-checks", "-v", "0")
     assert out == ""
 
 
@@ -258,7 +258,7 @@ def test_apply_plan_from_elsewhere(project, tmp_path, monkeypatch):
     plans = tmp_path / "plans"
     plans.mkdir()
     monkeypatch.chdir(plans)
-    project.command("plan", "-o", "plan.toml")
+    project.command("plan", "--static", "-o", "plan.toml")
     data = tomllib.loads((plans / "plan.toml").read_text())
     assert all(f["path"].startswith("../") for f in data["files"])
     elsewhere = tmp_path / "elsewhere"

@@ -34,7 +34,7 @@ def history(project: Project) -> Path:
 
 def round_trip(project: Project, tmp_path: Path) -> tuple[dict[str, Any], bytes]:
     plan_path = tmp_path / "plan.toml"
-    project.command("plan", "-o", str(plan_path))
+    project.command("plan", "--static", "-o", str(plan_path))
     data = tomllib.loads(plan_path.read_text(encoding="utf-8"))
     project.command("apply", "--plan", str(plan_path))
     return data, project.path("shop", "0002_add").read_bytes()
@@ -43,7 +43,9 @@ def round_trip(project: Project, tmp_path: Path) -> tuple[dict[str, Any], bytes]
 def test_layout(project, tmp_path):
     history(project)
     plan_path = tmp_path / "plan.toml"
-    project.command("plan", "--prune", "--show-blocked", "-o", str(plan_path))
+    project.command(
+        "plan", "--static", "--prune", "--show-blocked", "-o", str(plan_path)
+    )
     text = plan_path.read_text()
     order = [
         text.index('format = "django-compact-migrations-plan"'),
@@ -70,7 +72,7 @@ def test_layout(project, tmp_path):
 def test_blocked_only_when_asked(project, tmp_path):
     history(project)
     plan_path = tmp_path / "plan.toml"
-    project.command("plan", "-o", str(plan_path))
+    project.command("plan", "--static", "-o", str(plan_path))
     assert "[[blocked]]" not in plan_path.read_text()
 
 
@@ -98,7 +100,7 @@ def test_awkward_content(project, tmp_path):
 def test_tampered_diff_refused(project, tmp_path):
     history(project)
     plan_path = tmp_path / "plan.toml"
-    project.command("plan", "-o", str(plan_path))
+    project.command("plan", "--static", "-o", str(plan_path))
     before = project.files()
     text = plan_path.read_text()
     # A changed removed line doesn't apply.
@@ -117,7 +119,7 @@ def test_tampered_diff_refused(project, tmp_path):
 def test_stale_file_refused(project, tmp_path):
     path = history(project)
     plan_path = tmp_path / "plan.toml"
-    project.command("plan", "-o", str(plan_path))
+    project.command("plan", "--static", "-o", str(plan_path))
     path.write_text(path.read_text() + "\n# edited\n")
     before = project.files()
     with pytest.raises(CommandError, match="changed since the plan was made"):
@@ -232,7 +234,7 @@ def test_plan_file_with_missing_migration(project, tmp_path):
         "shop", "0003_remove", 'migrations.RemoveField("item", "legacy"),'
     )
     plan_path = tmp_path / "plan.toml"
-    project.command("plan", "-o", str(plan_path))
+    project.command("plan", "--static", "-o", str(plan_path))
     project.path("shop", "0002_add").unlink()
     project.purge()
     with pytest.raises(CompactError, match="Could not load migrations"):
@@ -246,7 +248,7 @@ def test_plan_file_with_missing_migration(project, tmp_path):
 def crafted(project: Project, tmp_path: Path) -> tuple[Path, dict[str, Any]]:
     history(project)
     plan_path = tmp_path / "plan.toml"
-    project.command("plan", "-o", str(plan_path))
+    project.command("plan", "--static", "-o", str(plan_path))
     return plan_path, tomllib.loads(plan_path.read_text())
 
 
@@ -333,7 +335,7 @@ def test_static_plan_recomputed(project, tmp_path):
 def test_trial_plan_verified_after_writing(project, tmp_path):
     history(project)
     plan_path = tmp_path / "plan.toml"
-    project.command_db("plan", "--trial", "-o", str(plan_path))
+    project.command_db("plan", "-o", str(plan_path))
     data = tomllib.loads(plan_path.read_text())
     assert data["verification"]["mode"] == "trial"
     # The same final state and operations, but the fields in another order:
@@ -353,6 +355,6 @@ def test_trial_plan_verified_after_writing(project, tmp_path):
 def test_recorded_verification_labelled(project, tmp_path):
     with_data_migration(project, "pass")
     plan_path = tmp_path / "plan.toml"
-    project.command("plan", "--trial", "-o", str(plan_path))
+    project.command("plan", "-o", str(plan_path))
     out, _ = project.command("apply", "--plan", str(plan_path))
     assert "Trial (recorded in the plan): " in out

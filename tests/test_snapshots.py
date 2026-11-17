@@ -313,7 +313,7 @@ def test_postgres_trial(pg, project):
     project.migration(
         "shop", "0003_remove", 'migrations.RemoveField("item", "legacy"),'
     )
-    result = project.check_equivalence(trial=True, database=pg, noop_data=True)
+    result = project.check_equivalence(static=False, database=pg, noop_data=True)
     assert result.verification["vendor"] == "postgresql"
     assert sorted(r.kind for r in result.removals) == ["field", "noop"]
 
@@ -456,7 +456,7 @@ def test_mysql_trial(my, project):
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(backends, "configured", lambda: frozenset())
         assert project.compact().removals
-        result = project.check_equivalence(trial=True, database=my)
+        result = project.check_equivalence(static=False, database=my)
     assert result.removals == []
     (reason,) = blocked(result)["shop.Child unique_together (parent, x)"]
     assert reason.startswith("trial: schema of table shop_child differs (index")
@@ -477,7 +477,7 @@ def test_mysql_noop_trial(my, project):
         'migrations.AddField("item", "qty", models.TextField(default="a")),',
     )
     result = project.check_equivalence(
-        trial=True, noop_data=True, prune=True, database=my
+        static=False, noop_data=True, prune=True, database=my
     )
     assert [r.kind for r in result.removals if r.kind == "noop"] == ["noop"]
     # The TEXT default: kept out of the CreateModel on MySQL only.

@@ -317,7 +317,7 @@ def test_unselected_app_not_pruned(project):
 def test_plan_round_trip(project, tmp_path):
     dead_field(project)
     plan_path = tmp_path / "plan.toml"
-    out, _ = project.command("plan", "--prune", "-o", str(plan_path))
+    out, _ = project.command("plan", "--static", "--prune", "-o", str(plan_path))
     assert "prune" in out
     assert "2 migrations would be deleted." in out
     data = tomllib.loads(plan_path.read_text())
@@ -349,7 +349,7 @@ def test_failed_write_restores_deleted_files(project, monkeypatch):
 
 def test_trial(project):
     dead_field(project)
-    result = project.check_equivalence(trial=True, **PRUNE)
+    result = project.check_equivalence(static=False, **PRUNE)
     assert pruned(result) == ["shop.0002_add", "shop.0003_remove"]
     assert result.verification["failures"] == []
 
@@ -374,7 +374,7 @@ def test_noop_data_then_pruned(project):
 def test_flag_with_plan_file(project, tmp_path):
     dead_field(project)
     plan_path = tmp_path / "plan.toml"
-    project.command("plan", "-o", str(plan_path))
+    project.command("plan", "--static", "-o", str(plan_path))
     with pytest.raises(CommandError, match="--plan can't be combined"):
         project.command("apply", "--plan", str(plan_path), "--prune")
 
@@ -509,7 +509,7 @@ def test_trial_drops_prune_when_it_fails(project, monkeypatch):
         raise PruneError("simulated")
 
     monkeypatch.setattr(runner, "check_ends", broken)
-    result = project.check_equivalence(trial=True, **PRUNE)
+    result = project.check_equivalence(static=False, **PRUNE)
     assert pruned(result) == []
     assert result.verification["dropped"][0].startswith("--prune (")
     assert result.removals  # the rest of the plan stays

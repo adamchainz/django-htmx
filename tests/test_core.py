@@ -30,10 +30,12 @@ def test_location_without_path():
     assert location.display_path() == "shop.0001_initial"
 
 
-def test_noop_data_needs_scan(project):
+def test_static_conflicts(project):
     project.migration("shop", "0001_initial", ITEM)
-    with pytest.raises(CompactError, match="can't be combined with --opaque"):
-        project.compact(noop_data=True, opaque="block")
+    with pytest.raises(CompactError, match="can't be combined with --static"):
+        project.compact(noop_data=True, static=True)
+    with pytest.raises(CompactError, match="--opaque replaces the trial"):
+        project.compact(opaque="block", static=False)
 
 
 def test_broken_migration_module(project):
@@ -86,7 +88,7 @@ def test_write_text_cleans_up(tmp_path, monkeypatch):
 def test_loaded_plan_with_broken_module(project, tmp_path):
     dead_field(project)
     plan_path = tmp_path / "plan.toml"
-    project.command("plan", "-o", str(plan_path))
+    project.command("plan", "--static", "-o", str(plan_path))
     project.migration("shop", "0004_broken", extra='raise ValueError("boom")')
     project.purge()
     with (
@@ -99,7 +101,7 @@ def test_loaded_plan_with_broken_module(project, tmp_path):
 def test_loaded_plan_then_broken_module(project, tmp_path):
     dead_field(project)
     plan_path = tmp_path / "plan.toml"
-    project.command("plan", "-o", str(plan_path))
+    project.command("plan", "--static", "-o", str(plan_path))
     with project.db_blocker.unblock():
         result = planfile.load_plan(plan_path)
         project.migration("shop", "0004_broken", extra='raise ValueError("boom")')

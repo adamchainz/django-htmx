@@ -32,8 +32,8 @@ So, before running ``compact_migrations apply``:
 It keeps a copy of the originals in a ``.compact-migrations-journal`` directory at the project root until the result is verified; if it is killed in between, the next ``plan`` or ``apply`` restores the files it changed, unless they changed again since.
 
 ``plan`` and ``apply`` on their own only read and write migration files (and read which migrations each database has applied).
-Without ``--trial``, a plan is checked against Django’s model state only, not against a database, and the report says so.
-Trial runs (``--trial``, ``--noop-data``) and ``profile`` also create and drop temporary databases on the server of the ``--database`` alias, and run your migrations, data migrations included, on them.
+With ``--static``, a plan is checked against Django’s model state only, not against a database, and the report says so.
+Trial runs (the default, unless ``--static``) and ``profile`` also create and drop temporary databases on the server of the ``--database`` alias, and run your migrations, data migrations included, on them.
 So run them with development settings that point at a local server of the same backend as production, never at production itself.
 Before a trial, the command says which alias, server and settings it uses.
 The database user needs permission to create databases (``CREATE DATABASE``), as for running tests.
@@ -70,8 +70,8 @@ It doesn’t touch any files:
         sku             superseded  0003_widen_sku -> 0004_cleanup           1 operation
         sku             fold        0004_cleanup -> 0001_initial             1 operation
     Would remove 9 operations, fold 1 operation and edit 2 operations in 6 migration files. 4 migrations would be left with no operations.
-    On SQLite, this plan may change the physical order of columns in rebuilt tables (harmless for Django); --trial checks it.
-    Elidable operations are removed on trust: one that writes on a fresh database (a content type, a seed row) changes the data and later ids; --trial checks it.
+    On SQLite, this plan may change the physical order of columns in rebuilt tables (harmless for Django); a trial (without --static) checks it.
+    Elidable operations are removed on trust: one that writes on a fresh database (a content type, a seed row) changes the data and later ids; a trial (without --static) checks it.
     Run 'compact_migrations apply' to apply.
 
 Removals are grouped by app, then by model.
@@ -79,7 +79,7 @@ Each line names the thing that would be removed, its kind, the migrations where 
 With colour enabled, kinds and names are highlighted and migration names are dimmed.
 The kind column is one of the kinds listed below.
 The summary counts operations removed outright, operations folded into earlier ones, operations edited (for example a single field taken out of a ``CreateModel``, or one that absorbed a fold), and migrations that end up with no operations at all.
-The warnings after it say what only a trial run (``--trial``) can check.
+The warnings after it say what only a trial run (the default; ``--static`` skips it) can check.
 Counts that are zero are left out.
 
 When you are happy with the plan, apply it with ``apply``, which takes the same targets and options as ``plan``.
@@ -219,7 +219,7 @@ Paths are relative to the plan file, and ``tool_version`` says which version of 
 A plan file is input like any other: ``apply --plan`` only uses it to edit the project’s own migrations, as the analysis would.
 It finds each migration through Django’s migration loader, by app label and name, never through the paths in the file, and refuses a plan that names anything that isn’t an editable migration of the project, or gives another module for it.
 It refuses to write anything if any file changed since the plan was made (its SHA-256 hash differs), if a diff doesn’t apply exactly (no fuzz: every context and removed line must match where the hunk says), or if applying it doesn’t give the file the plan was made for (``sha256_after``).
-A plan made without ``--trial`` is made again from its recorded options, and must give exactly the same edits, so it can’t have been edited, or made from other files or settings (such as other database backends).
+A plan made with ``--static`` is made again from its recorded options, and must give exactly the same edits, so it can’t have been edited, or made from other files or settings (such as other database backends).
 A trial plan can’t be made again without its trial runs: its edits are checked after writing, against the history as analysed now, as a plan is checked before it is reported, and its trial results are shown as “recorded in the plan”.
 Only apply trial plans that you made, or whose diffs you reviewed.
 In the diffs, TOML escapes double quotes and backslashes (``\"`` and ``\\``).
@@ -376,7 +376,7 @@ The command respects that in two ways.
 First, an elidable ``RunPython`` or ``RunSQL`` operation never blocks a removal.
 If its code mentions something that is being removed, and it certainly runs while that thing exists (its migration comes after the creation and before the removal in every possible migration order), the elidable operation is removed too, since leaving it in place could crash on the missing model or field.
 An elidable operation that mentions the name but could run in a different order, for example in another app with no dependency either way, blocks the removal like any other ``RunPython`` or ``RunSQL``: a matching word is not proof that it is about the same thing.
-An elidable operation may still write something on a fresh database (Zulip’s ``confirmation.0016`` creates a content type, and every later content type then gets another id); like ``squashmigrations``, the default plan trusts the ``elidable`` flag, and ``--trial`` checks the data and keeps such operations.
+An elidable operation may still write something on a fresh database (Zulip’s ``confirmation.0016`` creates a content type, and every later content type then gets another id); like ``squashmigrations``, the default plan trusts the ``elidable`` flag, and a trial checks the data and keeps such operations.
 Elidable operations in excluded apps are never removed, so they block too.
 In this example, the data fix in ``0003_widen_sku`` mentions ``Coupon``, so it is removed along with the model:
 
@@ -494,11 +494,11 @@ Trial runs
 ----------
 
 By default, the command decides whether a data migration (``RunPython``, ``RunSQL`` or a custom operation) might use something by scanning its source for names, which blocks a lot (see :ref:`opaque-operations`).
-``--trial`` replaces that guess with evidence, by actually migrating scratch databases:
+A trial, which runs unless you pass ``--static``, replaces that guess with evidence, by actually migrating scratch databases:
 
 .. code-block:: console
 
-    $ python manage.py compact_migrations plan --trial --output plan.toml
+    $ python manage.py compact_migrations plan --output plan.toml
     ...
     Trial: 5 migrate runs on PostgreSQL in 141.7s; unlocked 212 removals of 221 that the static scan blocks, blocked 9 on evidence.
     $ python manage.py compact_migrations apply --plan plan.toml
@@ -532,9 +532,9 @@ The command prints how long the original history took to migrate, and so roughly
 The summary counts *migrate runs*, the baseline runs included; so does ``runs`` in the plan file.
 Long error messages are shortened in the output and in plan files (``FieldError``'s list of choices is left out).
 
-``apply --trial`` does the same and applies the result.
+``apply`` does the same and applies the result.
 The plan file records the trial: backend, number of runs, what it unlocked, and the failures it harvested (shown with ``-v 2``).
-``--trial`` can’t be combined with ``--opaque``.
+``--opaque`` needs ``--static``.
 
 A trial migrates the ``--database`` alias only (it says which).
 If ``DATABASE_ROUTERS`` keep a ``RunPython`` or ``RunSQL`` operation from running on that alias, the trial can’t check it: what it mentions stays blocked as without a trial, it is never taken for a no-op, and the command lists such operations.
@@ -574,7 +574,7 @@ Removals that the name scan would have kept, folds and no-op data migrations are
 The removals the default plan makes on its own are blamed only when nothing else explains it: the static analysis can't see everything (a model a data migration names by a computed string, database objects whose names depend on the backend's history), so none is taken as proven once a trial run differs.
 A problem is blamed on what it names (a field, a model, a table) when it can be, else on half of the suspects at a time, and the plan is solved again without what was blamed, until a plan passes its own trial run.
 Only when nothing is left to blame are ``--prune`` and then ``--noop-data`` given up, with a note.
-If even that plan fails, ``plan --trial`` exits with an error and ``apply --trial`` writes nothing.
+If even that plan fails, ``plan`` exits with an error and ``apply`` writes nothing.
 
 .. _pruning:
 
@@ -623,10 +623,10 @@ Databases migrated before the change need nothing, as long as their ``django_mig
 ``migrate --prune`` removes those rows, so after it, ``migrate`` would run the restored migrations again (creating tables that already exist, and so on); mark them as applied first with ``python manage.py migrate --fake <app> <migration>``.
 So only run ``migrate --prune`` once the change is deployed everywhere and you won’t revert it.
 
-With ``--trial``, the trial runs use the pruned graph too, and expect exactly the pruned migrations to be missing from ``django_migrations``.
+The trial runs use the pruned graph too, and expect exactly the pruned migrations to be missing from ``django_migrations``.
 If the plan fails its trial run and nothing more can be blamed, the trial drops ``--prune``, then ``--noop-data``, and tries again each time.
 It says what it dropped and why (``verification.dropped`` in the plan file).
-If no plan passes, ``plan --trial`` exits with an error and ``apply --trial`` writes nothing.
+If no plan passes, ``plan`` exits with an error and ``apply`` writes nothing.
 
 
 No-op data migrations
@@ -634,7 +634,7 @@ No-op data migrations
 
 Many data migrations only do something to rows that already exist: they backfill a new column, fix up old values, or move data from one place to another.
 On a fresh database there are no such rows, so they run a few ``SELECT`` queries and change nothing, yet they keep whatever they mention from being removed (see :ref:`opaque-operations`).
-``--noop-data`` (which implies ``--trial``) removes them:
+``--noop-data`` (which needs the trial, so not ``--static``) removes them:
 
 .. code-block:: console
 

@@ -51,12 +51,12 @@ def test_outside_the_project_not_edited(project, monkeypatch):
     inner.mkdir()
     monkeypatch.setattr(worktree, "project_root", lambda: inner)
     before = project.files()
-    out, err = project.command("apply")
+    out, err = project.command("apply", "--static")
     assert out == "No operations to remove.\n"
     assert "Migrations of shop are outside the project" in err
     assert project.files() == before
     # Named as a target, the app is edited all the same.
-    out, _ = project.command("apply", "shop")
+    out, _ = project.command("apply", "--static", "shop")
     assert "Editing migration files of: shop." in out
     assert project.files() != before
 
@@ -109,9 +109,9 @@ def test_uncommitted_files_refused(project):
     path.write_text(path.read_text() + "# mine\n")
     before = project.files()
     with pytest.raises(CommandError, match="aren't committed.*0002_add.py"):
-        project.command("apply")
+        project.command("apply", "--static")
     assert project.files() == before
-    out, _ = project.command("apply", "--allow-dirty")
+    out, _ = project.command("apply", "--static", "--allow-dirty")
     assert "Removed 2 operations" in out
     assert "# mine" in project.read("shop", "0002_add")
 
@@ -238,7 +238,7 @@ def test_interrupted_write_recovered(project):
     before = project.files()
     interrupted(project, after=2)
     assert project.files() != before
-    out, err = project.command("plan")
+    out, err = project.command("plan", "--static")
     assert "Restored" in err
     assert project.files() == before
     assert "Removed" not in out and "Would remove" in out
@@ -263,7 +263,7 @@ def test_unreadable_journal(project):
     directory.mkdir()
     (directory / "journal.json").write_text("{not json")
     with pytest.raises(CommandError, match="can't be read"):
-        project.command("plan")
+        project.command("plan", "--static")
 
 
 def test_restore_failure_keeps_journal(project, monkeypatch):

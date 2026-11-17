@@ -207,7 +207,7 @@ def test_opaque_scan_blocks_and_trial_unlocks(project):
         'migrations.AddField("item", "qty", models.IntegerField(default=1)),',
     )
     assert folds(project.compact()) == []
-    result = project.check_equivalence(trial=True)
+    result = project.check_equivalence(static=False)
     assert [label for label, _ in folds(result)] == ["shop.Item.qty"]
     assert result.verification["unlocked"] == 1
 
@@ -422,10 +422,12 @@ def test_skip_kind_and_plan_file(project, tmp_path):
         "0002_qty",
         'migrations.AddField("item", "qty", models.IntegerField(default=1)),',
     )
-    out, _ = project.command("plan", "--skip-kind", "fold")
+    out, _ = project.command("plan", "--static", "--skip-kind", "fold")
     assert out == "No operations to remove.\n"
     plan_path = tmp_path / "plan.toml"
-    out, _ = project.command("plan", "--kind", "fold", "-v", "2", "-o", str(plan_path))
+    out, _ = project.command(
+        "plan", "--static", "--kind", "fold", "-v", "2", "-o", str(plan_path)
+    )
     lines = out.splitlines()
     assert lines[2].split() == [
         "qty",
@@ -1424,7 +1426,7 @@ def test_seeded_rows_keep_their_default(project):
     result = project.compact()
     assert folds(result) == []
     # A trial runs it and sees the seeded row get 5 instead of 0.
-    assert folds(project.compact(trial=True)) == []
+    assert folds(project.compact(static=False)) == []
 
 
 def test_seeded_rows_same_default_folds(project):
@@ -1443,7 +1445,7 @@ def test_seeded_rows_trial(project):
     )
     assert folds(project.compact()) == []
     # The seeded row stays NULL; added with the default, it would get 5.
-    assert folds(project.compact(trial=True)) == []
+    assert folds(project.compact(static=False)) == []
 
 
 def test_rows_not_written_trial_unlocks(project):
@@ -1470,7 +1472,7 @@ def test_rows_not_written_trial_unlocks(project):
     )
     assert folds(project.compact()) == []
     # Even into the CreateModel, across the data migration.
-    assert folds(project.compact(trial=True)) == [
+    assert folds(project.compact(static=False)) == [
         (
             "shop.Item.qty",
             "AddField in 0003_add folded into CreateModel in 0001_initial",

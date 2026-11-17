@@ -553,7 +553,7 @@ def test_enforced_constraint_trial_unlocks(project):
         "shop", "0003_drop", 'migrations.RemoveConstraint("item", "uniq_name"),'
     )
     assert kinds(project.compact(skip_kinds=["fold"])) == []
-    assert kinds(project.compact(trial=True, skip_kinds=["fold"])) == [
+    assert kinds(project.compact(static=False, skip_kinds=["fold"])) == [
         ("constraint", "shop.Item")
     ]
 

@@ -155,9 +155,12 @@ class Project:
     # Running
 
     def compact(self, *targets: str, **options: Any) -> Result:
+        """plan(), static unless ``static=False`` (or ``noop_data``): most
+        tests are about the analysis, which a trial would only slow down."""
         self.activate()
         self.purge()
         with self.db_blocker.unblock():
+            options.setdefault("static", not options.get("noop_data"))
             return plan(targets, **options)
 
     def command(self, *args: str, **options: Any) -> tuple[str, str]:

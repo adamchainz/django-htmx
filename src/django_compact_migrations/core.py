@@ -465,7 +465,7 @@ def plan(
     skip_kinds: Collection[str] = (),
     opaque: str = "scan",
     elidable: bool = False,
-    trial: bool = False,
+    static: bool = False,
     database: str = "default",
     trial_max_runs: int = 8,
     trial_single_baseline: bool = False,
@@ -480,19 +480,20 @@ def plan(
     call ``Result.write()`` to apply. Raises CompactError on invalid options or
     if the planned edit fails verification.
 
-    With ``trial``, removals blocked only by the opaque-operation name scan
-    are tried for real on scratch databases of ``database``'s backend (see
-    ``django_compact_migrations.trial``). ``noop_data`` (implies ``trial``)
-    also removes data migrations that do nothing on a fresh database.
+    Unless ``static``, the plan is checked by migrating scratch databases of
+    ``database``'s backend, and removals blocked only by the opaque-operation
+    name scan are tried for real (see ``django_compact_migrations.trial``).
+    ``noop_data`` (which needs that trial) also removes data migrations that
+    do nothing on a fresh database.
     ``prune`` deletes migrations left with no operations, rewiring their
     dependants (see ``django_compact_migrations.prune``).
     """
-    if noop_data:
-        if opaque != "scan":
-            raise CompactError(
-                "--noop-data implies --trial, which can't be combined with --opaque."
-            )
-        trial = True
+    if noop_data and static:
+        raise CompactError(
+            "--noop-data needs a trial run, so it can't be combined with --static."
+        )
+    if not static and opaque != "scan":
+        raise CompactError("--opaque replaces the trial: it needs --static.")
     analysis = analyse(
         targets,
         exclude=exclude,
@@ -505,7 +506,7 @@ def plan(
     analysis.options["prune"] = prune
     if trial_ignore_column_order:
         analysis.options["trial_ignore_column_order"] = True
-    if trial:
+    if not static:
         from django_compact_migrations.trial import Trial  # imports this module
 
         return Trial(

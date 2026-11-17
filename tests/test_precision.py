@@ -247,7 +247,9 @@ def test_blocked_lines_name_their_migrations(project):
     project.migration("shop", "0005_remove", 'migrations.RemoveField("item", "body"),')
     # Without folds: the kept AddField would fold into the CreateModel, and
     # the blocked field be reported as added there.
-    out, _ = project.command("plan", "--show-blocked", "--skip-kind", "fold")
+    out, _ = project.command(
+        "plan", "--static", "--show-blocked", "--skip-kind", "fold"
+    )
     lines = out.splitlines()
     assert lines[2].split() == [
         "body",

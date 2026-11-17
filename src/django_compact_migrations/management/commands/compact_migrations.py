@@ -406,16 +406,7 @@ class Command(RichCommand):
             self._print(Text(note, style="dim"))
 
     def _analyse(self, options: dict[str, Any], verbosity: int) -> Result:
-        if options["noop_data"] and options["opaque"] != "scan":
-            raise CommandError(
-                "--noop-data implies --trial, which can't be combined with --opaque."
-            )
-        if options["trial"] and options["opaque"] != "scan":
-            raise CommandError(
-                "--trial replaces the --opaque policy with trial runs; don't"
-                " combine them."
-            )
-        if verbosity > 0 and (options["trial"] or options["noop_data"]):
+        if verbosity > 0 and not options["static"]:
             self._print(Text(_trial_preface(options["database"]), style="yellow"))
         try:
             if verbosity > 0 and not self.console.is_terminal:
@@ -459,7 +450,7 @@ class Command(RichCommand):
             skip_kinds=options["skip_kinds"] or (),
             opaque=options["opaque"],
             elidable=options["elidable"],
-            trial=options["trial"],
+            static=options["static"],
             database=options["database"],
             trial_max_runs=options["trial_max_runs"],
             trial_single_baseline=options["trial_single_baseline"],
@@ -477,8 +468,8 @@ class Command(RichCommand):
                 self._print(
                     Text(
                         "Checked against Django's model state only, not against"
-                        " a database: --trial migrates scratch databases to"
-                        " check the plan.",
+                        " a database (--static): without it, a trial migrates"
+                        " scratch databases to check the plan.",
                         style="dim",
                     )
                 )
@@ -636,7 +627,8 @@ class Command(RichCommand):
                 Text(
                     "Elidable operations are removed on trust: one that writes"
                     " on a fresh database (a content type, a seed row) changes"
-                    " the data and later ids; --trial checks it.",
+                    " the data and later ids; a trial (without --static)"
+                    " checks it.",
                     style="yellow",
                 )
             )
@@ -789,10 +781,11 @@ def _add_common_arguments(parser: ArgumentParser, main: ArgumentParser) -> None:
 
 def _add_trial_arguments(parser: ArgumentParser) -> None:
     parser.add_argument(
-        "--trial",
+        "--static",
         action="store_true",
-        help="Verify by migrating scratch databases instead of relying on the"
-        " name scan of data migrations; unlocks more removals.",
+        help="Don't run a trial: check the plan against Django's model state"
+        " only, without migrating scratch databases (fewer removals, no"
+        " database needed).",
     )
     parser.add_argument(
         "--database",
@@ -812,7 +805,7 @@ def _add_trial_arguments(parser: ArgumentParser) -> None:
         "--noop-data",
         action="store_true",
         help="Also remove RunPython/RunSQL operations that write nothing on a"
-        " fresh database, as a trial run observes them (implies --trial)."
+        " fresh database, as a trial run observes them (not with --static)."
         " Their reverse code and any effect outside the database are lost.",
     )
     parser.add_argument(
@@ -854,7 +847,7 @@ def _has_selection(options: dict[str, Any]) -> bool:
         or options["skip_kinds"]
         or options["opaque"] != "scan"
         or options["elidable"]
-        or options["trial"]
+        or options["static"]
         or options["noop_data"]
         or options["prune"]
     )
@@ -938,7 +931,8 @@ def sqlite_order_warning(result: Result, alias: str) -> str | None:
         return None
     return (
         "On SQLite, this plan may change the physical order of columns in"
-        " rebuilt tables (harmless for Django); --trial checks it."
+        " rebuilt tables (harmless for Django); a trial (without --static)"
+        " checks it."
     )
 
 
