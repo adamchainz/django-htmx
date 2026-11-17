@@ -1,7 +1,7 @@
 django-compact-migrations documentation
 =======================================
 
-*Compact your Django migration history by removing operations that cancel out.*
+*Make* ``migrate`` *faster by removing operations from your Django migration history that cancel out or can be merged.*
 
 ----
 
@@ -10,7 +10,8 @@ django-compact-migrations documentation
 ----
 
 Welcome to the documentation for django-compact-migrations.
-This package provides a management command that removes redundant operations from your project’s migration history, to speed up running migrations from scratch.
+This package provides a management command that rewrites your migration history so that ``migrate`` runs faster on fresh databases, such as in your test suite.
+It removes operations that cancel out, merges operations into earlier ones, and can delete migrations left empty.
 
 .. toctree::
    :maxdepth: 1

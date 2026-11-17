@@ -23,30 +23,13 @@ django-compact-migrations
 
 ----
 
-Compact your Django migration history by removing operations that cancel out.
+Make ``migrate`` faster by removing operations from your Django migration history that cancel out or can be merged.
 
 ----
 
 **Improve your Django and Git skills** with `my books <https://adamj.eu/books/>`__.
 
 ----
-
-Over time, migration histories accumulate operations that undo each other: models created then deleted, fields added then removed, indexes and constraints added then dropped, and ``Alter*`` operations that later ones supersede.
-django-compact-migrations scans your project’s migrations and removes such operations, to speed up running migrations from scratch.
-
-Preview the changes with ``plan``, then apply them with ``apply``:
-
-.. code-block:: console
-
-    $ python manage.py compact_migrations plan
-    $ python manage.py compact_migrations apply
-
-Or save the plan to a file, review it, and apply exactly that:
-
-.. code-block:: console
-
-    $ python manage.py compact_migrations plan --output plan.toml
-    $ python manage.py compact_migrations apply --plan plan.toml
 
 Documentation
 -------------

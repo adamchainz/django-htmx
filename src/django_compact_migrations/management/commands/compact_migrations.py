@@ -326,7 +326,7 @@ class Command(RichCommand):
             f" {info.get('server') or info['vendor']} (database"
             f" {info['database']!r}) in {info['seconds']:.1f}s;"
             f" unlocked {count_noun(info['unlocked'], 'removal')} of"
-            f" {info['at_risk']} that the static scan blocks"
+            f" {info['at_risk']} that the name scan blocks"
         )
         if info["trial_blocked"]:
             line += f", blocked {info['trial_blocked']} on evidence"

@@ -8,6 +8,8 @@ Python 3.11 to 3.15 supported.
 
 Django 5.2 to 6.1 supported.
 
+Trials run on SQLite, PostgreSQL, MySQL or MariaDB.
+
 Installation
 ------------
 
@@ -27,3 +29,8 @@ Installation
            "django_compact_migrations",
            ...,
        ]
+
+Trials create and drop scratch databases on the server of the database you choose, so the database user needs permission to create databases, as for running tests.
+Use development settings, never production ones.
+
+Now see :doc:`usage`.

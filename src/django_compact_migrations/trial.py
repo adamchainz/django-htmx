@@ -463,7 +463,7 @@ class Trial:
         self._say(
             f"The original history migrated in {baseline_seconds:.0f}s, and"
             " each run takes about as long. A trial can unlock up to"
-            f" {count_noun(len(candidates), 'removal')} that the static scan"
+            f" {count_noun(len(candidates), 'removal')} that the name scan"
             f" blocks, in at most {count_noun(more, 'more run')} (about"
             f" {_duration(baseline_seconds * more)} at most).",
             note=True,

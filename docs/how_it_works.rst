@@ -7,6 +7,21 @@ You don’t need to read it to use the command, but it helps to understand why s
 The goal is simple: a fresh database migrated with the compacted history must end up with exactly the same schema as one migrated with the original.
 Everything below serves that goal, and when the command is unsure, it keeps the operation.
 
+Terms
+-----
+
+These terms are used throughout:
+
+* A *life* is the span of one model, field, index, constraint or together-entry, from the operation that creates it to the one that ends it (see :ref:`lives`).
+* Its *window* is the part of the history during which it exists.
+* An *opaque operation* is one whose effect the command can’t read: ``RunPython``, ``RunSQL``, ``SeparateDatabaseAndState`` and custom operations.
+* The *name scan* looks for the names of what would be removed in the code of the opaque operations in its window.
+* The *static plan* is what the analysis alone allows, with the name scan; it is what ``--static`` gives.
+* A *trial* checks a plan by migrating scratch databases with the original history and with the plan (see :ref:`trial-mode`).
+  Its *baseline runs* migrate the original history.
+* A *locked* life is never removed, superseded or folded, whatever else happens.
+* A *fold* merges an operation into the earlier one that created what it changes; a *superseded* operation is one that a later one replaces.
+
 Reading the history
 -------------------
 
@@ -34,6 +49,8 @@ If a migration builds its operations dynamically, or has any other unusual shape
 With ``-v 2``, you’ll see the reason, such as “operations list in app.0004_x could not be parsed”.
 
 Files that start with a UTF-8 byte order mark (BOM) are edited like others, and keep it.
+
+.. _lives:
 
 Lives
 -----
@@ -118,16 +135,16 @@ State changes
 
 While replaying, the command applies each operation to a real Django ``ProjectState``.
 For an opaque operation, it compares the state before and after.
-Any model, field, index, constraint or ``unique_together``/``index_together`` entry it created, deleted or altered becomes *poisoned*: never removable, and never the subject of a superseded removal.
+Any model, field, index, constraint or ``unique_together``/``index_together`` entry it created, deleted or altered becomes *locked*: never removable, and never the subject of a superseded removal.
 This covers a ``SeparateDatabaseAndState`` that adds a field, or a custom operation that adds an index.
-A poisoned field or index also keeps its model, since removing the model would remove it, but it doesn’t affect the model’s other fields, indexes or options.
+A locked field or index also keeps its model, since removing the model would remove it, but it doesn’t affect the model’s other fields, indexes or options.
 A common case is a ``SeparateDatabaseAndState`` that removes a field from the state only, leaving the column to be dropped later: that field is reported as “ended by” the operation.
 
 The command then resynchronises its picture of the history with the state, so later operations still resolve correctly.
 
 Django also skips the schema changes of some models: unmanaged ones (``managed=False``), proxy models, and models swapped out by a setting (``swappable``).
 A table or column it left behind, or never created, must stay that way.
-So a model whose ``managed`` option changes during its life, a proxy model, and a swapped-out model are poisoned, with everything they hold: nothing of them is removed, superseded or folded.
+So a model whose ``managed`` option changes during its life, a proxy model, and a swapped-out model are locked, with everything they hold: nothing of them is removed, superseded or folded.
 A model that is unmanaged throughout its life can still be removed, since neither its creation nor its deletion touches the database.
 
 The name scan
@@ -312,7 +329,7 @@ What can be folded:
 
 Conditions for every fold:
 
-* Both operations are in editable migrations, the things involved aren’t poisoned or being removed, and P doesn’t lose anything else in the same step.
+* Both operations are in editable migrations, the things involved aren’t locked or being removed, and P doesn’t lose anything else in the same step.
 * Everything the folded definition needs exists when P runs: a referenced model or field must be created in a migration P depends on, or earlier in P’s migration, or be in the ``CreateModel`` itself.
   No dependency is ever added.
 * Nothing is occupied earlier than before in a way that could collide: a field folded into a ``CreateModel`` must not share a name or column with any other field of the model that is kept, an index or constraint name must not be used by anything else, and an ``AlterField`` may not change the column, ``to_field``, ``through``, table or tablespace.
@@ -346,12 +363,14 @@ So the command analyses the edited history again, removing, superseding and fold
 The edited history is replayed in memory and on disk as for any other change.
 Model state replays use copies of the field objects, since Django’s ``RenameField`` rewrites ``to_field`` and similar attributes of fields in the state in place.
 
+.. _trial-mode:
+
 Trial mode
 ----------
 
 In a trial (unless ``--static``), the name scan and the soft-reference rule stop being blockers.
 Their hits are recorded instead: each removal (a whole life, or a superseded operation) keeps the list of opaque operations that mentioned it.
-Every other rule stays: references, poisoning, editability, the primary key rule, exclusions and the superseded guards.
+Every other rule stays: references, locking, editability, the primary key rule, exclusions and the superseded guards.
 
 The original history is migrated on a scratch database first.
 If that fails, the command stops: the history doesn’t migrate from scratch, so nothing can be learnt from trials.
@@ -365,28 +384,82 @@ Values that differ between the two baseline runs (times, random values) are left
 A candidate run substitutes the edited operation lists on a private ``MigrationLoader`` and runs Django’s ``MigrationExecutor``, so the files on disk are untouched.
 Opaque operations that don’t change the project state are wrapped: an exception inside one rolls back to a savepoint and is recorded, and the run continues as if it did nothing.
 Any other failure ends the run.
-Failures are attributed as described in the usage guide: by the field, model, table or app the error says is missing, else by the opaque operation’s mentions or the failing migration’s window, half at a time.
+Failures are attributed as described below: by the field, model, table or app the error says is missing, else by the opaque operation’s mentions or the failing migration’s window, half at a time.
 A run with failures isn’t compared to the baseline, since the skipped operations explain any difference.
 
-Each round blocks more removals, then solves again (blocking can cascade through references), until a run is clean and identical to the baseline.
-That final run is what the plan reports.
+A trial goes like this:
 
-Scratch databases are created with the backend’s own machinery and named ``compactmig_<random>_<name>`` (a temporary file on SQLite); every alias is pointed at one for the run, as the test runner does, and they are always dropped.
-Each run happens in a forked child process; the parent creates and drops the databases, and gets back the failures and the snapshot.
+1. The original history is migrated on an empty scratch database, and a snapshot is taken of the schema and data, as above.
+2. A candidate plan is made in which the name scan doesn’t block anything, but each removal remembers which data migrations mentioned it.
+   The command says how many removals a trial could unlock at most: if none, only the static plan is trialled.
+   Then the original history is migrated a second time, and what differs between the two baseline runs is left out of every comparison.
+3. The candidate is migrated on a fresh scratch database, with the edited operations in memory.
+   If a data migration fails, its savepoint is rolled back, the failure is recorded, and the run goes on, so one run finds many failures.
+   That needs a backend that can roll back schema changes, such as PostgreSQL or SQLite, and an atomic migration; otherwise the run stops at the first failure.
+4. Failures are blamed as narrowly as possible:
 
-The baseline is migrated twice: values that differ between the two runs (per column, else per table, and any schema object) are masked in every later comparison, so they are never blamed on a removal.
-A data difference is first blamed on removals that took away an opaque operation (elidable ones removed with what they mention, no-op data migrations), half at a time, then on the removals relating to the table.
-Data is compared by column name, not position; on SQLite, the physical column order of each table is compared as a separate schema item, which blames every removal on that table.
-With ``--noop-data``, the first baseline run also records, through ``execute_wrapper`` on every connection, the statements each candidate data migration runs and their row counts.
-Those that wrote nothing are removed in the first round of every solve, the static one included, and the name scan ignores them, so what they mentioned can be removed or folded in the same plan.
-Like folds, they can be blamed: one that is blamed is put back, and the static plan is solved again without it.
+   * An error that names what is missing (``Cannot resolve keyword 'x'``, ``has no field named 'x'``, ``object has no attribute 'x'``, ``column "x" does not exist``, ``doesn't have a 'X' model``, ``No installed app with label 'x'``, ``relation "t" does not exist``, and their SQLite and MySQL forms) blocks exactly the removals of that field, model, table or app.
+   * Any other failure is blamed on the removals the failing operation mentioned (narrowed to those named in the error message, if any), or else on those whose window includes the failing migration.
+     Only half of them are blocked at first; if the same failure comes back in the next run, the other half is blocked too.
+     Only the first such failure of a run is used, since later ones may follow from it.
+   * A snapshot that differs from the baseline blocks the removals relating to the differing table.
+5. The candidate is solved again and run again, until a run has no failures and a snapshot identical to the baseline.
+   After 8 runs, or when a run blames nothing new, the command falls back to the static plan, and still trials it.
 
-Candidates are solved starting from the history as the default plan leaves it, so they contain all of it; at the end, every operation the default plan removes must be removed, or the default plan, trialled too, is used.
+Removals that the name scan would have kept, folds and no-op data migrations are the first suspects.
+The static plan’s own removals are blamed only when nothing else explains a failure: the analysis can’t see everything (a model a data migration names by a computed string, database objects whose names depend on the backend’s history), so none is taken as proven once a trial run differs.
+Only when nothing is left to blame are ``--prune`` and then ``--noop-data`` given up, with a note (``verification.dropped`` in the plan file).
+If even that plan fails, ``plan`` exits with an error and ``apply`` writes nothing.
+
+Every run sends ``pre_migrate`` first and ``post_migrate`` at the end, as ``migrate`` does, so the content types and permissions it creates are compared too: their ids follow the rows the history created first.
+
+A trial migrates the ``--database`` alias only.
+A ``RunPython`` or ``RunSQL`` operation that ``DATABASE_ROUTERS`` keep from running on that alias can’t be checked: what it mentions stays blocked as in the static plan, and it is never taken for a no-op.
+
+On SQLite, Django rebuilds a table with its columns in model-state order, and ``AlterField`` and ``RenameField`` move a field to the end of that order.
+So removing or folding those operations can change the physical column order of a table that is rebuilt later.
+The trial compares it, and keeps any removal or fold that changes it.
+SQLite also keeps no usable names for unique and foreign key constraints, and the trial there compares only which columns a check constraint covers, not its condition.
+
+No-op data migrations
+~~~~~~~~~~~~~~~~~~~~~
+
+With ``--noop-data``, while the original history runs on the first scratch database, every statement each candidate data migration executes, on every connection, is recorded with the number of rows it affected.
+A candidate is an exact ``RunPython`` or ``RunSQL`` operation (not a subclass) that doesn’t change the project state, in an editable migration of a selected app that isn’t excluded.
+It counts as a no-op only if every statement it ran was:
+
+* a read: a ``SELECT`` (or ``WITH`` or ``VALUES``) that calls no function other than the usual aggregates, comparisons and conversions, and contains no ``INSERT``, ``UPDATE``, ``DELETE``, ``MERGE``, ``INTO``, ``nextval`` or ``setval``;
+* transaction control (savepoints, ``BEGIN``, ``COMMIT``...), ``SET CONSTRAINTS`` or ``SET LOCAL``;
+* or an ``UPDATE`` or ``DELETE`` that affected no rows.
+
+Anything else counts as a write: ``INSERT``, ``COPY``, any schema change, other ``SET`` statements, unknown functions, sequence functions, an unknown row count, and any statement on another database alias.
+
+A ``RunPython`` operation is also kept when its function’s source (and that of the functions of the same module it calls) shows effects that queries don’t:
+
+* connecting signal handlers (``.connect()``, ``receiver``, ``pre_migrate``/``post_migrate``);
+* looking at the backend (``.vendor``, ``.features``, ``connection.ops``, sequence resets);
+* files, the network, caches, email, ``call_command()`` or subprocesses;
+* a source that can’t be read;
+* no query at all, yet calls to anything other than ``apps.get_model()`` and the like.
+
+These are listed as kept, in the trial’s output and under ``verification.noop_kept`` in the plan file.
 
 Pruning
 -------
 
-With ``--prune``, after everything else, migrations left with no operations are deleted (the rules for what is kept are in the usage guide).
+With ``--prune``, after everything else, migrations left with no operations are deleted.
+A migration is kept when:
+
+* it is the first or the latest migration of its app, or marked ``initial`` (so merges, ``--fake-initial`` and ``__first__``/``__latest__`` dependencies behave as before);
+* it is a squashed migration, or a squashed migration replaces it;
+* it has ``run_before``, or another migration names it in ``run_before``;
+* a migration depending on it can’t be edited (an installed package, an excluded app), or doesn’t list it as a plain ``("app", "name")`` tuple in a literal ``dependencies`` list;
+* another migration file mentions its name other than in its dependencies, for example to import a function from it with ``import_module()``;
+* its app isn’t selected, or is excluded.
+
+Whatever else the deleted file held (functions of the data migrations removed from it, ``atomic = False``...) goes with it.
+``apply`` deletes the files (and their bytecode) and, if anything fails, writes them back; plan files record each deletion with the hash of the file.
+A trial runs the pruned graph too, and expects exactly the pruned migrations to be missing from ``django_migrations``.
 For a deleted migration P, every surviving migration that depended on it gets P’s dependencies instead, following chains of deleted migrations, except those it already runs after through its other dependencies.
 The exception is a dependency within the same app: Django finds an app’s first and latest migrations, and conflicting branches, through same-app dependencies only, so a migration that depended on a deleted migration of its own app always gets that migration’s nearest surviving same-app dependencies (both branches of a deleted merge migration), even when it already runs after them through another app.
 The roots and leaves of every app (as ``migrate`` sees them when it checks for conflicts) must be the original ones minus the deleted migrations: this is checked on the planned graph, in trial runs, and on the graph loaded from the rewritten files.
@@ -423,6 +496,23 @@ A plan doesn’t know which database production runs, so the rules apply when an
 Plans for projects without MySQL or MariaDB are unchanged.
 The plan file records the servers the rules were applied for, under ``options.backends``.
 A trial run on a MySQL or MariaDB database (``--database …``) compares index names, defaults and column order, so it checks what these rules can’t foresee.
+
+Scratch databases
+-----------------
+
+A scratch database uses the backend and settings of the ``--database`` alias.
+For SQLite it is a temporary file; for PostgreSQL and MySQL a new database named ``compactmig_<random>_<name>`` is created next to the real one.
+
+While migrating, every configured alias is pointed at a scratch database, as Django’s test runner does, so project code using Django’s connections can’t reach a real database (code that opens its own connections, or an alias whose ``OPTIONS`` name another database, still can):
+
+* the chosen alias, aliases for the same database (same engine, host, port and name, such as a read replica), and test mirrors share one scratch database;
+* every other database gets its own, empty scratch database: only the chosen alias is migrated;
+* aliases using the dummy backend are left alone, and any alias on another backend makes the command refuse to run.
+
+Every scratch database is dropped afterwards, after closing every connection, also on errors, Ctrl+C and ``SIGTERM``.
+Ctrl+C ends a run with exit status 130, with no migration file changed.
+Each run happens in a child process of its own (``os.fork()``), so nothing it leaves in the process (module-level caches, changed field objects, registered handlers) can affect the next run.
+Where ``os.fork()`` doesn’t exist (Windows), runs happen in-process, with a warning.
 
 Limitations
 -----------

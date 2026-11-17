@@ -335,7 +335,7 @@ class TrialTests(ProjectTestCase):
         plan_path = self.tmp_path / "plan.toml"
         out, _ = self.project.command("plan", "-o", str(plan_path))
         assert "Trial: 3 migrate runs on SQLite (database 'default') in " in out
-        assert "unlocked 1 removal of 1 that the static scan blocks" in out
+        assert "unlocked 1 removal of 1 that the name scan blocks" in out
         data = tomllib.loads(plan_path.read_text())
         assert data["verification"]["mode"] == "trial"
         assert data["verification"]["unlocked"] == 1
