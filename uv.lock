@@ -223,6 +223,15 @@ wheels = [
 ]
 
 [[package]]
+name = "cogapp"
+version = "3.6.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e6/d0/27e6f75da2566cbd1de24def03e035b619a5ab4fc41e9a8dbfa6b5d4f5e0/cogapp-3.6.1.tar.gz", hash = "sha256:e32bc61abe21406bfc1be6559ba97cebcedf99f290742914bd0817b6e3d80bb1", size = 61955, upload-time = "2026-11-15T20:47:14.092Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b4/d8/a95786b38de4c53324b6fc2a3c09cc2c8fd683cdff28abcd47b0b2bcbeda/cogapp-3.6.1-py3-none-any.whl", hash = "sha256:34cf222288b43a1338298a7f5c293c744bf5a1e7ef5f278c0a5ee9bbda6a9b70", size = 32203, upload-time = "2026-11-15T20:47:12.996Z" },
+]
+
+[[package]]
 name = "colorama"
 version = "0.4.6"
 source = { registry = "https://pypi.org/simple" }
@@ -445,6 +454,7 @@ docs = [
     { name = "sphinx-copybutton" },
 ]
 test = [
+    { name = "cogapp" },
     { name = "coverage" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pymysql" },
@@ -473,6 +483,7 @@ docs = [
     { name = "sphinx-copybutton", specifier = ">=0.5.2" },
 ]
 test = [
+    { name = "cogapp", specifier = ">=3.6" },
     { name = "coverage", extras = ["toml"] },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
     { name = "pymysql", specifier = ">=1.1" },

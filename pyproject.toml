@@ -49,6 +49,7 @@ urls.Repository = "https://github.com/adamchainz/django-compact-migrations"
 
 [dependency-groups]
 test = [
+  "cogapp>=3.6",
   "coverage[toml]",
   "psycopg[binary]>=3.2",
   "pymysql>=1.1",

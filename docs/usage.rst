@@ -257,6 +257,224 @@ Only a hard kill can leave one behind.
 ``compact_migrations scratch`` lists them, on the server of ``--database`` (or, for SQLite, in the temporary directory), and ``--drop NAME`` or ``--drop-all`` drops them.
 Other trials against the same server use scratch databases too, so only drop those you know are left over.
 
+Full help
+---------
+
+The full help for each subcommand:
+
+``plan``
+~~~~~~~~
+
+.. [[[cog
+.. import cog
+.. import os
+.. import subprocess
+.. import sys
+.. def show_help(subcommand):
+..     result = subprocess.run(
+..         [
+..             sys.executable,
+..             "-c",
+..             "from django.core.management import execute_from_command_line as e;"
+..             f"e(['manage.py', 'compact_migrations', '{subcommand}', '--help'])",
+..         ],
+..         capture_output=True,
+..         text=True,
+..         check=True,
+..         env={**os.environ, "COLUMNS": "80", "DJANGO_SETTINGS_MODULE": "tests.settings"},
+..     )
+..     cog.outl("")
+..     cog.outl(".. code-block:: console")
+..     cog.outl("")
+..     for line in result.stdout.splitlines():
+..         if line.strip() == "":
+..             cog.outl("")
+..         else:
+..             cog.outl("    " + line.rstrip())
+..     cog.outl("")
+.. show_help("plan")
+.. ]]]
+
+.. code-block:: console
+
+    usage: manage.py compact_migrations plan [-h] [--exclude TARGET]
+                                             [--skip-kind {model,field,index,constraint,together,superseded,fold}]
+                                             [--elidable] [--prune] [--static]
+                                             [--database DATABASE] [--noop-data]
+                                             [-o FILE] [--check] [-v {0,1,2,3}]
+                                             [--traceback] [--no-color]
+                                             [--force-color] [--skip-checks]
+                                             [--settings SETTINGS]
+                                             [--pythonpath PYTHONPATH]
+                                             [target ...]
+
+    Analyse the migration history and report what can be removed. Nothing is
+    written, except the plan file with --output.
+
+    positional arguments:
+      target                app_label, app_label.Model or app_label.Model.field to
+                            compact.
+
+    options:
+      -h, --help            show this help message and exit
+      --exclude TARGET      Never remove anything matching this target
+                            (repeatable).
+      --skip-kind {model,field,index,constraint,together,superseded,fold}
+                            Don't consider this kind of removal, e.g. fold
+                            (repeatable).
+      --elidable            Also remove every elidable RunPython/RunSQL operation.
+      --prune               Delete migrations left with no operations, and make
+                            the migrations depending on them depend on their
+                            dependencies instead. Changes the set of migration
+                            names.
+      --static              Don't run a trial: check the plan against Django's
+                            model state only, without migrating scratch databases
+                            (fewer removals, no database needed).
+      --database DATABASE   Database alias whose backend and settings trial runs
+                            use (default: 'default').
+      --noop-data           Also remove RunPython/RunSQL operations that write
+                            nothing on a fresh database, as a trial run observes
+                            them (not with --static). Their reverse code and any
+                            effect outside the database are lost.
+      -o, --output FILE     Save the plan as a TOML file, to review and then
+                            apply.
+      --check               Exit with status 1 if anything is removable.
+      -v, --verbosity {0,1,2,3}
+                            Verbosity level; 0=minimal output, 1=normal output,
+                            2=verbose output, 3=very verbose output
+      --traceback           Display a full stack trace on CommandError exceptions.
+      --no-color            Don't colorize the command output.
+      --force-color         Force colorization of the command output.
+      --skip-checks         Skip system checks.
+      --settings SETTINGS   The Python path to a settings module, e.g.
+                            "myproject.settings.main". If this isn't provided, the
+                            DJANGO_SETTINGS_MODULE environment variable will be
+                            used.
+      --pythonpath PYTHONPATH
+                            A directory to add to the Python path, e.g.
+                            "/home/djangoprojects/myproject".
+
+.. [[[end]]]
+
+``apply``
+~~~~~~~~~
+
+.. [[[cog
+.. show_help("apply")
+.. ]]]
+
+.. code-block:: console
+
+    usage: manage.py compact_migrations apply [-h] [--plan FILE]
+                                              [--no-database-check]
+                                              [--allow-dirty] [--exclude TARGET]
+                                              [--skip-kind {model,field,index,constraint,together,superseded,fold}]
+                                              [--elidable] [--prune] [--static]
+                                              [--database DATABASE] [--noop-data]
+                                              [-v {0,1,2,3}] [--traceback]
+                                              [--no-color] [--force-color]
+                                              [--skip-checks]
+                                              [--settings SETTINGS]
+                                              [--pythonpath PYTHONPATH]
+                                              [target ...]
+
+    Apply a saved plan (--plan FILE), or analyse and apply in one go. The result
+    is verified on disk and rolled back on failure.
+
+    positional arguments:
+      target                app_label, app_label.Model or app_label.Model.field to
+                            compact.
+
+    options:
+      -h, --help            show this help message and exit
+      --plan FILE           A plan file saved by 'plan --output'. Refused if any
+                            migration file changed since.
+      --no-database-check   Don't check that the configured databases have applied
+                            every migration this edits or deletes.
+      --allow-dirty         Edit migration files that have changes Git hasn't
+                            committed (refused by default, so the edit can be
+                            reviewed and reverted on its own).
+      --exclude TARGET      Never remove anything matching this target
+                            (repeatable).
+      --skip-kind {model,field,index,constraint,together,superseded,fold}
+                            Don't consider this kind of removal, e.g. fold
+                            (repeatable).
+      --elidable            Also remove every elidable RunPython/RunSQL operation.
+      --prune               Delete migrations left with no operations, and make
+                            the migrations depending on them depend on their
+                            dependencies instead. Changes the set of migration
+                            names.
+      --static              Don't run a trial: check the plan against Django's
+                            model state only, without migrating scratch databases
+                            (fewer removals, no database needed).
+      --database DATABASE   Database alias whose backend and settings trial runs
+                            use (default: 'default').
+      --noop-data           Also remove RunPython/RunSQL operations that write
+                            nothing on a fresh database, as a trial run observes
+                            them (not with --static). Their reverse code and any
+                            effect outside the database are lost.
+      -v, --verbosity {0,1,2,3}
+                            Verbosity level; 0=minimal output, 1=normal output,
+                            2=verbose output, 3=very verbose output
+      --traceback           Display a full stack trace on CommandError exceptions.
+      --no-color            Don't colorize the command output.
+      --force-color         Force colorization of the command output.
+      --skip-checks         Skip system checks.
+      --settings SETTINGS   The Python path to a settings module, e.g.
+                            "myproject.settings.main". If this isn't provided, the
+                            DJANGO_SETTINGS_MODULE environment variable will be
+                            used.
+      --pythonpath PYTHONPATH
+                            A directory to add to the Python path, e.g.
+                            "/home/djangoprojects/myproject".
+
+.. [[[end]]]
+
+``scratch``
+~~~~~~~~~~~
+
+.. [[[cog
+.. show_help("scratch")
+.. ]]]
+
+.. code-block:: console
+
+    usage: manage.py compact_migrations scratch [-h] [--database DATABASE]
+                                                [--drop NAME] [--drop-all]
+                                                [-v {0,1,2,3}] [--traceback]
+                                                [--no-color] [--force-color]
+                                                [--skip-checks]
+                                                [--settings SETTINGS]
+                                                [--pythonpath PYTHONPATH]
+
+    Trial runs drop their scratch databases (named compactmig_...) when they end,
+    even on Ctrl+C or SIGTERM. A killed process can leave one behind: list them,
+    and drop those that no running command is using.
+
+    options:
+      -h, --help            show this help message and exit
+      --database DATABASE   Database alias whose server to look on (default:
+                            'default').
+      --drop NAME           Drop this scratch database (repeatable).
+      --drop-all            Drop every scratch database found. Only when no other
+                            trial run is going on against this server.
+      -v, --verbosity {0,1,2,3}
+                            Verbosity level; 0=minimal output, 1=normal output,
+                            2=verbose output, 3=very verbose output
+      --traceback           Display a full stack trace on CommandError exceptions.
+      --no-color            Don't colorize the command output.
+      --force-color         Force colorization of the command output.
+      --skip-checks         Skip system checks.
+      --settings SETTINGS   The Python path to a settings module, e.g.
+                            "myproject.settings.main". If this isn't provided, the
+                            DJANGO_SETTINGS_MODULE environment variable will be
+                            used.
+      --pythonpath PYTHONPATH
+                            A directory to add to the Python path, e.g.
+                            "/home/djangoprojects/myproject".
+
+.. [[[end]]]
+
 .. _verifying-your-schema:
 
 Verifying your schema
