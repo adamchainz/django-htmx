@@ -1022,9 +1022,13 @@ def same_named_objects(a: Any, b: Any) -> bool:
 
 
 def referenced_by_fields(life: FieldLife) -> bool:
-    """Whether any field definition (a foreign key's to_field) points here."""
+    """Whether any field definition (a foreign key's to_field) points here.
+    A CreateModel's indexes, constraints and options naming the field are not
+    field definitions: they count no more than an AddIndex would."""
     return any(
-        type(e.rec.op) in (m.AddField, m.AlterField, m.CreateModel) and not e.opaque
+        type(e.rec.op) in (m.AddField, m.AlterField, m.CreateModel)
+        and not e.opaque
+        and (e.sub is None or e.sub[0] == "field")
         for e in life.referenced_by
     )
 

@@ -49,6 +49,60 @@ class DatabaseNamesTests(ProjectTestCase):
         )
         assert folds(self.project.check_equivalence()) == []
 
+    def test_alter_field_folds_under_create_model_index(self):
+        # The static plan folds the index into the CreateModel. There it
+        # names the field, but is no field definition pointing at it, so the
+        # trial can still fold the AlterField that the name scan blocks.
+        self.project.migration(
+            "shop",
+            "0001_initial",
+            """
+            migrations.CreateModel(
+                name="Item",
+                fields=[
+                    ("id", models.AutoField(primary_key=True)),
+                    ("code", models.CharField(max_length=10)),
+                ],
+            ),
+            """,
+        )
+        self.project.migration(
+            "shop",
+            "0002_count",
+            "migrations.RunPython(count, migrations.RunPython.noop),",
+            extra="""
+            def count(apps, schema_editor):
+                alias = schema_editor.connection.alias
+                apps.get_model("shop", "Item").objects.using(alias).filter(code="").count()
+            """,
+        )
+        self.project.migration(
+            "shop",
+            "0003_longer",
+            'migrations.AlterField("item", "code", models.CharField(max_length=20)),',
+        )
+        self.project.migration(
+            "shop",
+            "0004_index",
+            """
+            migrations.AddIndex(
+                "item", models.Index(fields=["code"], name="item_code_idx")
+            ),
+            """,
+        )
+        index = (
+            "shop.Item",
+            "AddIndex in 0004_index folded into CreateModel in 0001_initial",
+        )
+        assert folds(self.project.compact()) == [index]
+        assert folds(self.project.compact(static=False)) == [
+            index,
+            (
+                "shop.Item.code",
+                "AlterField in 0003_longer folded into CreateModel in 0001_initial",
+            ),
+        ]
+
     @parametrize("custom", [True, False, "collation"])
     def test_custom_field_not_folded_across_setup(self, custom):
         self.project.migration("shop", "0001_initial", ITEM)
@@ -285,6 +339,32 @@ class RenamesTests(ProjectTestCase):
         result = self.project.check_equivalence()
         assert [d for _, d in folds(result) if d.startswith("RenameField")]
         assert "'title'" in self.project.read("shop", "0001_initial")
+
+    def test_field_pointed_at_by_to_field(self):
+        self.project.migration("shop", "0001_initial", ITEM)
+        self.project.migration(
+            "shop", "0002_rename", 'migrations.RenameField("item", "name", "title"),'
+        )
+        self.project.migration(
+            "shop",
+            "0003_tag",
+            """
+            migrations.CreateModel(
+                name="Tag",
+                fields=[
+                    ("id", models.AutoField(primary_key=True)),
+                    (
+                        "item",
+                        models.ForeignKey(
+                            "shop.item", models.CASCADE, to_field="title"
+                        ),
+                    ),
+                ],
+            ),
+            """,
+        )
+        result = self.project.compact()
+        assert not [d for _, d in folds(result) if d.startswith("RenameField")]
 
     def test_new_name_taken_before_blocks(self):
         self.project.migration("shop", "0001_initial", ITEM)
