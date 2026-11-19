@@ -433,6 +433,45 @@ class TrialTests(ProjectTestCase):
         assert [r.kind for r in result.removals] == ["fold"]
         assert result.verification["trial_blocked"] == 0
 
+    def test_folded_rename_blamed_for_old_name(self):
+        self.project.migration("shop", "0001_initial", ITEM)
+        self.project.migration(
+            "shop",
+            "0002_qty",
+            """
+            migrations.AlterField("item", "name", models.CharField(max_length=20)),
+            migrations.AddField("item", "qty", models.IntegerField(default=0)),
+            """,
+        )
+        self.project.migration(
+            "shop",
+            "0003_count",
+            "migrations.RunPython(count, migrations.RunPython.noop),",
+            extra="""
+            def count(apps, schema_editor):
+                alias = schema_editor.connection.alias
+                Item = apps.get_model("shop", "Item")
+                getattr(Item.objects.using(alias), "filter")(**{"q" + "ty": 1}).count()
+            """,
+        )
+        self.project.migration(
+            "shop",
+            "0004_rename",
+            """
+            migrations.AlterField("item", "name", models.CharField(max_length=30)),
+            migrations.RenameField("item", "qty", "quantity"),
+            """,
+        )
+        # The data migration hides the old name from the name scan, so the
+        # trial folds the rename into the AddField, and the data migration
+        # fails: only that fold is blamed, not the AlterFields of the model.
+        result = self.project.check_equivalence(static=False)
+        info = result.verification
+        assert info["trial_blocked"] == 1
+        assert info["fallback"] is False
+        assert info["runs"] == 4
+        assert [r.kind for r in result.removals] == ["fold", "fold", "fold"]
+
     def test_elidable_writer_kept(self):
         self.project.migration("shop", "0001_initial", ITEM)
         self.project.migration(
@@ -1048,6 +1087,13 @@ class TrialTests(ProjectTestCase):
             user,
             team_user,
         ]
+        # Except a folded rename, which takes the old name away.
+        renamed = unit(
+            "fold:r", fields=frozenset({"user", "owner"}), renames=frozenset({"owner"})
+        )
+        both.append(renamed)
+        assert missing("Cannot resolve keyword 'owner' into field", both) == [renamed]
+        assert missing("Team has no field named 'user'", both) == [team_user]
 
     def test_in_window(self):
         trial = bare_trial(self.project)

@@ -884,12 +884,14 @@ _MISSING = (
 
 def _missing(message: str, units: Iterable[UnitInfo]) -> list[UnitInfo]:
     """
-    Units removing what an error message says is missing. Folds never make
-    anything missing (they create things earlier, never later), so they are
-    left out; when the message names the model, only units of that model
-    count.
+    Units removing what an error message says is missing. Folds create
+    things earlier, never later, so they make nothing missing and are left
+    out, except a folded RenameField: the field has its new name from the
+    start, so what runs in between misses the old one (and nothing else
+    is blamed for that name then). When the message
+    names the model, only units of that model count.
     """
-    candidates = [u for u in units if not u.key.startswith(FOLD_PREFIX)]
+    candidates = [u for u in units if u.renames or not u.key.startswith(FOLD_PREFIX)]
     found: list[UnitInfo] = []
     for pattern, kind in _MISSING:
         for match in pattern.finditer(message):
@@ -903,12 +905,14 @@ def _missing(message: str, units: Iterable[UnitInfo]) -> list[UnitInfo]:
                 for u in candidates
                 if u not in found
                 and (
-                    (kind == "field" and name in u.fields)
+                    (kind == "field" and name in (u.renames if u.renames else u.fields))
                     or (kind == "model" and name in u.models)
                     or (kind == "app" and u.app == name and u.models)
                     or (kind == "table" and name in u.tables)
                 )
             ]
+            # Only a folded rename takes a name away from a field that stays.
+            matched = [u for u in matched if u.renames] or matched
             if model:
                 of_model = [
                     u for u in matched if any(t.endswith("_" + model) for t in u.tables)

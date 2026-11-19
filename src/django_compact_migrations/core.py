@@ -17,6 +17,7 @@ from django.apps import apps
 from django.db import connections
 from django.db.migrations.loader import MigrationLoader
 from django.db.migrations.operations.base import Operation
+from django.db.migrations.operations.fields import RenameField
 from django.db.migrations.recorder import MigrationRecorder
 from django.db.migrations.state import ProjectState
 
@@ -527,6 +528,9 @@ class UnitInfo:
     removed_opaque: frozenset[tuple[int, int]] = frozenset()
     """(plan index, index on disk) of opaque operations it removes too (an
     elidable one that mentions it, or a no-op data migration)."""
+    renames: frozenset[str] = frozenset()
+    """Old field names and columns (lower case) that a folded RenameField
+    takes away from the operations in between."""
 
 
 @dataclass
@@ -980,7 +984,12 @@ def _units(solver: Solver) -> list[UnitInfo]:
             )
 
     def add(
-        unit: Unit, start: int, end: int | None, life: Life, prefix: str = ""
+        unit: Unit,
+        start: int,
+        end: int | None,
+        life: Life,
+        prefix: str = "",
+        renames: frozenset[str] = frozenset(),
     ) -> None:
         model = life.model
         units.append(
@@ -1005,6 +1014,7 @@ def _units(solver: Solver) -> list[UnitInfo]:
                 removed_opaque=frozenset(with_elidable.get(id(life), ()))
                 if unit is life
                 else frozenset(),
+                renames=renames,
             )
         )
 
@@ -1015,7 +1025,13 @@ def _units(solver: Solver) -> list[UnitInfo]:
         assert e1.owner is not None
         add(e1, e1.pos[0], e2.pos[0], e1.owner)
     for f in plan.folds:
-        add(f.folded, f.target.pos[0], f.folded.pos[0], f.life, FOLD_PREFIX)
+        op = f.folded.rec.op
+        old = (
+            frozenset({op.old_name_lower, f"{op.old_name_lower}_id"})
+            if isinstance(op, RenameField)
+            else frozenset()
+        )
+        add(f.folded, f.target.pos[0], f.folded.pos[0], f.life, FOLD_PREFIX, old)
     for e, _ in plan.noop:
         units.append(
             UnitInfo(
