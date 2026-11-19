@@ -451,11 +451,6 @@ class Command(RichCommand):
                     style="dim",
                 )
             )
-        order_warning = sqlite_order_warning(
-            result, options.get("database") or "default"
-        )
-        if order_warning:
-            self._print(Text(order_warning, style="yellow"))
         if result.verification.get("mode") != "trial" and any(
             r.kind == "elidable" for r in result.removals
         ):
@@ -688,34 +683,6 @@ def _locations(removal: Removal, indent: int, verbosity: int) -> list[Text]:
             line.append(f" ({loc.detail})", style="dim")
         lines.append(line)
     return lines
-
-
-def sqlite_order_warning(result: Result, alias: str) -> str | None:
-    """
-    On SQLite, Django rebuilds tables in the order the project state lists
-    their fields, which AlterField and RenameField change: removing or
-    folding operations can change the physical column order. Only a trial
-    that compares it shows whether this plan does.
-    """
-    info = result.verification
-    if alias not in connections or connections[alias].vendor != "sqlite":
-        return None
-    if info.get("mode") == "trial":
-        return None
-    # Removing dead fields or models doesn't reorder the columns that stay;
-    # dropping or moving an AlterField or RenameField (or folding anything
-    # past one) can.
-    if not any(
-        r.kind == "fold"
-        or any(loc.operation in ("AlterField", "RenameField") for loc in r.elements)
-        for r in result.removals
-    ):
-        return None
-    return (
-        "On SQLite, this plan may change the physical order of columns in"
-        " rebuilt tables (harmless for Django); a trial (without --static)"
-        " checks it."
-    )
 
 
 def summary(result: Result, write: bool) -> str:

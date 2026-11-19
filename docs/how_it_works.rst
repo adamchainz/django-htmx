@@ -321,11 +321,10 @@ What can be folded:
    Django’s ``RenameField`` renames the column only: indexes (including PostgreSQL’s ``_like`` ones), unique and check constraints, foreign key constraints and many-to-many tables keep names made from the old column or field name, while a field created under the new name gets names made from the new one.
    So only a field without any of these is folded: not unique, not indexed, not a relation, no check constraint (``PositiveIntegerField`` and the like), not generated, never a primary key; or one whose column is fixed by ``db_column``, which the rename doesn’t change.
    Nothing may refer to the field between the two (indexes, constraints, ``unique_together``, other fields’ ``to_field``), the ``CreateModel``’s options may not name it, no other field may ever have had the new name, and the scan for both names must be clean.
-   And since a rename moves the field to the end of the model’s fields in the project state, which is the column order SQLite rebuilds tables in, the field must already be the last one: no other field of the model is created or renamed in between.
 7. An ``AlterModelTable`` of an unmanaged model (``managed=False`` in its ``CreateModel``, with nothing else happening to the model in between) into the ``CreateModel``’s ``db_table``: there is no table to rename.
 
 ``RenameModel`` is never folded, nor is ``AlterModelTable`` of a managed model: Django renames the table only, so its primary key constraint, sequence or identity, indexes, foreign keys and many-to-many tables keep names made from the old table name, which a table created under the new name wouldn’t have.
-``AlterOrderWithRespectTo`` isn’t folded either: it adds a column, last.
+``AlterOrderWithRespectTo`` isn’t folded either.
 
 Conditions for every fold:
 
@@ -337,7 +336,6 @@ Conditions for every fold:
   The exception is a foreign key that just points at a different model, when the new model already exists at P; the old one then becomes unreferenced, and may in turn become removable.
 * Nothing that stays between P and E refers to the field being changed.
 * Every field and model the folded definition names has the same name at P as at E: no ``RenameField``, ``RenameModel`` or ``AlterModelTable`` of them in between.
-* The final project state lists every model’s fields in the same order (SQLite rebuilds tables in that order), which the verification checks.
 * Every database object gets the name it got in the original history.
   Django’s schema editor names some objects differently when it creates them with the table than when it adds them later, so these folds are not made:
 
@@ -349,8 +347,7 @@ Conditions for every fold:
 
   Index, foreign key and ``unique_together`` names come from the same functions either way, from the table and column names; those must not change in the window, which the rule above ensures.
   These rules were derived from Django’s ``BaseDatabaseSchemaEditor`` (``_iter_column_sql``, ``_alter_field``) and checked by comparing ``pg_dump --schema-only`` of databases migrated with the original and the folded histories of large projects.
-* Fields, indexes and constraints keep their order: they are folded in the order they were added, stopping at the first that can’t be.
-  A model with ``order_with_respect_to`` is left alone.
+* A folded field, index or constraint goes at the end of the ``CreateModel``’s list, so a table’s columns may come out in another order: see :ref:`what-may-change`.
 * The opaque operations in the window pass the name scan (for the field and its model, the model, the index or constraint name and, for anything enforced such as a constraint, the model), or the trial runs.
 * An ``AlterField`` folded into an earlier ``AddField`` gives rows that already exist when the column is added the folded definition’s default instead of the ``AddField``’s.
   Unless the type and defaults are the same, no data migration mentioning the model may run between the model’s creation and the ``AddField`` (or the trial runs pass).
@@ -376,8 +373,8 @@ The original history is migrated on a scratch database first.
 If that fails, the command stops: the history doesn’t migrate from scratch, so nothing can be learnt from trials.
 The resulting snapshot covers, on SQLite, every table’s columns, foreign keys, indexes and check constraints (through ``PRAGMA`` statements, since the stored ``CREATE TABLE`` text depends on how a table was built), plus index, trigger and view definitions.
 On PostgreSQL it covers columns (type, length, precision, nullability, default, identity, collation, generation), constraints (``pg_get_constraintdef``), indexes (``pg_get_indexdef``), sequences and their owners, views, materialized views, functions and procedures, triggers, enum types, extensions and comments.
-On MySQL and MariaDB it covers what ``mysqldump --no-data`` shows, from ``information_schema``: tables (engine, collation, comment, options), columns in their order (type, nullability, default, extra, collation, comment, generation), indexes and their names (columns or expressions, order, prefix length, uniqueness, type, comment, visibility), constraints, foreign keys (columns, targets, ``ON UPDATE``/``ON DELETE``), check constraints by table, triggers, views and routines; the tests compare it on both servers.
-It also covers the next id each table gets: a PostgreSQL sequence’s last value, MySQL’s ``AUTO_INCREMENT``, SQLite’s ``sqlite_sequence`` (``django_migrations`` aside, whose ids follow how many migrations ran).
+On MySQL and MariaDB it covers what ``mysqldump --no-data`` shows, from ``information_schema``: tables (engine, collation, comment, options), columns (type, nullability, default, extra, collation, comment, generation), indexes and their names (columns or expressions, order, prefix length, uniqueness, type, comment, visibility), constraints, foreign keys (columns, targets, ``ON UPDATE``/``ON DELETE``), check constraints by table, triggers, views and routines; the tests compare it on both servers.
+Columns are compared by name, not in their order, and the next id each table gets (a PostgreSQL sequence’s last value, MySQL’s ``AUTO_INCREMENT``, SQLite’s ``sqlite_sequence``) isn’t compared: see :ref:`what-may-change`.
 Data is compared as a multiset of rows per table, with ``django_migrations`` compared by app and name only.
 Values that differ between the two baseline runs (times, random values) are left out of every comparison.
 
@@ -418,10 +415,7 @@ Content types and permissions are compared by app label, model and codename, and
 A trial migrates the ``--database`` alias only.
 A ``RunPython`` or ``RunSQL`` operation that ``DATABASE_ROUTERS`` keep from running on that alias can’t be checked: what it mentions stays blocked as in the static plan, and it is never taken for a no-op.
 
-On SQLite, Django rebuilds a table with its columns in model-state order, and ``AlterField`` and ``RenameField`` move a field to the end of that order.
-So removing or folding those operations can change the physical column order of a table that is rebuilt later.
-The trial compares it, and keeps any removal or fold that changes it.
-SQLite also keeps no usable names for unique and foreign key constraints, and the trial there compares only which columns a check constraint covers, not its condition.
+SQLite keeps no usable names for unique and foreign key constraints, and the trial there compares only which columns a check constraint covers, not its condition.
 
 No-op data migrations
 ~~~~~~~~~~~~~~~~~~~~~
@@ -497,7 +491,7 @@ On MySQL and MariaDB, two parts of the schema also depend on how the database go
 A plan doesn’t know which database production runs, so the rules apply when any configured database uses the MySQL backend; telling MySQL from MariaDB needs the server, which is asked for its version (a server that can’t be reached counts as MySQL, whose rules are a superset).
 Plans for projects without MySQL or MariaDB are unchanged.
 The plan file records the servers the rules were applied for, under ``options.backends``.
-A trial run on a MySQL or MariaDB database (``--database …``) compares index names, defaults and column order, so it checks what these rules can’t foresee.
+A trial run on a MySQL or MariaDB database (``--database …``) compares index names and defaults, so it checks what these rules can’t foresee.
 
 Scratch databases
 -----------------

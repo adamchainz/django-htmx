@@ -312,8 +312,6 @@ class Folder:
                 or not self._usable_target(create)
             ):
                 continue
-            if self._ordered_wrt(life):
-                continue
             self._fold_add_fields(life, create)
             self._fold_named(life, create, IndexLife, "indexes", "index")
             self._fold_named(life, create, ConstraintLife, "constraints", "constraint")
@@ -332,14 +330,6 @@ class Folder:
             if isinstance(life, FieldLife):
                 self._fold_rename_field(life)
         return self.folds
-
-    def _ordered_wrt(self, model: ModelLife) -> bool:
-        # order_with_respect_to adds an implicit _order column, last.
-        create = model.creation
-        assert create is not None
-        if create.rec.op.options.get("order_with_respect_to"):  # type: ignore[attr-defined]
-            return True
-        return any(type(e.rec.op) is m.AlterOrderWithRespectTo for e in model.elements)
 
     # 1. AlterField -> its carrier
 
@@ -457,9 +447,7 @@ class Folder:
             key=lambda c: c.creation.rec.seq,  # type: ignore[union-attr]
         )
         for life in fields:
-            # Fields must stay in their order: stop at the first that can't go.
-            if not self._fold_add_field(model, create, life):
-                return
+            self._fold_add_field(model, create, life)
 
     def _fold_add_field(
         self, model: ModelLife, create: Element, life: FieldLife
@@ -492,24 +480,6 @@ class Folder:
                 and names & ({n.lower() for n in sibling.names} | sibling.extra_names)
             ):
                 return False
-        # A RenameField of another field in between moved that field to the
-        # end of the state's fields, ahead of this one: folded, this one
-        # would come first (and SQLite rebuilds tables in that order), which
-        # matters if that field stays to the end.
-        for sibling in model.children:
-            if (
-                sibling is life
-                or not isinstance(sibling, FieldLife)
-                or sibling.end is not None  # dropped later: its place won't matter
-            ):
-                continue
-            for el in sibling.elements:
-                if (
-                    el.info.get("rename")
-                    and not self.solver.removed(el)
-                    and self.solver.between(el.pos, create.pos, a.pos)
-                ):
-                    return False
         if not self._requirements(a.refs, create, model):
             return False
         if not self._stable_names([*a.refs, model], create, a):
@@ -743,43 +713,9 @@ class Folder:
                 and new in {n.lower() for n in sibling.names}
             ):
                 return
-        if not self._stays_last(life, model, p, e):
-            return
         if not self._quiet(life.scan_names() | model.scan_names(), p, e, model):
             return
         self._commit("rename", p, e, life, self._renamed_into(p, current, rename))
-
-    def _stays_last(
-        self, life: FieldLife, model: ModelLife, p: Element, e: Element
-    ) -> bool:
-        """
-        RenameField moves the field to the end of the model state's fields,
-        which decides the column order of SQLite table rebuilds: folded, the
-        field keeps its place. So the field must already be last when it is
-        renamed: no other field of the model gets created or renamed after
-        P (or after it in the same CreateModel) and before E.
-        """
-        current = self._current(p)
-        if type(current) is m.CreateModel:
-            assert p.sub is not None
-            names = [n for n, _ in current.fields]
-            if names and names[-1] != p.sub[1]:
-                return False
-        for sibling in model.children:
-            if sibling is life or not isinstance(sibling, FieldLife):
-                continue
-            if sibling in self.solver.plan.removed:
-                continue
-            for el in sibling.elements:
-                naming = el is sibling.creation or el.info.get("rename")
-                if (
-                    naming
-                    and el.rec is not p.rec
-                    and not self.solver.removed(el)
-                    and self.solver.between(el.pos, p.pos, e.pos)
-                ):
-                    return False
-        return True
 
     def _renamed_into(
         self, p: Element, current: Operation, rename: m.RenameField

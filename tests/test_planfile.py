@@ -301,19 +301,16 @@ class PlanfileTests(ProjectTestCase):
         self.project.command_db("plan", "-o", str(plan_path))
         data = tomllib.loads(plan_path.read_text())
         assert data["verification"]["mode"] == "trial"
-        # The same final state and operations, but the fields in another order:
-        # only the in-memory check after writing sees it.
+        # The same operations, but a field defined differently: only the
+        # in-memory check after writing sees it.
         (entry,) = [f for f in data["files"] if f["migration"][1] == "0001_initial"]
         path = self.project.path("shop", "0001_initial")
         rewritten = apply_diff(path.read_text(), entry["diff"])
-        name = "                ('name', models.CharField(max_length=10)),\n"
-        swapped = rewritten.replace(name, "").replace(
-            "            ],\n", name + "            ],\n", 1
-        )
-        assert swapped != rewritten
-        retarget(entry, path, swapped, self.tmp_path)
+        longer = rewritten.replace("max_length=10", "max_length=11")
+        assert longer != rewritten
+        retarget(entry, path, longer, self.tmp_path)
         apply_refused(
-            self.project, plan_path, data, "in another order.*may have been edited"
+            self.project, plan_path, data, "different state.*may have been edited"
         )
 
     def test_recorded_verification_labelled(self):

@@ -46,8 +46,6 @@ class SnapshotTests(ProjectTestCase):
         (diff,) = a.differences(b)
         assert diff.columns == ("b",)
         assert str(diff) == "schema of table t differs (columns t changed: b)"
-        moved = snap(schema={("columns", "t", "t"): [("b", "int"), ("a", "int")]})
-        assert a.differences(moved)[0].columns == ("a", "b")
         assert a.differences(b, Mask(schema={("columns", "t", "t")})) == []
 
     def test_without_migrations(self):
@@ -109,9 +107,9 @@ class SnapshotTests(ProjectTestCase):
                 cursor.execute("INSERT INTO s (n) VALUES (1)")
                 cursor.execute("DELETE FROM s")
             snapshot = take_snapshot(connection)
-        # The next id survives the deleted row.
-        assert snapshot.schema[("next id", "s", "s")] == 1
         kinds = {key[0] for key in snapshot.schema}
+        # The next id, which survives the deleted row, isn't compared.
+        assert "next id" not in kinds
         assert {"check", "view", "trigger"} <= kinds
         assert ("check", "t", "b_positive:['b']") in snapshot.schema
         # Dates and bytes are compared as values.
@@ -211,8 +209,22 @@ class SnapshotTests(ProjectTestCase):
         } <= kinds
         assert snapshot.columns["t"] == ("b", "id", "m", "n")
         assert ("b'\\x00\\xff'", "1", "'a'", "1") in snapshot.data["t"]
-        # The sequence's last value: the next id.
-        assert snapshot.schema[("sequence", None, "public.t_id_seq")][-1] == 1
+        # The sequence, without its last value (the next id).
+        assert snapshot.schema[("sequence", None, "public.t_id_seq")] == (
+            "integer",
+            1,
+            1,
+            2147483647,
+            1,
+            False,
+        )
+        # Columns are compared by name, not in their order.
+        assert [c[0] for c in snapshot.schema[("columns", "t", "public.t")]] == [
+            "b",
+            "id",
+            "m",
+            "n",
+        ]
         assert sum(snapshot.data["t"].values()) == 1
         assert list_leftovers(pg) == [] or all(
             name.startswith("compactmig_") for name in list_leftovers(pg)
@@ -244,15 +256,13 @@ class SnapshotTests(ProjectTestCase):
             "view",
             "routine",
         }
-        # The next id; parent has no AUTO_INCREMENT.
-        assert base.schema[("next id", "t", "t")] == "2"
-        assert ("next id", "parent", "parent") not in base.schema
+        # Columns are compared by name, not in their order.
         assert [c[0] for c in base.schema[("columns", "t", "t")]] == [
-            "id",
-            "p",
-            "n",
             "body",
+            "id",
+            "n",
             "name",
+            "p",
         ]
         # body, id, n (the trigger's), name, p
         assert base.data["t"] == Counter({("'x'", "1", "1", "'a'", "1"): 1})
@@ -281,13 +291,6 @@ class SnapshotTests(ProjectTestCase):
                 ),
                 (MY_TABLE.replace("'the name'", "'a name'"), "columns t changed: name"),
                 (MY_TABLE.replace("'things'", "'stuff'"), "table t changed"),
-                (
-                    MY_TABLE.replace(
-                        " p int NOT NULL, n int CHECK (n > 0),",
-                        " n int CHECK (n > 0), p int NOT NULL,",
-                    ),
-                    "columns t changed",
-                ),
             ]
         ],
     )
@@ -297,6 +300,21 @@ class SnapshotTests(ProjectTestCase):
         other = my_snapshot(my, table)
         details = [d.detail for d in base.differences(other, Mask())]
         assert any(d.startswith(what) for d in details), details
+
+    @parametrize("server", [("mysql",), ("mariadb",)])
+    def test_mysql_order_and_next_id_not_compared(self, server):
+        my = self.server(server)
+        base = my_snapshot(my, MY_TABLE)
+        other = my_snapshot(
+            my,
+            MY_TABLE.replace(
+                " p int NOT NULL, n int CHECK (n > 0),",
+                " n int CHECK (n > 0), p int NOT NULL,",
+            ),
+            "INSERT INTO t (p) VALUES (1)",
+            "DELETE FROM t",
+        )
+        assert base.differences(other) == []
 
     def test_memoryview_values(self):
         assert _value(memoryview(b"ab")) == "b'ab'"

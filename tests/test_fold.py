@@ -318,7 +318,7 @@ class RenamesTests(ProjectTestCase):
         )
         assert not [d for _, d in folds(result) if d.startswith("RenameField")]
 
-    def test_not_last_field_blocks(self):
+    def test_not_last_field(self):
         self.project.migration("shop", "0001_initial", ITEM)
         self.project.migration(
             "shop",
@@ -328,8 +328,12 @@ class RenamesTests(ProjectTestCase):
         self.project.migration(
             "shop", "0003_rename", 'migrations.RenameField("item", "name", "title"),'
         )
+        # RenameField moved the column last when SQLite next rebuilt the
+        # table: the order of columns may change.
         result = self.project.check_equivalence()
-        assert not [d for _, d in folds(result) if d.startswith("RenameField")]
+        assert [d for _, d in folds(result) if d.startswith("RenameField")] == [
+            "RenameField in 0003_rename folded into CreateModel in 0001_initial"
+        ]
 
     def test_create_model_last_entry(self):
         self.project.migration("shop", "0001_initial", ITEM)
@@ -541,6 +545,7 @@ class GuardsTests(ProjectTestCase):
             ("shop.Item.c", "RenameField in 0002_add folded into AddField in 0002_add"),
             ("shop.Item.d", into_create),
             ("shop.Item.e", into_create),
+            ("shop.Item.e", "RenameField in 0002_add folded into AddField in 0002_add"),
         ]
 
     def test_order_with_respect_to(self):
@@ -563,7 +568,13 @@ class GuardsTests(ProjectTestCase):
             "0002_qty",
             'migrations.AddField("item", "qty", models.IntegerField(default=1)),',
         )
-        assert folds(self.project.check_equivalence()) == []
+        # The implicit _order column was last: the order of columns may change.
+        assert folds(self.project.check_equivalence()) == [
+            (
+                "shop.Item.qty",
+                "AddField in 0002_qty folded into CreateModel in 0001_initial",
+            )
+        ]
 
     def test_one_off_default_into_create_model(self):
         self.project.migration("shop", "0001_initial", ITEM)
@@ -578,7 +589,7 @@ class GuardsTests(ProjectTestCase):
             "shop", "0001_initial"
         )
 
-    def test_renamed_sibling_blocks_add_field(self):
+    def test_add_field_after_renamed_sibling(self):
         self.project.migration("shop", "0001_initial", ITEM_CODE)
         self.project.migration(
             "shop", "0002_rename", 'migrations.RenameField("item", "name", "title"),'
@@ -588,15 +599,19 @@ class GuardsTests(ProjectTestCase):
             "0003_qty",
             'migrations.AddField("item", "qty", models.IntegerField(default=1)),',
         )
-        # Nor does the together option go in, naming a field that doesn't.
         self.project.migration(
             "shop",
             "0004_together",
             'migrations.AlterUniqueTogether("item", {("title", "qty")}),',
         )
-        assert folds(self.project.check_equivalence()) == []
+        into_create = "folded into CreateModel in 0001_initial"
+        assert folds(self.project.check_equivalence()) == [
+            ("shop.Item", f"AlterUniqueTogether in 0004_together {into_create}"),
+            ("shop.Item.qty", f"AddField in 0003_qty {into_create}"),
+            ("shop.Item.title", f"RenameField in 0002_rename {into_create}"),
+        ]
 
-    def test_index_on_field_left_out(self):
+    def test_index_on_added_field(self):
         self.project.migration("shop", "0001_initial", ITEM_CODE)
         self.project.migration(
             "shop", "0002_rename", 'migrations.RenameField("item", "name", "title"),'
@@ -610,7 +625,9 @@ class GuardsTests(ProjectTestCase):
             """,
         )
         result = self.project.check_equivalence()
-        assert not [d for _, d in folds(result) if d.startswith("AddIndex")]
+        assert [d for _, d in folds(result) if d.startswith("AddIndex")] == [
+            "AddIndex in 0003_qty folded into CreateModel in 0001_initial"
+        ]
 
     @parametrize(
         ("added", "between", "altered"),
@@ -962,7 +979,7 @@ class FoldTests(ProjectTestCase):
             "shop", "0001_initial"
         )
 
-    def test_order_stops_at_first_unfoldable(self):
+    def test_add_field_folds_past_unfoldable(self):
         self.project.migration("shop", "0001_initial", ITEM)
         self.project.migration(
             "shop",
@@ -976,9 +993,20 @@ class FoldTests(ProjectTestCase):
             migrations.AddField("item", "qty", models.IntegerField(default=1)),
             """,
         )
+        self.project.migration(
+            "shop",
+            "0003_together",
+            'migrations.AlterUniqueTogether("item", {("name", "tag")}),',
+        )
         result = self.project.check_equivalence()
-        # tag can't move before Tag exists, and qty can't jump the queue.
-        assert folds(result) == []
+        # tag can't move before Tag exists, nor the together option naming
+        # it; qty goes ahead of it.
+        assert folds(result) == [
+            (
+                "shop.Item.qty",
+                "AddField in 0002_tag folded into CreateModel in 0001_initial",
+            )
+        ]
 
     def test_retarget_makes_model_dead(self):
         self.project.migration(
@@ -1367,7 +1395,7 @@ class FoldTests(ProjectTestCase):
         assert "shop.Tag.slug" in blocked(result)
         assert result.folded_operations >= 1
 
-    def test_names_must_be_stable_across_window(self):
+    def test_names_follow_folded_rename(self):
         self.project.migration(
             "shop",
             "0001_initial",
@@ -1397,8 +1425,15 @@ class FoldTests(ProjectTestCase):
         )
         result = self.project.check_equivalence()
         # Each of these names "title", which was "name" when the model was
-        # created; the slug index can't jump the queue of indexes either.
-        assert folds(result) == []
+        # created: they go in once the rename has.
+        into_create = "folded into CreateModel in 0001_initial"
+        assert folds(result) == [
+            ("shop.Item", f"AddIndex in 0003_more {into_create}"),
+            ("shop.Item", f"AddIndex in 0003_more {into_create}"),
+            ("shop.Item", f"AlterModelOptions in 0003_more {into_create}"),
+            ("shop.Item", f"AlterUniqueTogether in 0003_more {into_create}"),
+            ("shop.Item.title", f"RenameField in 0002_rename {into_create}"),
+        ]
 
     def test_duplicate_imports_not_added(self):
         self.project.migration(

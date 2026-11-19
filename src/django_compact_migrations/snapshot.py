@@ -2,17 +2,17 @@
 Snapshots of a database after migrating: schema (much more detailed than
 Django's project state) and data, for comparing two runs of the history.
 
-Incidental ordering is normalised away; names never are. The ids of content
-types and permissions are incidental too (they follow which rows the history
-happened to create first, as after squashing), so those rows, and foreign keys
-to them, are compared by natural key. Values that differ
+Ordering is normalised away, the order of a table's columns included; names
+never are. The ids of content types and permissions are incidental too (they
+follow which rows the history happened to create first, as after squashing),
+so those rows, and foreign keys to them, are compared by natural key. The
+next id a table gets (a sequence's value) isn't compared either. Values that differ
 between two runs of the same history (times, random values) are found by
 comparing two baseline runs (``Snapshot.nondeterminism``).
 """
 
 from __future__ import annotations
 
-import re
 from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -23,14 +23,7 @@ from django.db.backends.base.base import BaseDatabaseWrapper
 MIGRATIONS = "django_migrations"
 CONTENT_TYPES = "django_content_type"
 PERMISSIONS = "auth_permission"
-UNNUMBERED = frozenset({MIGRATIONS, CONTENT_TYPES, PERMISSIONS})
-"""Tables whose ids, and so whose next id, aren't compared: django_migrations'
-follow how many migrations ran (pruning), the others' are incidental."""
-_AUTO_INCREMENT = re.compile(r"\bAUTO_INCREMENT=(\d+)")
 _PG_SYSTEM = "('pg_catalog', 'information_schema', 'pg_toast')"
-COLUMN_ORDER = "column order"
-"""Schema key kind of the physical column order of SQLite tables (other
-backends compare it as part of the columns)."""
 
 
 @dataclass(frozen=True)
@@ -81,8 +74,7 @@ class Snapshot:
     """table -> multiset of rows (values as repr strings, columns in the
     order of ``columns``)."""
     columns: dict[str, tuple[str, ...]] = field(default_factory=dict)
-    """table -> its column names, sorted (physical order is compared as
-    part of the schema, where it is meaningful)."""
+    """table -> its column names, sorted."""
 
     def differences(
         self,
@@ -185,15 +177,10 @@ class Snapshot:
 
 def _column_changes(mine: Any, theirs: Any) -> tuple[str, ...]:
     """Names of the columns that differ between two column lists (name
-    first in each entry), or that moved."""
+    first in each entry)."""
     a = {str(c[0]): c for c in mine}
     b = {str(c[0]): c for c in theirs}
-    changed = sorted(n for n in a.keys() | b.keys() if a.get(n) != b.get(n))
-    if changed:
-        return tuple(changed)
-    order_a = [str(c[0]) for c in mine]
-    order_b = [str(c[0]) for c in theirs]
-    return tuple(n for n, m in zip(order_a, order_b, strict=False) if n != m)
+    return tuple(sorted(n for n in a.keys() | b.keys() if a.get(n) != b.get(n)))
 
 
 def take_snapshot(connection: BaseDatabaseWrapper) -> Snapshot:
@@ -230,24 +217,11 @@ def _sqlite_schema(
         "SELECT type, name, tbl_name, sql FROM sqlite_master"
         " WHERE name NOT LIKE 'sqlite_%%'",
     )
-    # The next id each AUTOINCREMENT table gets. Rebuilding a table may
-    # leave a row at 0, which means the same as none.
-    if _fetch(cursor, "SELECT 1 FROM sqlite_master WHERE name = 'sqlite_sequence'"):
-        for name, seq in _fetch(
-            cursor, "SELECT name, seq FROM sqlite_sequence WHERE seq > 0"
-        ):
-            if name not in UNNUMBERED:
-                schema[("next id", name, name)] = seq
     for kind, name, table, sql in rows:
         if kind == "table":
             q = connection.ops.quote_name(name)
             xinfo = _fetch(cursor, f"PRAGMA table_xinfo({q})")
-            # Definitions by name; the physical order separately: Django
-            # rebuilds SQLite tables in the project state's field order, which
-            # depends on the history (RenameField and some AlterFields move a
-            # field to the end), so removals and folds can change it.
             schema[("columns", name, name)] = sorted(r[1:] for r in xinfo)
-            schema[(COLUMN_ORDER, name, name)] = [r[1] for r in xinfo]
             schema[("foreign keys", name, name)] = sorted(
                 r[2:] for r in _fetch(cursor, f"PRAGMA foreign_key_list({q})")
             )
@@ -283,8 +257,8 @@ def _postgresql_schema(
 ) -> None:
     columns = _fetch(
         cursor,
-        "SELECT table_schema || '.' || table_name, column_name, ordinal_position,"
-        " data_type, udt_name, character_maximum_length, numeric_precision,"
+        "SELECT table_schema || '.' || table_name, column_name, data_type,"
+        " udt_name, character_maximum_length, numeric_precision,"
         " numeric_scale, datetime_precision, is_nullable, column_default,"
         " is_identity, identity_generation, collation_name, is_generated,"
         " generation_expression FROM information_schema.columns"
@@ -294,9 +268,7 @@ def _postgresql_schema(
     for row in columns:
         by_table.setdefault(row[0], []).append(row)
     for table, cols in by_table.items():
-        # Dropped columns leave gaps in ordinal_position: compare the order.
-        cols.sort(key=lambda r: r[2])
-        schema[("columns", _table(table), table)] = [(r[1], *r[3:]) for r in cols]
+        schema[("columns", _table(table), table)] = sorted(r[1:] for r in cols)
     for table, name, contype, definition in _fetch(
         cursor,
         "SELECT n.nspname || '.' || cl.relname, c.conname, c.contype,"
@@ -314,14 +286,11 @@ def _postgresql_schema(
         schema[("index", table, f"{nsp}.{name}")] = definition
     for row in _fetch(
         cursor,
-        # last_value: the next id a table gets (NULL before the first).
         "SELECT schemaname || '.' || sequencename, data_type, start_value,"
-        " min_value, max_value, increment_by, cycle, last_value FROM pg_sequences"
+        " min_value, max_value, increment_by, cycle FROM pg_sequences"
         f" WHERE schemaname NOT IN {_PG_SYSTEM}",
     ):
-        unnumbered = any(row[0].endswith(f".{t}_id_seq") for t in UNNUMBERED)
-        last = None if unnumbered else row[-1]
-        schema[("sequence", None, row[0])] = (*row[1:-1], last)
+        schema[("sequence", None, row[0])] = row[1:]
     for seq, table, column in _fetch(
         cursor,
         "SELECT s.relname, t.relname, a.attname FROM pg_class s"
@@ -404,24 +373,11 @@ def _mysql_schema(cursor: Any, schema: dict[tuple[str, str | None, str], Any]) -
             t["table_comment"],
             t["create_options"],
         )
-    for (table,) in _fetch(
-        cursor,
-        f"SELECT table_name FROM information_schema.tables {where}"
-        " AND table_type = 'BASE TABLE'",
-    ):
-        # The next id a table gets; information_schema.tables may hold a
-        # cached value.
-        (_, create) = _fetch(
-            cursor, "SHOW CREATE TABLE `{}`".format(table.replace("`", "``"))
-        )[0]
-        found = _AUTO_INCREMENT.search(create)
-        if found and table not in UNNUMBERED:
-            schema[("next id", table, table)] = found.group(1)
     cols: dict[str, list[dict[str, Any]]] = {}
     for c in _rows(cursor, f"SELECT * FROM information_schema.columns {where}"):
         cols.setdefault(c["table_name"], []).append(c)
     for table, rows in cols.items():
-        rows.sort(key=lambda c: c["ordinal_position"])
+        rows.sort(key=lambda c: c["column_name"])
         schema[("columns", table, table)] = [
             (
                 c["column_name"],

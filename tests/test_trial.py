@@ -404,7 +404,7 @@ class TrialTests(ProjectTestCase):
         )
         assert len(trial_module.shorten_error("y" * 500)) == 200
 
-    def test_sqlite_column_order(self):
+    def test_sqlite_column_order_may_change(self):
         self.project.migration(
             "shop",
             "0001_initial",
@@ -427,15 +427,11 @@ class TrialTests(ProjectTestCase):
         static = self.project.compact()
         assert [r.kind for r in static.removals] == ["fold"]
         # Folding keeps the column where CreateModel had it, while the
-        # AlterField rebuilt the SQLite table with its field last.
+        # AlterField rebuilt the SQLite table with its field last: the order
+        # of columns isn't compared.
         result = self.project.compact(static=False)
-        assert result.removals == []
-        assert result.verification["trial_blocked"] == 1
-        assert result.verification["unlocked"] <= result.verification["at_risk"]
-        out, _ = self.project.command("plan", "--static")
-        assert "physical order of columns" in out
-        out, _ = self.project.command("plan")
-        assert "physical order of columns" not in out
+        assert [r.kind for r in result.removals] == ["fold"]
+        assert result.verification["trial_blocked"] == 0
 
     def test_elidable_writer_kept(self):
         self.project.migration("shop", "0001_initial", ITEM)
@@ -762,7 +758,7 @@ class TrialTests(ProjectTestCase):
         result = self.project.compact(static=False)
         assert result.verification["nondeterministic_columns"] == {"shop_item": ["at"]}
 
-    def test_next_id_compared(self):
+    def test_next_id_not_compared(self):
         with_data_migration(
             self.project,
             'Item.objects.using(alias).create(name="probe").delete();'
@@ -774,9 +770,11 @@ class TrialTests(ProjectTestCase):
                     "RunPython(forwards)", "RunPython(forwards, elidable=True)"
                 )
             )
-        assert self.project.compact(**NO_FOLD).removals != []
+        # The data migration leaves no row, only a later next id.
+        static = self.project.compact(**NO_FOLD)
+        assert static.removals != []
         result = self.project.compact(static=False, **NO_FOLD)
-        assert kinds(result) == []
+        assert kinds(result) == kinds(static)
 
     def test_router_skipped_operations_not_trialled(self):
         (self.project.root / "trial_router.py").write_text(ROUTER)

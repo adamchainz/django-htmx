@@ -14,9 +14,6 @@ from django.db.utils import ConnectionHandler
 
 from django_compact_migrations import backends, core, trial
 from django_compact_migrations.core import CompactError, Result
-from django_compact_migrations.management.commands.compact_migrations import (
-    sqlite_order_warning,
-)
 from django_compact_migrations.planfile import load_plan, save_plan
 from tests.project import (
     FAILURE,
@@ -54,8 +51,6 @@ class CommandTests(ProjectTestCase):
             "No MySQL or MariaDB database is configured: if production runs on one,"
             " make the plan with it configured (some of its index names depend on"
             " the history).\n"
-            "On SQLite, this plan may change the physical order of columns in rebuilt"
-            " tables (harmless for Django); a trial (without --static) checks it.\n"
             "Run 'compact_migrations apply' to apply.\n"
         )
         assert err == ""
@@ -119,8 +114,6 @@ class CommandTests(ProjectTestCase):
             "No MySQL or MariaDB database is configured: if production runs on one,"
             " make the plan with it configured (some of its index names depend on"
             " the history).\n"
-            "On SQLite, this plan may change the physical order of columns in rebuilt"
-            " tables (harmless for Django); a trial (without --static) checks it.\n"
             "The migration files aren't in a Git work tree, so review and keep a copy"
             " of them yourself.\n"
             "Editing migration files of: shop.\n"
@@ -424,11 +417,6 @@ class CommandTests(ProjectTestCase):
         out, _ = history.command_db("plan")
         assert "The trial didn't converge, so this is the static plan" in out
 
-    def test_sqlite_order_warning_other_alias(self):
-        history = shop_history(self.project)
-        result = history.compact()
-        assert sqlite_order_warning(result, "nope") is None
-
     def test_trial_failure_writes_nothing(self):
         history = shop_history(self.project)
 
@@ -499,9 +487,6 @@ class CommandTests(ProjectTestCase):
             "Would remove 4 operations, fold 1 operation and edit 1 operation in"
             " 3 migration files.\n"
             "Would edit migration files of: shop.\n"
-            "On SQLite, this plan may change the physical order of columns in"
-            " rebuilt tables (harmless for Django); a trial (without --static)"
-            " checks it.\n"
             "Run 'compact_migrations apply' to apply.\n"
         )
 

@@ -1110,8 +1110,7 @@ class TogetherTests(ProjectTestCase):
         )
         result = self.project.check_equivalence()
         assert result.removed_operations == 1
-        assert "unique_together" not in self.project.read("shop", "0001_initial")
-        assert "options={}," in self.project.read("shop", "0001_initial")
+        assert "options" not in self.project.read("shop", "0001_initial")
 
     def test_rename_index_old_fields_chain(self):
         self.project.migration(

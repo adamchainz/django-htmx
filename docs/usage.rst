@@ -33,6 +33,25 @@ The command edits the migrations of the apps in your project: those under the to
 Migrations of installed packages are read, but never edited.
 If replaced migrations of a squashed migration are still on disk, they are skipped, with a warning, and only the squashed migration is compacted.
 
+.. _what-may-change:
+
+What may change
+---------------
+
+A database migrated from scratch with the compacted history has the same tables, columns, indexes, constraints and rows as one migrated with the original history, all under the same names.
+Three things may differ, as they may after squashing migrations:
+
+* **The order of columns in a table.**
+  A field folded into an earlier operation is created where that operation puts it, and on SQLite, Django rebuilds tables with their columns in the order of the model’s fields, which ``AlterField`` and ``RenameField`` change.
+  The same goes for the order of fields in the historical models that data migrations get.
+  Django always names the columns it reads and writes, so this only matters to raw SQL that relies on positions: ``SELECT *`` read by index, ``INSERT`` or ``COPY`` without a column list.
+* **The ids of content types and permissions.**
+  They follow which rows the history happened to create first.
+  Rows that point at them with a foreign key still point at the same content type or permission.
+* **The next id of a table**: the value of its sequence or ``AUTO_INCREMENT`` counter, when a removed data migration created rows and deleted them again.
+
+If you need the order of columns preserved, please `open an issue <https://github.com/adamchainz/django-compact-migrations/issues>`__: an option for that would be a welcome addition.
+
 Quick start
 -----------
 

@@ -57,7 +57,6 @@ from django_compact_migrations.prune import PrunePlan
 from django_compact_migrations.runner import DatabaseForwards, RunError, run_history
 from django_compact_migrations.scratch import ScratchDatabaseError, scratch_database
 from django_compact_migrations.snapshot import (
-    COLUMN_ORDER,
     Difference,
     Mask,
     Snapshot,
@@ -455,7 +454,7 @@ class Trial:
         candidates = first.unit_keys() - static.unit_keys()
         self.at_risk_units = len(candidates)
         # Counted against the plan as first solved: the static base can
-        # shrink later (blamed folds, no-ops, SQLite column order).
+        # shrink later (blamed folds, no-ops).
         self.first_static = static.unit_keys()
         self.candidate_keys = set(candidates)
         # The second baseline, the candidates, and the static plan.
@@ -744,20 +743,6 @@ class Trial:
                 blocks.setdefault(key, reason)
         for d in diffs:
             reason = f"trial: {d}"
-            if d.detail.startswith(COLUMN_ORDER):
-                # Even what the static analysis proves can move columns on
-                # SQLite (it reasons about the project state, not about
-                # which table rebuilds happen).
-                # Whole dead fields and models don't move the columns that
-                # stay; skipping or moving an AlterField/RenameField does.
-                targets = [
-                    u
-                    for u in (_related(solution.units, d.table) if d.table else [])
-                    if u.key.startswith((FOLD_PREFIX, "element:"))
-                ]
-                for u in targets:
-                    blocks.setdefault(u.key, reason)
-                continue
             if d.kind == "data":
                 # Rows written by an opaque operation that a removal took
                 # away (an elidable one, a no-op that wasn't): whatever

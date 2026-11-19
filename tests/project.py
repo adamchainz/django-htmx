@@ -237,7 +237,8 @@ def introspect(conn: Any) -> dict[str, Any]:
         tables = sorted(r[0] for r in c.fetchall())
         for table in tables:
             c.execute(f'PRAGMA table_info("{table}")')
-            columns = [tuple(r[1:]) for r in c.fetchall()]
+            # By name: the order of columns may change.
+            columns = sorted(tuple(r[1:]) for r in c.fetchall())
             c.execute(f'PRAGMA foreign_key_list("{table}")')
             fks = sorted(tuple(r[2:]) for r in c.fetchall())
             c.execute(f'PRAGMA index_list("{table}")')

@@ -169,11 +169,13 @@ class VerifyTests(ProjectTestCase):
                 verify_in_memory(history, edited, timeline.dangling, timeline.state)
 
         check({second.index: [m.RemoveField("item", "nope")]}, "fails in shop.0002_add")
-        # The same fields, created in another order.
+        # The same fields, created in another order: accepted.
         fields = list(create.fields)
         swapped = m.CreateModel("Item", [fields[1], fields[0]])
-        check({first.index: [swapped]}, "fields of shop.item in another order")
-        # The same models, created in another order.
+        verify_in_memory(
+            history, {first.index: [swapped]}, timeline.dangling, timeline.state
+        )
+        # The same models, created in another order: accepted.
         other = m.CreateModel("Other", [("id", IntegerField(primary_key=True))])
         late = list(second.migration.operations) + [other]
         early = [
@@ -188,10 +190,9 @@ class VerifyTests(ProjectTestCase):
             timeline.dangling,
             _replayed(history, original),
         )
-        with pytest.raises(VerificationError, match="models in another order"):
-            verify_in_memory(
-                history, edited, timeline.dangling, _replayed(history, original)
-            )
+        verify_in_memory(
+            history, edited, timeline.dangling, _replayed(history, original)
+        )
 
     def test_first_difference(self):
 
