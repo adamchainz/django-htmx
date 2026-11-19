@@ -2,8 +2,8 @@ Benchmarks
 ==========
 
 How much faster does ``migrate`` get?
-On nine open source Django projects, compacting made migrating a fresh database 14% to 46% faster with the default options, and 15% to 51% faster with ``--noop-data --prune``.
-In every case, the compacted history created the same database as the original.
+On nine open source Django projects, compacting made migrating a fresh database 20% to 52% faster with the default options, and 22% to 71% faster with ``--noop-data --prune``.
+In every case, the compacted history created the same database as the original, apart from :ref:`what may change <what-may-change>`.
 
 Results
 -------
@@ -23,67 +23,67 @@ Time for ``migrate`` to create a fresh database, in seconds:
      - Change
    * - `Healthchecks <https://github.com/healthchecks/healthchecks>`__
      - SQLite
-     - 4.7
-     - 3.4
-     - −28%
-     - 2.5
-     - −47%
+     - 3.1
+     - 1.5
+     - −52%
+     - 0.9
+     - −71%
    * - `pretalx <https://github.com/pretalx/pretalx>`__
      - PostgreSQL
-     - 18.8
-     - 15.1
-     - −20%
-     - 10.5
-     - −44%
+     - 13.8
+     - 7.8
+     - −43%
+     - 5.4
+     - −61%
    * - `pretix <https://github.com/pretix/pretix>`__
      - PostgreSQL
-     - 82.3
-     - 64.6
-     - −22%
-     - 57.2
-     - −30%
+     - 64.7
+     - 39.3
+     - −39%
+     - 32.1
+     - −50%
    * - `Label Studio <https://github.com/HumanSignal/label-studio>`__
      - PostgreSQL
-     - 31.2
-     - 16.8
-     - −46%
-     - 15.4
+     - 24.9
+     - 12.1
      - −51%
+     - 10.9
+     - −56%
    * - `Saleor <https://github.com/saleor/saleor>`__
      - PostgreSQL
-     - 167.8
-     - 128.6
-     - −23%
-     - 102.3
-     - −39%
+     - 141.4
+     - 103.9
+     - −27%
+     - 79.0
+     - −44%
    * - `Wagtail <https://github.com/wagtail/wagtail>`__
      - SQLite
-     - 52.2
-     - 45.0
-     - −14%
-     - 44.5
-     - −15%
+     - 39.1
+     - 31.2
+     - −20%
+     - 30.4
+     - −22%
    * - `Weblate <https://github.com/WeblateOrg/weblate>`__
      - PostgreSQL
-     - 43.8
-     - 30.0
-     - −32%
-     - 24.4
-     - −44%
+     - 31.3
+     - 18.1
+     - −42%
+     - 14.4
+     - −54%
    * - `Zulip <https://github.com/zulip/zulip>`__
      - PostgreSQL
-     - 42.4
-     - 29.6
-     - −30%
-     - 23.6
-     - −44%
+     - 30.7
+     - 18.3
+     - −40%
+     - 13.6
+     - −56%
    * - `NetBox <https://github.com/netbox-community/netbox>`__
      - PostgreSQL
-     - 321.1
-     - 218.8
-     - −32%
-     - 196.9
-     - −39%
+     - 250.2
+     - 148.3
+     - −41%
+     - 138.8
+     - −45%
 
 What the command changed to get there.
 *Removed* and *folded* count operations, and *deleted* counts migration files, which only ``--prune`` deletes:
@@ -108,67 +108,67 @@ What the command changed to get there.
      - Deleted
    * - Healthchecks
      - 187
-     - 34
-     - 70
-     - 78
-     - 54
-     - 92
+     - 62
+     - 133
+     - 111
+     - 119
+     - 163
    * - pretalx
      - 263
-     - 64
-     - 149
-     - 137
-     - 156
-     - 128
+     - 62
+     - 270
+     - 135
+     - 268
+     - 177
    * - pretix
      - 432
-     - 115
-     - 317
+     - 116
+     - 582
      - 218
-     - 312
-     - 83
+     - 574
+     - 140
    * - Label Studio
      - 245
-     - 183
-     - 342
-     - 216
-     - 337
-     - 113
+     - 189
+     - 381
+     - 218
+     - 374
+     - 135
    * - Saleor
      - 1454
-     - 586
-     - 427
-     - 927
-     - 416
-     - 618
+     - 553
+     - 683
+     - 881
+     - 704
+     - 705
    * - Wagtail
      - 240
-     - 65
-     - 110
-     - 67
-     - 104
-     - 67
+     - 74
+     - 143
+     - 88
+     - 141
+     - 86
    * - Weblate
      - 238
-     - 67
-     - 229
-     - 121
-     - 227
-     - 106
+     - 89
+     - 285
+     - 144
+     - 282
+     - 146
    * - Zulip
      - 956
-     - 34
-     - 155
-     - 98
-     - 155
-     - 153
+     - 39
+     - 213
+     - 103
+     - 213
+     - 207
    * - NetBox
      - 299
-     - 330
-     - 463
-     - 397
-     - 464
-     - 77
+     - 329
+     - 677
+     - 392
+     - 676
+     - 125
 
 The file counts include migrations that a squashed migration replaces and that are still on disk, which the command never edits: 698 of Zulip’s files and 157 of pretix’s.
 
@@ -186,11 +186,12 @@ Runs of the original and the two compacted histories were interleaved, one at a 
 *Correctness.*
 For each compacted history, a fresh database was compared with one made by the original history:
 
-* the schema dump (``pg_dump --schema-only``, or a sorted dump of ``sqlite_master`` for SQLite),
-* the content types and permissions,
+* the schema dump (``pg_dump --schema-only``, or a dump of ``sqlite_master`` for SQLite), ignoring the order of columns within a table,
+* the content types and permissions, by app label, model and codename rather than by id,
 * the output of ``makemigrations --check --dry-run``.
 
 All were identical for all nine projects in both configurations, and ``migrate --check`` passed.
+The order of columns changed in every project, and the ids of content types and permissions changed in one (Zulip): see :ref:`what-may-change`.
 
 *Environment.*
 4 virtual CPUs (Intel Xeon, 2.1GHz), 15GiB of memory, PostgreSQL 16.15 and SQLite 3.53.1 on the same machine, Python 3.13 (3.12 for Saleor).
