@@ -1575,3 +1575,390 @@ class FoldTests(ProjectTestCase):
 
     def test_mentions_unserializable(self):
         assert _mentions({"x": object()}, "name") is True
+
+
+QTY_ITEM = """
+    migrations.CreateModel(
+        name="Item",
+        fields=[
+            ("id", models.AutoField(primary_key=True)),
+            ("name", models.CharField(max_length=10)),
+            ("qty", models.IntegerField(default=0)),
+        ],
+        %s
+    ),
+"""
+NAME_IDX = 'models.Index(fields=["name"], name="name_idx")'
+CHECK = 'models.CheckConstraint(condition=models.Q(qty__gte=0), name="qty_ok"%s)'
+MESSAGE = ', violation_error_message="Too few"'
+
+
+def descriptions(result: Result) -> list[str]:
+    return [r.description for r in result.removals if r.kind == "fold"]
+
+
+class RenameIndexTests(ProjectTestCase):
+    def rename(self, old: str = "name_idx", new: str = "name_index") -> str:
+        return f'migrations.RenameIndex("item", old_name="{old}", new_name="{new}"),'
+
+    def test_into_create_model(self):
+        self.project.migration(
+            "shop", "0001_initial", QTY_ITEM % f'options={{"indexes": [{NAME_IDX}]}},'
+        )
+        self.project.migration("shop", "0002_rename", self.rename())
+        assert descriptions(self.project.check_equivalence()) == [
+            "RenameIndex in 0002_rename folded into CreateModel in 0001_initial",
+        ]
+        source = self.project.read("shop", "0001_initial")
+        assert "models.Index(fields=['name'], name='name_index')" in source
+
+    def test_chain_into_add_index(self):
+        self.project.migration("shop", "0001_initial", QTY_ITEM % "")
+        self.project.migration(
+            "shop",
+            "0002_data",
+            "migrations.RunSQL(\"INSERT INTO shop_item (name, qty) VALUES ('a', 1)\"),",
+        )
+        self.project.migration(
+            "shop",
+            "0003_index",
+            'migrations.AddIndex("item", models.Index(fields=["name"],'
+            ' name="name_idx", condition=models.Q(qty__gt=0))),',
+        )
+        self.project.migration("shop", "0004_rename", self.rename())
+        self.project.migration(
+            "shop", "0005_again", self.rename("name_index", "name_ix")
+        )
+        # (The rows keep the partial index out of the CreateModel.)
+        assert descriptions(self.project.check_equivalence()) == [
+            "RenameIndex in 0004_rename folded into AddIndex in 0003_index",
+            "RenameIndex in 0005_again folded into AddIndex in 0003_index",
+        ]
+        source = self.project.read("shop", "0003_index")
+        assert "name='name_ix')" in source
+
+    def test_new_name_taken_in_between(self):
+        self.project.migration("shop", "0001_initial", QTY_ITEM % "")
+        self.project.migration(
+            "shop",
+            "0002_indexes",
+            f"""
+            migrations.RunSQL("INSERT INTO shop_item (name, qty) VALUES ('a', 1)"),
+            migrations.AddIndex("item", {NAME_IDX}),
+            migrations.AddIndex("item", models.Index(fields=["qty"], name="name_index")),
+            migrations.RunSQL("SELECT 1 /* name_index */"),
+            migrations.RemoveIndex("item", "name_index"),
+            """,
+        )
+        self.project.migration("shop", "0003_rename", self.rename())
+        assert folds(self.project.check_equivalence()) == []
+
+    def test_opaque_mention_blocks(self):
+        self.project.migration("shop", "0001_initial", QTY_ITEM % "")
+        self.project.migration(
+            "shop",
+            "0002_index",
+            f"""
+            migrations.RunSQL("INSERT INTO shop_item (name, qty) VALUES ('a', 1)"),
+            migrations.AddIndex("item", {NAME_IDX}),
+            migrations.RunSQL("SELECT 1 /* name_idx */"),
+            """,
+        )
+        self.project.migration("shop", "0003_rename", self.rename())
+        assert folds(self.project.check_equivalence()) == []
+
+    def test_index_together_entry_not_folded(self):
+        self.project.migration(
+            "shop",
+            "0001_initial",
+            QTY_ITEM % 'options={"index_together": {("name", "qty")}},',
+        )
+        self.project.migration(
+            "shop",
+            "0002_rename",
+            'migrations.RenameIndex("item", old_fields=("name", "qty"), new_name="name_qty"),',
+        )
+        self.project.migration(
+            "shop", "0003_rename", self.rename("name_qty", "name_qty_idx")
+        )
+        assert folds(self.project.check_equivalence()) == []
+
+    @parametrize(
+        "first",
+        [
+            ('migrations.RemoveIndex("item", "name_idx"),',),
+            ('migrations.RunSQL("SELECT 1"),',),
+        ],
+    )
+    def test_not_renamed_first(self, first):
+        self.project.migration(
+            "shop", "0001_initial", QTY_ITEM % f'options={{"indexes": [{NAME_IDX}]}},'
+        )
+        self.project.migration("shop", "0002_other", first)
+        assert folds(self.project.compact(skip_kinds=["index"])) == []
+
+    def test_unordered_branches(self):
+        self.project.migration("shop", "0001_initial", QTY_ITEM % "")
+        unordered(
+            self.project,
+            'migrations.RunSQL("SELECT 1 /* item */"),'
+            'migrations.AddIndex("item", models.Index(fields=["name"],'
+            ' name="name_idx", condition=models.Q(qty__gt=0))),',
+            self.rename(),
+        )
+        assert folds(self.project.compact()) == []
+
+    def test_concurrent_index_not_regenerated(self):
+        self.project.migration("shop", "0001_initial", QTY_ITEM % "")
+        self.project.migration(
+            "shop",
+            "0002_index",
+            'migrations.RunSQL("SELECT 1 /* item */"),'
+            'AddIndexConcurrently("item", models.Index(fields=["name"],'
+            ' name="name_idx", condition=models.Q(qty__gt=0))),',
+            extra="""
+            class AddIndexConcurrently(migrations.AddIndex):
+                pass
+
+
+            AddIndexConcurrently.__module__ = "django.contrib.postgres.operations"
+            """,
+        )
+        self.project.migration("shop", "0003_rename", self.rename())
+        assert folds(self.project.compact()) == []
+
+
+class AlterConstraintTests(ProjectTestCase):
+    def alter(self, extra: str = MESSAGE) -> str:
+        return f'migrations.AlterConstraint("item", "qty_ok", {CHECK % extra}),'
+
+    def test_into_create_model(self):
+        self.project.migration(
+            "shop",
+            "0001_initial",
+            QTY_ITEM % f'options={{"constraints": [{CHECK % ""}]}},',
+        )
+        self.project.migration("shop", "0002_alter", self.alter())
+        assert descriptions(self.project.check_equivalence()) == [
+            "AlterConstraint in 0002_alter folded into CreateModel in 0001_initial",
+        ]
+        assert "violation_error_message='Too few'" in self.project.read(
+            "shop", "0001_initial"
+        )
+
+    def test_chain_into_add_constraint(self):
+        self.project.migration("shop", "0001_initial", QTY_ITEM % "")
+        self.project.migration(
+            "shop",
+            "0002_constraint",
+            f"""
+            migrations.RunSQL("INSERT INTO shop_item (name, qty) VALUES ('a', 1)"),
+            migrations.AddConstraint("item", {CHECK % ""}),
+            """,
+        )
+        self.project.migration("shop", "0003_alter", self.alter())
+        self.project.migration(
+            "shop", "0004_again", self.alter(', violation_error_code="few"')
+        )
+        assert descriptions(self.project.check_equivalence()) == [
+            "AlterConstraint in 0003_alter folded into AddConstraint in 0002_constraint",
+            "AlterConstraint in 0004_again folded into AddConstraint in 0002_constraint",
+        ]
+        source = self.project.read("shop", "0002_constraint")
+        assert "violation_error_code='few'" in source
+        assert "Too few" not in source
+
+    @parametrize(
+        "altered",
+        [
+            # Not what Django would write: the database keeps the first one.
+            ('models.CheckConstraint(condition=models.Q(qty__gte=1), name="qty_ok")',),
+            ('models.UniqueConstraint(fields=["qty"], name="qty_ok")',),
+            (
+                'models.CheckConstraint(condition=models.Q(qty__gte=0), name="qty_fine")',
+            ),
+        ],
+    )
+    def test_database_change_not_folded(self, altered):
+        self.project.migration(
+            "shop",
+            "0001_initial",
+            QTY_ITEM % f'options={{"constraints": [{CHECK % ""}]}},',
+        )
+        self.project.migration(
+            "shop",
+            "0002_alter",
+            f'migrations.AlterConstraint("item", "qty_ok", {altered}),',
+        )
+        assert folds(self.project.compact()) == []
+
+    def test_data_migration_in_between_blocks(self):
+        self.project.migration(
+            "shop",
+            "0001_initial",
+            QTY_ITEM % f'options={{"constraints": [{CHECK % ""}]}},',
+        )
+        self.project.migration(
+            "shop",
+            "0002_data",
+            "migrations.RunSQL(\"INSERT INTO shop_item (name, qty) VALUES ('a', 1)\"),",
+        )
+        self.project.migration("shop", "0003_alter", self.alter())
+        assert folds(self.project.compact()) == []
+        # The trial sees that the rows come out the same.
+        assert len(folds(self.project.check_equivalence(static=False))) == 1
+
+    def test_removed_first(self):
+        self.project.migration(
+            "shop",
+            "0001_initial",
+            QTY_ITEM % f'options={{"constraints": [{CHECK % ""}]}},',
+        )
+        self.project.migration(
+            "shop", "0002_remove", 'migrations.RemoveConstraint("item", "qty_ok"),'
+        )
+        assert folds(self.project.compact(skip_kinds=["constraint"])) == []
+
+
+FK_ITEM = """
+    migrations.CreateModel(
+        name="Other",
+        fields=[("id", models.AutoField(primary_key=True))],
+    ),
+    migrations.CreateModel(
+        name="Item",
+        fields=[
+            ("id", models.AutoField(primary_key=True)),
+            ("other", models.ForeignKey("shop.Other", models.CASCADE)),
+        ],
+        %s
+    ),
+"""
+
+
+class OrderWithRespectToTests(ProjectTestCase):
+    def alter(self, value: str = '"other"') -> str:
+        return f'migrations.AlterOrderWithRespectTo("item", {value}),'
+
+    def test_into_create_model(self):
+        self.project.migration("shop", "0001_initial", FK_ITEM % "")
+        self.project.migration(
+            "shop",
+            "0002_qty",
+            'migrations.AddField("item", "qty", models.IntegerField(default=1)),',
+        )
+        self.project.migration("shop", "0003_order", self.alter())
+        # The _order column comes before qty now.
+        assert descriptions(self.project.check_equivalence()) == [
+            "AddField in 0002_qty folded into CreateModel in 0001_initial",
+            "AlterOrderWithRespectTo in 0003_order folded into CreateModel in 0001_initial",
+        ]
+        source = self.project.read("shop", "0001_initial")
+        assert "'order_with_respect_to': 'other'" in source
+
+    def test_field_added_later(self):
+        self.project.migration(
+            "shop",
+            "0001_initial",
+            """
+            migrations.CreateModel(
+                name="Item", fields=[("id", models.AutoField(primary_key=True))]
+            ),
+            """,
+        )
+        self.project.migration(
+            "shop",
+            "0002_parent",
+            """
+            migrations.AddField("item", "up", models.ForeignKey("shop.Item", models.CASCADE, null=True)),
+            migrations.RenameField("item", "up", "parent"),
+            """,
+        )
+        self.project.migration("shop", "0003_order", self.alter('"parent"'))
+        result = self.project.check_equivalence()
+        # Once the field is in the CreateModel, but not across its rename.
+        assert descriptions(result) == [
+            "AddField in 0002_parent folded into CreateModel in 0001_initial",
+        ]
+
+    def test_unset_right_away(self):
+        self.project.migration(
+            "shop",
+            "0001_initial",
+            FK_ITEM % 'options={"order_with_respect_to": "other"},',
+        )
+        self.project.migration("shop", "0002_unset", self.alter("None"))
+        assert len(folds(self.project.check_equivalence())) == 1
+        source = self.project.read("shop", "0001_initial")
+        assert "'order_with_respect_to': None" in source
+
+    def test_unset_after_other_changes(self):
+        self.project.migration(
+            "shop",
+            "0001_initial",
+            FK_ITEM % 'options={"order_with_respect_to": "other"},',
+        )
+        self.project.migration(
+            "shop",
+            "0002_index",
+            'migrations.AddIndex("item", models.Index(fields=["other", "_order"], name="ordered")),'
+            'migrations.RemoveIndex("item", "ordered"),',
+        )
+        self.project.migration("shop", "0003_unset", self.alter("None"))
+        result = self.project.check_equivalence(skip_kinds=["index"])
+        assert "AlterOrder" not in " ".join(descriptions(result))
+
+    def test_rows_written_in_between(self):
+        self.project.migration("shop", "0001_initial", FK_ITEM % "")
+        self.project.migration(
+            "shop",
+            "0002_data",
+            """
+            migrations.RunSQL("INSERT INTO shop_other (id) VALUES (1)"),
+            migrations.RunSQL("INSERT INTO shop_item (other_id) VALUES (1)"),
+            """,
+        )
+        self.project.migration("shop", "0003_order", self.alter())
+        assert folds(self.project.compact()) == []
+        # Folded, the INSERT has no value for _order: the trial keeps it.
+        assert folds(self.project.check_equivalence(static=False)) == []
+
+    def test_own_order_field(self):
+        self.project.migration("shop", "0001_initial", FK_ITEM % "")
+        self.project.migration(
+            "shop",
+            "0002_order",
+            """
+            migrations.AddField("item", "_order", models.IntegerField(default=0)),
+            migrations.RunSQL("SELECT 1 /* _order */"),
+            migrations.RemoveField("item", "_order"),
+            """,
+        )
+        self.project.migration("shop", "0003_order", self.alter())
+        result = self.project.check_equivalence(skip_kinds=["field"])
+        assert "AlterOrder" not in " ".join(descriptions(result))
+
+    def test_unknown_field(self):
+        self.project.migration("shop", "0001_initial", FK_ITEM % "")
+        self.project.migration("shop", "0002_order", self.alter('"missing"'))
+        assert folds(self.project.compact()) == []
+
+    def test_unordered_branches(self):
+        self.project.migration("shop", "0001_initial", FK_ITEM % "")
+        self.project.migration("shop", "0002_other", "")
+        self.project.migration(
+            "shop",
+            "0002_order",
+            self.alter(),
+            deps=[],
+        )
+        self.project.migration(
+            "shop",
+            "0003_merge",
+            deps=[
+                ("shop", "0002_other"),
+                ("shop", "0002_order"),
+                ("shop", "0001_initial"),
+            ],
+        )
+        assert folds(self.project.compact()) == []

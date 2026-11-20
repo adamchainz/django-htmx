@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Iterable, Sequence
+from copy import copy
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -323,9 +324,12 @@ class Folder:
             ):
                 self._fold_model_op(life, create, kind, cls)
             self._fold_table(life, create)
+            self._fold_order_wrt(life, create)
         for life in lives:
             if isinstance(life, FieldLife):
                 self._fold_alter_field(life)
+            elif isinstance(life, (IndexLife, ConstraintLife)):
+                self._fold_named_change(life)
         for life in lives:
             if isinstance(life, FieldLife):
                 self._fold_rename_field(life)
@@ -577,6 +581,96 @@ class Folder:
         options[option] = [*options.get(option, []), obj]
         return self._commit(kind, create, x, life, _create(current, options=options))
 
+    # RenameIndex / AlterConstraint -> where the index or constraint is defined
+
+    def _fold_named_change(self, life: IndexLife | ConstraintLife) -> None:
+        """
+        Define the index under its new name, or the constraint as altered,
+        where it is created (an AddIndex, an AddConstraint, or the options of
+        a CreateModel), and delete the RenameIndex or AlterConstraint.
+        Renaming an index changes nothing but its name, and AlterConstraint
+        nothing at all in the database: only what the folded definition
+        needs, and who may name the index in between, has to be checked.
+        """
+        solver = self.solver
+        model = life.model
+        p = life.creation
+        if (
+            life.poisoned
+            or life in solver.plan.removed
+            or model in solver.plan.removed
+            or model.poisoned
+            or p is None
+            or p.opaque
+            or not self._in_scope(life)
+        ):
+            return
+        own = sorted(
+            (e for e in life.elements if not solver.removed(e) and e is not p),
+            key=lambda e: e.rec.seq,
+        )
+        if not own:
+            return
+        e = own[0]
+        op = e.rec.op
+        if not (self._usable_target(p) and self._usable_folded(e)):
+            return
+        if not self.history.ordered(p.pos[0], e.pos[0]):
+            return
+        current = self._current(p)
+        names = {n.lower() for n in life.names}
+        if isinstance(life, IndexLife):
+            if type(op) is not m.RenameIndex or not op.old_name:
+                return
+            kind, option, old_name = "index", "indexes", op.old_name
+            # The new name must be free from P onward, in the whole database.
+            for other in solver.timeline.lives:
+                if (
+                    other is not life
+                    and isinstance(other, (IndexLife, ConstraintLife, TogetherLife))
+                    and other not in solver.plan.removed
+                    and names & {n.lower() for n in other.names}
+                ):
+                    return
+            scan = set(names)
+        else:
+            if type(op) is not m.AlterConstraint or op.constraint.name != op.name:
+                return
+            kind, option, old_name = "constraint", "constraints", op.name
+            # Validation messages and codes only matter to code validating
+            # instances of the model. (The definition is otherwise the same,
+            # see below: it needs nothing that P doesn't have.)
+            scan = names | model.scan_names()
+        if type(current) is m.CreateModel:
+            defined = list(current.options[option])
+            at = next(i for i, o in enumerate(defined) if o.name == old_name)
+            before = defined[at]
+        elif type(current) is (m.AddIndex if kind == "index" else m.AddConstraint):
+            before = getattr(current, kind)
+        else:
+            return
+        if kind == "index":
+            assert isinstance(op, m.RenameIndex)
+            after = copy(before)
+            after.name = op.new_name
+        else:
+            assert isinstance(op, m.AlterConstraint)
+            after = op.constraint
+            if not _same_in_database(before, after):
+                return
+        if not self._quiet(scan, p, e, model):
+            return
+        folded: Operation
+        if type(current) is m.CreateModel:
+            defined[at] = after
+            folded = _create(current, options={**current.options, option: defined})
+        elif type(current) is m.AddIndex:
+            folded = m.AddIndex(model_name=current.model_name, index=after)
+        else:
+            assert type(current) is m.AddConstraint
+            folded = m.AddConstraint(model_name=current.model_name, constraint=after)
+        self._commit(kind, p, e, life, folded)
+
     # 4. Together options
 
     def _fold_together(self, model: ModelLife, create: Element) -> None:
@@ -784,6 +878,74 @@ class Folder:
             return
         self._commit("table", create, e, model, _create(current, options=options))
 
+    # AlterOrderWithRespectTo -> CreateModel options
+
+    def _fold_order_wrt(self, model: ModelLife, create: Element) -> None:
+        """
+        AlterOrderWithRespectTo adds the ``_order`` column (or drops it):
+        folded, the table has it from the start (or never), in another place
+        among the columns. Rows written in between would be numbered by the
+        ORM rather than get 0, so nothing may write them.
+        """
+        solver = self.solver
+        subtree = sorted(
+            (
+                e
+                for life in model.subtree()
+                for e in life.elements
+                if not solver.removed(e) and e.rec is not create.rec
+            ),
+            key=lambda e: e.rec.seq,
+        )
+        e = next(
+            (
+                e
+                for e in subtree
+                if e.owner is model
+                and e.sub is None
+                and not e.opaque
+                and type(e.rec.op) is m.AlterOrderWithRespectTo
+            ),
+            None,
+        )
+        if (
+            e is None
+            or not self._usable_folded(e)
+            or not self.history.ordered(create.pos[0], e.pos[0])
+        ):
+            return
+        current = self._current(create)
+        assert isinstance(current, m.CreateModel)
+        op = e.rec.op
+        assert isinstance(op, m.AlterOrderWithRespectTo)
+        wrt = op.order_with_respect_to
+        # If the column goes (or stays, for another field), whatever the
+        # model went through while it had it would go through it without.
+        had = current.options.get("order_with_respect_to")
+        if (had or not wrt) and subtree[0] is not e:
+            return
+        if wrt:
+            life = next(
+                (
+                    f
+                    for f in model.children
+                    if isinstance(f, FieldLife) and wrt in f.names
+                ),
+                None,
+            )
+            if life is None or not (
+                self._in_create(life, create) and self._stable_names([life], create, e)
+            ):
+                return
+        if any(
+            isinstance(f, FieldLife) and "_order" in f.names for f in model.children
+        ):
+            return
+        if not self._quiet(solver._query_names(model), create, e, model):
+            return
+        options = {**current.options, "order_with_respect_to": wrt}
+        self._commit("options", create, e, model, _create(current, options=options))
+
     def _fold_model_op(
         self, model: ModelLife, create: Element, kind: str, cls: type[Operation]
     ) -> None:
@@ -913,6 +1075,20 @@ def _rename_keeps_names(field: Any) -> bool:
         or _check_kind(field) is not None
         or getattr(field, "generated", False)
     )
+
+
+def _same_in_database(a: Any, b: Any) -> bool:
+    """Whether two constraints differ only in what Django keeps to itself
+    (the validation message and code), as AlterConstraint assumes."""
+    if type(a) is not type(b):
+        return False
+    parts = []
+    for constraint in (a, b):
+        path, args, kwargs = constraint.deconstruct()
+        for name in getattr(constraint, "non_db_attrs", ()):
+            kwargs.pop(name, None)
+        parts.append((path, args, kwargs))
+    return bool(parts[0] == parts[1])
 
 
 def _mentions(value: Any, name: str) -> bool:

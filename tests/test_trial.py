@@ -978,6 +978,55 @@ class TrialTests(ProjectTestCase):
         assert result.verification["vendor"] == "postgresql"
         assert sorted(r.kind for r in result.removals) == ["field", "noop"]
 
+    @parametrize("server", [("pg",), ("mysql",), ("mariadb",)])
+    def test_folded_names_and_order_on_servers(self, server):
+        alias = self.server(server)
+        self.project.migration(
+            "shop",
+            "0001_initial",
+            """
+            migrations.CreateModel(
+                name="Other", fields=[("id", models.AutoField(primary_key=True))]
+            ),
+            migrations.CreateModel(
+                name="Item",
+                fields=[
+                    ("id", models.AutoField(primary_key=True)),
+                    ("qty", models.IntegerField(default=0)),
+                    ("other", models.ForeignKey("shop.Other", models.CASCADE)),
+                ],
+                options={
+                    "indexes": [models.Index(fields=["qty"], name="qty_idx")],
+                    "constraints": [
+                        models.CheckConstraint(
+                            condition=models.Q(qty__gte=0), name="qty_ok"
+                        )
+                    ],
+                },
+            ),
+            """,
+        )
+        self.project.migration(
+            "shop",
+            "0002_changes",
+            """
+            migrations.RenameIndex("item", old_name="qty_idx", new_name="qty_index"),
+            migrations.AlterConstraint(
+                "item",
+                "qty_ok",
+                models.CheckConstraint(
+                    condition=models.Q(qty__gte=0),
+                    name="qty_ok",
+                    violation_error_message="Too few",
+                ),
+            ),
+            migrations.AlterOrderWithRespectTo("item", "other"),
+            """,
+        )
+        result = self.project.check_equivalence(static=False, database=alias)
+        assert [r.kind for r in result.removals] == ["fold", "fold", "fold"]
+        assert result.verification["trial_blocked"] == 0
+
     @parametrize("server", [("mysql",), ("mariadb",)])
     def test_mysql_trial(self, server):
         my = self.server(server)

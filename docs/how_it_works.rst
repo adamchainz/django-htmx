@@ -322,9 +322,15 @@ What can be folded:
    So only a field without any of these is folded: not unique, not indexed, not a relation, no check constraint (``PositiveIntegerField`` and the like), not generated, never a primary key; or one whose column is fixed by ``db_column``, which the rename doesn’t change.
    Nothing may refer to the field between the two (indexes, constraints, ``unique_together``, other fields’ ``to_field``), the ``CreateModel``’s options may not name it, no other field may ever have had the new name, and the scan for both names must be clean.
 7. An ``AlterModelTable`` of an unmanaged model (``managed=False`` in its ``CreateModel``, with nothing else happening to the model in between) into the ``CreateModel``’s ``db_table``: there is no table to rename.
+8. A ``RenameIndex`` (by ``old_name``) into the ``AddIndex`` or ``CreateModel`` entry that defines the index, which then gets the new name.
+   No other index or constraint in the history may ever have had any of the index’s names, and the scan for those names must be clean.
+9. An ``AlterConstraint`` into the ``AddConstraint`` or ``CreateModel`` entry that defines the constraint.
+   ``AlterConstraint`` changes nothing in the database, so it is only folded if the two definitions differ in nothing but the validation message and code.
+10. The model’s first ``AlterOrderWithRespectTo`` into the ``CreateModel`` options.
+    The table then has its ``_order`` column from the start, so the model’s scan must be clean (rows written in between would be numbered differently), the field must be in the ``CreateModel`` under the same name, and the model may have no field of its own called ``_order``.
+    One that removes or changes an ordering the ``CreateModel`` set is only folded if nothing else happens to the model in between.
 
 ``RenameModel`` is never folded, nor is ``AlterModelTable`` of a managed model: Django renames the table only, so its primary key constraint, sequence or identity, indexes, foreign keys and many-to-many tables keep names made from the old table name, which a table created under the new name wouldn’t have.
-``AlterOrderWithRespectTo`` isn’t folded either.
 
 Conditions for every fold:
 
