@@ -1938,6 +1938,66 @@ class OrderWithRespectToTests(ProjectTestCase):
         result = self.project.check_equivalence(skip_kinds=["field"])
         assert "AlterOrder" not in " ".join(descriptions(result))
 
+    def test_field_name_reused(self):
+        self.project.migration("shop", "0001_initial", FK_ITEM % "")
+        self.project.migration(
+            "shop",
+            "0002_swap",
+            """
+            migrations.RunSQL("SELECT 1 /* other */"),
+            migrations.RemoveField("item", "other"),
+            migrations.AddField("item", "other", models.ForeignKey("shop.Other", models.CASCADE, null=True)),
+            """,
+        )
+        self.project.migration("shop", "0003_order", self.alter())
+        # The CreateModel's "other" isn't the field the ordering is about.
+        assert folds(self.project.check_equivalence()) == []
+
+    @parametrize(
+        "definition",
+        [
+            (
+                'migrations.AddIndex("item", models.Index(fields=["other", "_order"], name="ordered")),',
+            ),
+            (
+                'migrations.AddConstraint("item", models.CheckConstraint('
+                'condition=models.Q(_order__gte=0), name="ordered")),',
+            ),
+        ],
+    )
+    def test_order_column_named_before_it_exists(self, definition):
+        self.project.migration("shop", "0001_initial", FK_ITEM % "")
+        self.project.migration(
+            "shop",
+            "0002_order",
+            'migrations.RunSQL("SELECT 1 /* item */"),' + self.alter() + definition,
+        )
+        # The scan keeps the ordering where it is, and so what names _order.
+        assert folds(self.project.check_equivalence()) == []
+
+    def test_order_column_named_once_folded(self):
+        self.project.migration("shop", "0001_initial", FK_ITEM % "")
+        self.project.migration(
+            "shop",
+            "0002_order",
+            self.alter()
+            + 'migrations.AddIndex("item", models.Index(fields=["other", "_order"], name="ordered")),',
+        )
+        assert descriptions(self.project.check_equivalence()) == [
+            "AlterOrderWithRespectTo in 0002_order folded into CreateModel in 0001_initial",
+            "AddIndex in 0002_order folded into CreateModel in 0001_initial",
+        ]
+
+    def test_unset_with_order_column_indexed(self):
+        self.project.migration(
+            "shop",
+            "0001_initial",
+            FK_ITEM % 'options={"order_with_respect_to": "other", "indexes":'
+            ' [models.Index(fields=["other", "_order"], name="ordered")]},',
+        )
+        self.project.migration("shop", "0002_unset", self.alter("None"))
+        assert folds(self.project.compact()) == []
+
     def test_unknown_field(self):
         self.project.migration("shop", "0001_initial", FK_ITEM % "")
         self.project.migration("shop", "0002_order", self.alter('"missing"'))

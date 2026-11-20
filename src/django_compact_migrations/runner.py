@@ -44,6 +44,18 @@ Progress = Callable[[str, Key | None, int, int], None]
 ("done", None, done, total) at the end."""
 
 
+def _announced(
+    key: Key, op: Operation, starting: Callable[[Key, Operation], None]
+) -> Any:
+    state_forwards = op.state_forwards
+
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        starting(key, op)
+        return state_forwards(*args, **kwargs)
+
+    return wrapper
+
+
 class RunError(Exception):
     def __init__(self, message: str, migration: Key | None = None) -> None:
         super().__init__(message)
@@ -58,6 +70,7 @@ def run_history(
     *,
     operations: Mapping[Key, Sequence[Operation]] | None = None,
     hook: OpHook | None = None,
+    starting: Callable[[Key, Operation], None] | None = None,
     progress: Progress | None = None,
     prune: PrunePlan | None = None,
 ) -> None:
@@ -123,6 +136,12 @@ def run_history(
                 seen.add(id(op))
                 op.database_forwards = hook(key, index, op, op.database_forwards)
                 patched.append(op)
+    if starting is not None:
+        for key in plan:
+            for op in graph.nodes[key].operations:
+                if "state_forwards" not in op.__dict__:
+                    op.state_forwards = _announced(key, op, starting)
+                    patched.append(op)
 
     targets = graph.leaf_nodes()
     migration_plan = executor.migration_plan(targets)
@@ -154,6 +173,7 @@ def run_history(
     finally:
         for op in patched:
             op.__dict__.pop("database_forwards", None)
+            op.__dict__.pop("state_forwards", None)
         if progress is not None:
             progress("done", None, done[0], len(plan))
     try:

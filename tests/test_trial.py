@@ -978,6 +978,25 @@ class TrialTests(ProjectTestCase):
         assert result.verification["vendor"] == "postgresql"
         assert sorted(r.kind for r in result.removals) == ["field", "noop"]
 
+    def test_postgres_column_comments_follow_names(self):
+        pg = self.server("pg")
+        self.project.migration("shop", "0001_initial", ITEM)
+        self.project.migration(
+            "shop",
+            "0002_fields",
+            """
+            migrations.AddField("item", "legacy", models.IntegerField(default=0)),
+            migrations.RemoveField("item", "legacy"),
+            migrations.AddField("item", "note", models.CharField(max_length=5, default="", db_comment="A note")),
+            migrations.AlterModelTableComment("item", "Items"),
+            migrations.RunSQL("SELECT 1 /* item */"),
+            """,
+        )
+        # Without legacy, the note column gets another number.
+        result = self.project.check_equivalence(static=False, database=pg, **NO_FOLD)
+        assert [r.kind for r in result.removals] == ["field"]
+        assert result.verification["trial_blocked"] == 0
+
     @parametrize("server", [("pg",), ("mysql",), ("mariadb",)])
     def test_folded_names_and_order_on_servers(self, server):
         alias = self.server(server)

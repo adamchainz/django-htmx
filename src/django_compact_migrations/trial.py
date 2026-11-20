@@ -233,6 +233,8 @@ class Trial:
                 connection,
                 operations=operations,
                 hook=hook,
+                # An operation can fail before it reaches the database.
+                starting=lambda key, op: current.__setitem__(0, (key, op)),
                 progress=on_progress,
                 prune=prune,
             )

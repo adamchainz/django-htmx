@@ -36,6 +36,7 @@ from django_compact_migrations.timeline import (
     backs_foreign_key,
     first_field,
     lasting_foreign_key,
+    mentioned_names,
     option_field_names,
 )
 from django_compact_migrations.verify import same_value
@@ -570,6 +571,10 @@ class Folder:
         if not self._backing_index_kept(backs_foreign_key(life), create, x):
             return False
         obj = getattr(x.rec.op, "index" if kind == "index" else "constraint")
+        if "_order" in mentioned_names(obj) and not self._ordered_since(
+            model, create, x
+        ):
+            return False
         scan = set(names)
         if kind == "constraint" or getattr(obj, "condition", None) is not None:
             scan |= model.scan_names()
@@ -670,6 +675,21 @@ class Folder:
             assert type(current) is m.AddConstraint
             folded = m.AddConstraint(model_name=current.model_name, constraint=after)
         self._commit(kind, p, e, life, folded)
+
+    def _ordered_since(self, model: ModelLife, create: Element, x: Element) -> bool:
+        """
+        Whether the model has its ``_order`` column from the CreateModel on,
+        until X: the column isn't a field the timeline tracks, so what names
+        it needs this instead of a reference.
+        """
+        current = self._current(create)
+        assert isinstance(current, m.CreateModel)
+        return bool(current.options.get("order_with_respect_to")) and not any(
+            type(e.rec.op) is m.AlterOrderWithRespectTo
+            and not self.solver.removed(e)
+            and self.solver.between(e.pos, create.pos, x.pos)
+            for e in model.elements
+        )
 
     # 4. Together options
 
@@ -925,18 +945,18 @@ class Folder:
         if (had or not wrt) and subtree[0] is not e:
             return
         if wrt:
-            life = next(
-                (
-                    f
-                    for f in model.children
-                    if isinstance(f, FieldLife) and wrt in f.names
-                ),
-                None,
-            )
-            if life is None or not (
-                self._in_create(life, create) and self._stable_names([life], create, e)
+            # The field the operation named when it ran: an earlier field
+            # of the model may have had the same name.
+            named = [r for r in e.refs if isinstance(r, FieldLife)]
+            if len(named) != 1 or not (
+                self._in_create(named[0], create)
+                and self._stable_names(named, create, e)
             ):
                 return
+        elif _mentions(current.options.get("indexes"), "_order") or _mentions(
+            current.options.get("constraints"), "_order"
+        ):
+            return
         if any(
             isinstance(f, FieldLife) and "_order" in f.names for f in model.children
         ):

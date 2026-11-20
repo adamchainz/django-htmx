@@ -4,7 +4,7 @@ How it works
 This page explains how django-compact-migrations decides what is safe to remove.
 You don’t need to read it to use the command, but it helps to understand why something was kept, or what the tool can’t know.
 
-The goal is simple: a fresh database migrated with the compacted history must end up with exactly the same schema as one migrated with the original.
+The goal is simple: a fresh database migrated with the compacted history must end up with the same schema as one migrated with the original, apart from :ref:`what may change <what-may-change>`.
 Everything below serves that goal, and when the command is unsure, it keeps the operation.
 
 Terms
@@ -538,6 +538,12 @@ Limitations
   Two histories with the same project state normally build the same database, but it’s possible for them to differ in ways that Django’s state can’t express.
   For example, a ``RunSQL`` that you rely on for its side effect, or database-specific details.
   Diff the schema before and after on a fresh database, as shown in :ref:`verifying-your-schema`.
+* **On SQLite, a static plan can keep what a table rebuild used to drop.**
+  Django changes most things on SQLite by rebuilding the table, which drops any index or trigger that a ``RunSQL`` created on it.
+  Removing or folding the operation that caused a rebuild leaves such an object in place.
+  A trial on SQLite sees the difference; ``--static`` doesn’t look for it.
+* **A model whose** ``unique_together`` **or** ``index_together`` **names** ``_order`` **is left alone.**
+  The ``_order`` column of ``order_with_respect_to`` isn’t tracked as a field, so nothing of such a model is removed or folded.
 * **Existing databases must already be migrated.**
   The compacted history is for fresh databases.
   A database that is only part way through the original history may not end up with the same schema.

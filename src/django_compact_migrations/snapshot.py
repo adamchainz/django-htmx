@@ -337,14 +337,18 @@ def _postgresql_schema(
         cursor, "SELECT extname, extversion FROM pg_extension"
     ):
         schema[("extension", None, name)] = ext_version
-    for table, subid, description in _fetch(
+    # By column name: a column's number depends on those created before it.
+    for table, column, description in _fetch(
         cursor,
-        "SELECT n.nspname || '.' || c.relname, d.objsubid, d.description"
+        "SELECT n.nspname || '.' || c.relname, coalesce(a.attname, ''),"
+        " d.description"
         " FROM pg_description d JOIN pg_class c ON c.oid = d.objoid"
         " JOIN pg_namespace n ON n.oid = c.relnamespace"
+        " LEFT JOIN pg_attribute a"
+        " ON a.attrelid = d.objoid AND a.attnum = d.objsubid AND d.objsubid <> 0"
         f" WHERE n.nspname NOT IN {_PG_SYSTEM}",
     ):
-        schema[("comment", _table(table), f"{table}:{subid}")] = description
+        schema[("comment", _table(table), f"{table}:{column}")] = description
 
 
 def _table(qualified: str) -> str:

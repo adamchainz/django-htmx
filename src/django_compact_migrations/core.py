@@ -365,8 +365,7 @@ class Result:
 
 def _verify_written(reference: Analysis, pruned: Collection[Key]) -> None:
     """The history on disk, checked in memory against ``reference`` as a
-    plan is checked before it is reported (dangling references, the order
-    of models and fields, the final state)."""
+    plan is checked before it is reported (dangling references, the final state)."""
     loader = MigrationLoader(None, ignore_no_migrations=True)
     history = reference.history
     edited = {

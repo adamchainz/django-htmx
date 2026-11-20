@@ -581,6 +581,32 @@ class SolverTests(ProjectTestCase):
             "RunPython in shop.0002_permissions acts on every model (create_permissions)",
         )
 
+    def test_content_types_for_every_model_blocks(self):
+        self.project.migration(
+            "shop",
+            "0001_initial",
+            ITEM
+            + 'migrations.CreateModel("Coupon", [("id", models.AutoField(primary_key=True))]),',
+        )
+        self.project.migration(
+            "shop",
+            "0002_types",
+            "migrations.RunPython(create_all),",
+            extra="""
+            def create_all(apps, schema_editor):
+                ContentType = apps.get_model("contenttypes", "ContentType")
+                for model in apps.get_models():
+                    ContentType.objects.get_for_model(model)
+            """,
+        )
+        self.project.migration("shop", "0003_drop", 'migrations.DeleteModel("Coupon"),')
+        # The row for the model stays behind, whatever its id.
+        result = self.project.compact()
+        assert kinds(result) == []
+        assert blocked(result)["shop.Coupon"] == (
+            "RunPython in shop.0002_types acts on every model (get_for_model)",
+        )
+
     def test_superseded_alter_field_window_mentioned(self):
         self.project.migration("shop", "0001_initial", ITEM)
         self.project.migration(

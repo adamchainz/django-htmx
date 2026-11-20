@@ -41,6 +41,43 @@ class RunnerTests(ProjectTestCase):
             with pytest.raises(RunError, match="already has applied migrations"):
                 run_history(connection)
 
+    def test_operations_announced_before_their_state_change(self):
+        self.project.migration("shop", "0001_initial", ITEM)
+        self.project.migration(
+            "shop",
+            "0002_broken",
+            """
+            migrations.RunSQL("SELECT 1"),
+            Broken(),
+            """,
+            extra="""
+            class Broken(migrations.operations.base.Operation):
+                def state_forwards(self, app_label, state):
+                    raise ValueError("no state")
+
+                def database_forwards(self, *args):
+                    pass
+            """,
+        )
+        self.project.activate()
+        started: list[str] = []
+        with (
+            self.project.db_blocker.unblock(),
+            scratch_database() as connection,
+            pytest.raises(RunError, match="no state"),
+        ):
+            run_history(
+                connection,
+                starting=lambda key, op: started.append(type(op).__name__),
+            )
+        # The failing operation is the last one announced, though it never
+        # reached the database.
+        assert started[-1] == "Broken"
+        loader = MigrationLoader(None, ignore_no_migrations=True)
+        for migration in loader.graph.nodes.values():
+            for op in migration.operations:
+                assert "state_forwards" not in op.__dict__
+
     def test_shared_operation_hooked_once(self):
         self.project.migration("shop", "0001_initial", ITEM)
         (self.project.path("shop").parent / "shared.py").write_text(
@@ -57,9 +94,15 @@ class RunnerTests(ProjectTestCase):
             hooked.append(f"{key[1]} {type(op).__name__}")
             return forwards
 
+        started: list[str] = []
         with self.project.db_blocker.unblock(), scratch_database() as connection:
-            run_history(connection, hook=hook)
+            run_history(
+                connection,
+                hook=hook,
+                starting=lambda key, op: started.append(key[1]),
+            )
         assert hooked == ["0001_initial CreateModel", "0002_a RunPython"]
+        assert started == ["0001_initial", "0002_a", "0002_a"]
 
     def test_signal_handler_failures(self):
         self.project.migration("shop", "0001_initial", ITEM)
