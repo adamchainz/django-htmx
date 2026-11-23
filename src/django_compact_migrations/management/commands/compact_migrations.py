@@ -199,7 +199,7 @@ class Command(RichCommand):
             if verbosity > 0 and result.changed:
                 self._print(Text(summary(result, False), style="bold green"))
                 self._print(Text(_edited_apps(result, False), style="dim"))
-                self._report_warnings(result, options)
+                self._report_warnings(result)
             if options["output"]:
                 save_plan(result, options["output"], blocked=show_blocked)
                 if verbosity > 0:
@@ -229,7 +229,7 @@ class Command(RichCommand):
         except CompactError as exc:
             raise CommandError(str(exc)) from None
         if verbosity > 0:
-            self._report_warnings(result, options)
+            self._report_warnings(result)
             for note in notes:
                 self._print(Text(note, style="yellow"))
             self._print(Text(_edited_apps(result, True), style="dim"))
@@ -427,7 +427,7 @@ class Command(RichCommand):
         if not result.changed:
             self._print("No operations to remove.")
 
-    def _report_warnings(self, result: Result, options: dict[str, Any]) -> None:
+    def _report_warnings(self, result: Result) -> None:
         made_for = sorted(result.options["backends"])
         now = sorted(backends.configured())
         if made_for != now:

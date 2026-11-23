@@ -148,7 +148,6 @@ class Trial:
         self.noop_suspect: dict[str, str] = {}
         """Data migrations that wrote nothing but whose source suggests
         effects queries don't show, with why."""
-        self.at_risk_units = 0
         self.first_static: set[str] = set()
         self.candidate_keys: set[str] = set()
         self.passes = 0
@@ -454,7 +453,6 @@ class Trial:
         ).removed_positions
         first = self.analysis.solve(aggressive=True, base=static)
         candidates = first.unit_keys() - static.unit_keys()
-        self.at_risk_units = len(candidates)
         # Counted against the plan as first solved: the static base can
         # shrink later (blamed folds, no-ops).
         self.first_static = static.unit_keys()
@@ -504,7 +502,7 @@ class Trial:
                 missing = static_removed - result.removed_positions
                 if not missing:
                     return self._result(
-                        result, solution, static, trial_blocked, fallback, begin
+                        result, solution, trial_blocked, fallback, begin
                     )
                 # The trial must never do worse than the static plan: blocking
                 # one removal can change how others are expressed.
@@ -605,7 +603,6 @@ class Trial:
         return self._result(
             make_result(self.analysis, solution, built),
             solution,
-            static,
             trial_blocked,
             fallback,
             begin,
@@ -637,7 +634,8 @@ class Trial:
     def _candidate(
         self, solution: Solution, built: Built, reference: Snapshot
     ) -> tuple[list[TrialFailure], list[Difference]] | None:
-        """Run a candidate; None if it passes, else failures and differences."""
+        """Run a candidate; None if it passes, else failures and differences.
+        (``solution`` is for tests that script the runs.)"""
         operations = built.operations_by_key(self.analysis.history)
         prune = (
             prune_plan(self.analysis, built)
@@ -818,7 +816,6 @@ class Trial:
         self,
         result: Result,
         solution: Solution,
-        static: Solution,
         trial_blocked: Mapping[str, str],
         fallback: bool,
         begin: float,

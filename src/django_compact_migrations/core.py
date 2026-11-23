@@ -198,8 +198,6 @@ class Result:
     """How the plan was checked before being reported."""
     removed_positions: frozenset[tuple[Key, int]] = frozenset()
     """(migration, operation index) of every operation removed outright."""
-    edited_positions: frozenset[tuple[Key, int]] = frozenset()
-    """(migration, operation index) of every operation edited."""
     pruned_migrations: list[Key] = field(default_factory=list)
     """Migrations deleted (--prune)."""
     _plan_keys: list[Key] | None = field(default=None, repr=False)
@@ -619,7 +617,7 @@ class Analysis:
                 solver.drop_all_elidable()
             solver.drop_redundant_together()
             solver.solve_superseded()
-            if solver.fold_kinds:
+            if "fold" in solver.scope.kinds:
                 solver.solve_folds(
                     lambda p, op: regeneration_problem(
                         p.rec.migration.on_disk.source, op
@@ -865,7 +863,6 @@ def make_result(analysis: Analysis, solution: Solution, built: Built) -> Result:
         folded_operations=folded_count,
         options=dict(analysis.options),
         removed_positions=frozenset(removed),
-        edited_positions=frozenset(edited),
         pruned_migrations=list(prune.pruned) if prune is not None else [],
         _plan_keys=list(history.plan),
         _final_state=timeline.state,

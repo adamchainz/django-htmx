@@ -11,7 +11,6 @@ from django.db.migrations.operations.base import Operation
 
 from django_compact_migrations.backends import describe
 from django_compact_migrations.fold import (
-    FOLD_KINDS,
     Fold,
     Folder,
     RegenerationCheck,
@@ -198,10 +197,6 @@ class Solver:
             end = f"{unit.end.migration.label}#{unit.end.original_index}"
             return f"{unit.kind}:{end}:{unit.model.names[0]}:{name}"
         return f"element:{_origin(unit)}"
-
-    @property
-    def fold_kinds(self) -> frozenset[str]:
-        return frozenset(FOLD_KINDS) if "fold" in self.scope.kinds else frozenset()
 
     def solve_folds(self, can_regenerate: RegenerationCheck) -> None:
         folder = Folder(self, can_regenerate)

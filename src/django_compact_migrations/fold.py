@@ -60,24 +60,8 @@ def occupied(fld: Any) -> tuple[Any, ...]:
     )
 
 
-FOLD_KINDS = (
-    "field",
-    "add_field",
-    "index",
-    "constraint",
-    "together",
-    "options",
-    "managers",
-    "comment",
-    "rename",
-    "table",
-)
-
-
 @dataclass(eq=False)
 class Fold:
-    kind: str
-    """One of FOLD_KINDS."""
     target: Element
     """P: the creating element that absorbs E."""
     folded: Element
@@ -277,16 +261,14 @@ class Folder:
             for other in field.model.children
         )
 
-    def _commit(
-        self, kind: str, p: Element, e: Element, life: Life, op: Operation
-    ) -> bool:
+    def _commit(self, p: Element, e: Element, life: Life, op: Operation) -> bool:
         reason = self.can_regenerate(p, op)
         if reason is not None:
             return False
         self.pending[p.rec.seq] = op
         self.used.add(e.rec.seq)
         self.solver.plan.dropped[e] = "fold"
-        self.folds.append(Fold(kind, p, e, life))
+        self.folds.append(Fold(p, e, life))
         return True
 
     def _current(self, p: Element) -> Operation:
@@ -336,7 +318,7 @@ class Folder:
                 self._fold_rename_field(life)
         return self.folds
 
-    # 1. AlterField -> its carrier
+    # AlterField -> its carrier
 
     def _fold_alter_field(self, life: FieldLife) -> None:
         solver = self.solver
@@ -404,7 +386,7 @@ class Folder:
             model, p.pos, e
         ):
             return
-        self._commit("field", p, e, life, folded)
+        self._commit(p, e, life, folded)
 
     def _alter_into(self, p: Element, e: Element) -> Operation:
         alter = e.rec.op
@@ -436,7 +418,7 @@ class Folder:
         ]
         return _create(current, fields=fields)
 
-    # 2. AddField -> CreateModel
+    # AddField -> CreateModel
 
     def _fold_add_fields(self, model: ModelLife, create: Element) -> None:
         solver = self.solver
@@ -510,12 +492,12 @@ class Folder:
                 (add.name, _state_field(add.field, add.preserve_default)),
             ],
         )
-        if not self._commit("add_field", create, a, life, new):
+        if not self._commit(create, a, life, new):
             return False
         self.into_create.setdefault(create.rec.seq, set()).add(life)
         return True
 
-    # 3. AddIndex / AddConstraint -> CreateModel options
+    # AddIndex / AddConstraint -> CreateModel options
 
     def _fold_named(
         self,
@@ -584,7 +566,7 @@ class Folder:
         assert isinstance(current, m.CreateModel)
         options = dict(current.options)
         options[option] = [*options.get(option, []), obj]
-        return self._commit(kind, create, x, life, _create(current, options=options))
+        return self._commit(create, x, life, _create(current, options=options))
 
     # RenameIndex / AlterConstraint -> where the index or constraint is defined
 
@@ -674,7 +656,7 @@ class Folder:
         else:
             assert type(current) is m.AddConstraint
             folded = m.AddConstraint(model_name=current.model_name, constraint=after)
-        self._commit(kind, p, e, life, folded)
+        self._commit(p, e, life, folded)
 
     def _ordered_since(self, model: ModelLife, create: Element, x: Element) -> bool:
         """
@@ -691,7 +673,7 @@ class Folder:
             for e in model.elements
         )
 
-    # 4. Together options
+    # Together options
 
     def _fold_together(self, model: ModelLife, create: Element) -> None:
         for option, events in model.together_events.items():
@@ -730,9 +712,7 @@ class Folder:
                 options[option] = set(value)
             else:
                 options.pop(option, None)
-            self._commit(
-                "together", create, e, model, _create(current, options=options)
-            )
+            self._commit(create, e, model, _create(current, options=options))
 
     def _together_keeps_backing(
         self,
@@ -764,9 +744,7 @@ class Folder:
                 return False
         return True
 
-    # 5. Model options, managers, table comment
-
-    # 6. RenameField -> the field's creation
+    # RenameField -> the field's creation
 
     def _fold_rename_field(self, life: FieldLife) -> None:
         """
@@ -829,7 +807,7 @@ class Folder:
                 return
         if not self._quiet(life.scan_names() | model.scan_names(), p, e, model):
             return
-        self._commit("rename", p, e, life, self._renamed_into(p, current, rename))
+        self._commit(p, e, life, self._renamed_into(p, current, rename))
 
     def _renamed_into(
         self, p: Element, current: Operation, rename: m.RenameField
@@ -896,7 +874,7 @@ class Folder:
         names = solver._query_names(model)
         if not self._quiet(names, create, e, model):
             return
-        self._commit("table", create, e, model, _create(current, options=options))
+        self._commit(create, e, model, _create(current, options=options))
 
     # AlterOrderWithRespectTo -> CreateModel options
 
@@ -964,7 +942,9 @@ class Folder:
         if not self._quiet(solver._query_names(model), create, e, model):
             return
         options = {**current.options, "order_with_respect_to": wrt}
-        self._commit("options", create, e, model, _create(current, options=options))
+        self._commit(create, e, model, _create(current, options=options))
+
+    # Model options, managers, table comment -> CreateModel
 
     def _fold_model_op(
         self, model: ModelLife, create: Element, kind: str, cls: type[Operation]
@@ -1024,7 +1004,7 @@ class Folder:
         names = solver._query_names(model)
         if not self._quiet(names, create, e, model):
             return
-        self._commit(kind, create, e, model, new)
+        self._commit(create, e, model, new)
 
 
 def _state_field(field: Any, preserve_default: bool) -> Any:

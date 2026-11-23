@@ -20,7 +20,6 @@ from typing import Any
 
 from django.db.backends.base.base import BaseDatabaseWrapper
 
-MIGRATIONS = "django_migrations"
 CONTENT_TYPES = "django_content_type"
 PERMISSIONS = "auth_permission"
 _PG_SYSTEM = "('pg_catalog', 'information_schema', 'pg_toast')"

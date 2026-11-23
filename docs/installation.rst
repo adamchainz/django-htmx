@@ -20,7 +20,7 @@ Installation
        python -m pip install django-compact-migrations
 
 2. Add django-compact-migrations to your ``INSTALLED_APPS``.
-   Since it’s a development tool, you should only do so in your development settings:
+   It’s a development tool, so add it in your development settings only:
 
    .. code-block:: python
 
@@ -30,7 +30,5 @@ Installation
            ...,
        ]
 
-Trials create and drop scratch databases on the server of the database you choose, so the database user needs permission to create databases, as for running tests.
-Use development settings, never production ones.
-
-Now see :doc:`usage`.
+Trials create scratch databases, so the database user needs permission to create databases, as for running tests.
+Use development settings, never production ones: see :ref:`before-you-start`.

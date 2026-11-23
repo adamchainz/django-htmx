@@ -5,33 +5,38 @@ django-compact-migrations adds a management command, ``compact_migrations``, wit
 
 * ``compact_migrations plan`` reports what can be removed, and can save the plan to a file.
 * ``compact_migrations apply`` edits the migration files, from a saved plan or after making one.
-* ``compact_migrations scratch`` lists, or drops, scratch databases left behind by killed runs.
+* ``compact_migrations scratch`` lists or drops scratch databases left behind by killed runs.
 
 The command reads your whole migration history and removes operations that cancel each other out, such as a model that is created and later deleted.
-It also merges (*folds*) operations into the earlier ones that created what they change, and with ``--prune`` deletes migrations left empty.
-Every plan is checked by a *trial*: the command migrates scratch databases with the original history and with the plan, and compares the results.
+It also *folds* operations: it merges an operation into the earlier one that created what it changes.
+With ``--prune``, it also deletes migrations left empty.
+A *trial* checks every plan: the command migrates scratch databases with the original history and with the plan, and compares the results.
+
+.. _before-you-start:
 
 Before you start
 ----------------
 
 **Migrate every existing database (production, staging, shared development databases) to your latest migrations first.**
-Fully migrated databases are unaffected: Django won’t run a migration it has recorded as applied, so edited migrations never run there again.
+Django never runs a migration again once it has recorded it as applied, so fully migrated databases are unaffected.
 A database that is partway through the history when you apply may end up with a different schema.
-This is the same rule as for deleting the migrations that a squashed migration replaces.
+The same rule applies when you delete the migrations that a squashed migration replaces.
 ``apply`` checks the databases it can reach, and refuses if one is partway through an app’s history.
 
 **Commit your work.**
-``apply`` refuses to edit migration files with uncommitted changes, so that its edit can be reviewed and reverted on its own.
+``apply`` refuses to edit migration files with uncommitted changes, so you can review and revert its edit on its own.
 
 **Run the command with development settings.**
-A trial creates scratch databases on the server of the ``--database`` alias (``default`` by default), and runs your migrations there, data migrations included.
-Whatever a data migration does outside the database, such as sending email, happens for real.
+A trial creates scratch databases on the server of the ``--database`` alias (``default`` by default).
+It runs your migrations there, data migrations included.
+Anything a data migration does outside the database, such as sending email, happens for real.
 So point ``--database`` at a local server of the same backend as production, never at production.
 The database user needs permission to create databases, as for running tests.
 
-The command edits the migrations of the apps in your project: those under the top of the Git work tree you run it in (or the current directory, outside Git), outside virtual environments.
-Migrations of installed packages are read, but never edited.
-If replaced migrations of a squashed migration are still on disk, they are skipped, with a warning, and only the squashed migration is compacted.
+The command only edits your project’s migrations: those under the top of the Git work tree you run it in (or the current directory, outside Git), outside virtual environments.
+It reads the migrations of installed packages, but never edits them.
+See :ref:`project-migrations` for the exact rules.
+If the migrations that a squashed migration replaces are still on disk, the command skips them with a warning, and compacts only the squashed migration.
 
 .. _what-may-change:
 
@@ -42,15 +47,16 @@ A database migrated from scratch with the compacted history has the same tables,
 Three things may differ, as they may after squashing migrations:
 
 * **The order of columns in a table.**
-  A field folded into an earlier operation is created where that operation puts it, and on SQLite, Django rebuilds tables with their columns in the order of the model’s fields, which ``AlterField`` and ``RenameField`` change.
-  The same goes for the order of fields in the historical models that data migrations get.
-  Django always names the columns it reads and writes, so this only matters to raw SQL that relies on positions: ``SELECT *`` read by index, ``INSERT`` or ``COPY`` without a column list.
+  A field folded into an earlier operation is created where that operation puts it.
+  On SQLite, Django also rebuilds tables with their columns in the order of the model’s fields, which ``AlterField`` and ``RenameField`` change.
+  The order of fields in the historical models that data migrations get may change in the same way.
+  Django always names the columns it reads and writes, so this only matters to raw SQL that relies on column positions: ``SELECT *`` read by index, or ``INSERT`` or ``COPY`` without a column list.
 * **The ids of content types and permissions.**
-  They follow which rows the history happened to create first.
+  They depend on which rows the history happened to create first.
   Rows that point at them with a foreign key still point at the same content type or permission.
-* **The next id of a table**: the value of its sequence or ``AUTO_INCREMENT`` counter, when a removed data migration created rows and deleted them again.
+* **The next id of a table**: the value of its sequence or ``AUTO_INCREMENT`` counter, when a removed data migration created rows and then deleted them.
 
-If you need the order of columns preserved, please `open an issue <https://github.com/adamchainz/django-compact-migrations/issues>`__: an option for that would be a welcome addition.
+If you need the order of columns preserved, please `open an issue <https://github.com/adamchainz/django-compact-migrations/issues>`__: an option for that would be welcome.
 
 Quick start
 -----------
@@ -79,8 +85,8 @@ Quick start
    On every existing database, ``migrate`` should then report “No migrations to apply.”
 
 To undo, revert the commit.
-Fully migrated databases need nothing, since every original migration is still recorded as applied there.
-The one exception is pruning, see :ref:`pruning`.
+Fully migrated databases need nothing more, since every original migration is still recorded as applied there.
+The one exception is pruning: see :ref:`pruning`.
 
 Reading the report
 ------------------
@@ -112,13 +118,17 @@ Here is a report for a small project:
     No MySQL or MariaDB database is configured: if production runs on one, make the plan with it configured (some of its index names depend on the history).
     Run 'compact_migrations apply' to apply.
 
+The notes before the report say what the trial will do.
 Removals are grouped by app and model.
-Each line names what goes, its kind, the migrations where it appeared and where it ended (or, for a fold, the migration it moves into), and how many operations it takes.
-The notes before the report say what the trial will do; the *Trial* line says how the plan was checked.
-The summary counts the operations removed outright, folded into earlier ones, and edited (such as a field taken out of a ``CreateModel``, or an operation that absorbed a fold), and the migrations left with no operations.
+Each line shows what goes, its kind, the migrations where it appeared and where it ended, and how many operations it takes.
+For a fold, the line shows the migration it moves into instead.
+The *Trial* line says how the plan was checked.
+The summary counts the operations removed outright, folded into earlier ones, and edited, and the migrations left with no operations.
+An edited operation is one that lost part of itself, such as a field taken out of a ``CreateModel``, or one that absorbed a fold.
 Progress goes to stderr.
 
-``-v 2`` also lists each operation as ``path:line  Operation``, and what cancels out in the history but was kept, with the reason, for example “RunPython in shop.0002_coupon mentions 'rank'”.
+``-v 2`` also lists each operation as ``path:line  Operation``.
+It also lists what cancels out in the history but was kept, with the reason, for example “RunPython in shop.0002_coupon mentions 'rank'”.
 ``-v 0`` prints nothing.
 
 Options
@@ -167,23 +177,26 @@ Pass targets to compact part of your project: an app label, ``app.Model``, or ``
 
 A model or field matches if any name it had in the history matches.
 A target that matches no app, model or field in the history is an error.
-Removing a target may need other things to go too, such as a foreign key in another app that points at a removed model; if they can’t go, the target stays.
+Removing a target may need other things to go too, such as a foreign key in another app that points at a removed model.
+If they can’t go, the target stays.
 A target also makes its app editable when its migrations are outside the project.
 
-``--exclude``, repeatable, takes the same targets, and keeps them and everything that depends on them.
+``--exclude`` takes the same targets, and can be repeated.
+It keeps what matches, and everything that depends on it.
 
 ``--skip-kind``
 ~~~~~~~~~~~~~~~
 
-The command looks for every kind of removal; ``--skip-kind``, repeatable, leaves one out:
+The command looks for every kind of removal.
+``--skip-kind``, repeatable, leaves one out:
 
 * ``model``: a model created and later deleted, with every operation on it.
 * ``field``: a field added and later removed, with its ``AlterField`` and ``RenameField`` operations.
 * ``index`` and ``constraint``: an index or constraint added and later removed.
 * ``together``: a ``unique_together`` or ``index_together`` entry added and later removed.
 * ``superseded``: an ``AlterField``, ``AlterModelOptions``, ``AlterModelManagers`` or ``AlterModelTableComment`` that a later one replaces.
-* ``fold``: an operation merged into the earlier operation that created what it changes, such as an ``AlterField`` into the ``AddField`` of the field.
-  The earlier operation is rewritten in Django’s migration writer’s style, so it loses its own formatting and comments.
+* ``fold``: an operation merged into the earlier operation that created what it changes, such as an ``AlterField`` into the field’s ``AddField``.
+  Django’s migration writer rewrites the earlier operation, so it loses its own formatting and comments.
 
 The report can also show ``elidable``, ``noop`` and ``prune``, described below.
 :doc:`how_it_works` gives the rules for each kind.
@@ -206,12 +219,14 @@ The rules for MySQL and MariaDB apply when any configured database uses them, an
 ``--output`` and ``apply --plan``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-``plan --output FILE`` (or ``-o``) saves the plan as a TOML file: the summary, the options, how it was checked, each removal, and each file edit as a unified diff.
+``plan --output FILE`` (or ``-o``) saves the plan as a TOML file.
+It holds the summary, the options, how the plan was checked, each removal, and each file edit as a unified diff.
 With ``-v 2`` it also lists what was kept and why.
 
 ``apply --plan FILE`` applies exactly that plan.
-It refuses to write anything if a file changed since the plan was made, if a diff doesn’t apply exactly, or if the plan names anything but the project’s own migrations.
-A ``--static`` plan must also give the same edits when made again; a trial plan’s results are shown as “recorded in the plan”.
+It writes nothing if a file changed since the plan was made, if a diff doesn’t apply exactly, or if the plan names anything but the project’s own migrations.
+For a ``--static`` plan, making the plan again must also give the same edits.
+For a trial plan, the report shows the trial’s results as “recorded in the plan”.
 Only apply plans that you made, or whose diffs you reviewed.
 
 ``--check``
@@ -223,14 +238,17 @@ As with ``makemigrations --check``, an error also exits with status 1.
 ``--elidable``
 ~~~~~~~~~~~~~~
 
-An elidable ``RunPython`` or ``RunSQL`` operation never blocks a removal: if it mentions what is removed, and always runs while that exists, it is removed too (kind ``elidable``).
+An elidable ``RunPython`` or ``RunSQL`` operation never blocks a removal.
+If it mentions what is removed, and always runs while that exists, it is removed too (kind ``elidable``).
 With ``--elidable``, every elidable operation of the selected apps goes, as when squashing.
 
 ``--noop-data``
 ~~~~~~~~~~~~~~~
 
-Many data migrations only change rows that already exist, so on a fresh database they do nothing, yet they keep what they mention.
-``--noop-data`` removes the data migrations that wrote nothing during the trial (kind ``noop``), unless their code shows effects that queries don’t, such as files, email or signal handlers.
+Many data migrations only change rows that already exist.
+On a fresh database they do nothing, yet they keep what they mention.
+``--noop-data`` removes the data migrations that wrote nothing during the trial (kind ``noop``).
+It keeps those whose code shows effects that queries don’t, such as files, email or signal handlers.
 It can’t be combined with ``--static``.
 
 .. warning::
@@ -245,27 +263,34 @@ It can’t be combined with ``--static``.
 ``--prune``
 ~~~~~~~~~~~
 
-Deletes migrations left with no operations (kind ``prune``), and makes the migrations that depended on them depend on their dependencies instead.
+Deletes migrations left with no operations (kind ``prune``).
+The migrations that depended on them then depend on their dependencies instead.
 Every remaining migration still runs after the same migrations as before, in the same order, and every app keeps its first and latest migrations.
-Some migrations are kept, with the reason shown by ``-v 2``.
+Some empty migrations are kept, with the reason shown by ``-v 2``.
 
 .. warning::
 
     Pruning changes the set of migration names.
-    Branches or other projects with migrations depending on a deleted migration need that dependency updated.
+    Branches or other projects with migrations that depend on a deleted migration need that dependency updated.
     Scripts and documentation that name migrations need updating too.
 
 Existing databases keep a ``django_migrations`` row for each deleted migration, which is harmless.
-``migrate --prune`` removes those rows, but then, if you revert the change, ``migrate`` would run the restored migrations again.
-So only run ``migrate --prune`` once the change is deployed everywhere and you won’t revert it; otherwise mark the restored migrations as applied with ``./manage.py migrate --fake <app> <migration>``.
+``migrate --prune`` removes those rows.
+But if you then revert the change, ``migrate`` would run the restored migrations again.
+So only run ``migrate --prune`` once the change is deployed everywhere and you won’t revert it.
+Otherwise, mark the restored migrations as applied with ``./manage.py migrate --fake <app> <migration>``.
 
 ``--allow-dirty`` and ``--no-database-check``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-``apply`` refuses to edit files with uncommitted changes, and says when they aren’t in Git at all; ``--allow-dirty`` edits them anyway.
-``apply`` also refuses when a configured database it can reach has applied some of an app’s migrations but not one that the plan edits or deletes; ``--no-database-check`` skips that check, for example when the databases can’t be reached from where you run it.
+``apply`` refuses to edit files with uncommitted changes, and says when they aren’t in Git at all.
+``--allow-dirty`` edits them anyway.
 
-``apply`` checks that every file can be written before it writes any, keeps the originals until the result is verified, and restores them on failure.
+``apply`` also refuses when a configured database it can reach has applied some of an app’s migrations, but not one that the plan edits or deletes.
+``--no-database-check`` skips that check, for example when the databases can’t be reached from where you run the command.
+
+``apply`` checks that it can write every file before it writes any.
+It keeps the originals until the result is verified, and restores them on failure.
 If it is killed in between, the next run restores them.
 
 ``scratch``
@@ -273,7 +298,8 @@ If it is killed in between, the next run restores them.
 
 Trial runs drop their scratch databases when they end, even on Ctrl+C.
 Only a hard kill can leave one behind.
-``compact_migrations scratch`` lists them, on the server of ``--database`` (or, for SQLite, in the temporary directory), and ``--drop NAME`` or ``--drop-all`` drops them.
+``compact_migrations scratch`` lists them, on the server of ``--database`` (or, for SQLite, in the temporary directory).
+``--drop NAME`` or ``--drop-all`` drops them.
 Other trials against the same server use scratch databases too, so only drop those you know are left over.
 
 Full help

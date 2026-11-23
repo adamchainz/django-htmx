@@ -1188,7 +1188,7 @@ class TogetherTests(ProjectTestCase):
         )
 
 
-def author_book(project: Project, book_ops: str = "", app: str = "library") -> None:
+def author_book(project: Project, app: str = "library") -> None:
     project.migration(
         app,
         "0001_initial",

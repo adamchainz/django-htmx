@@ -34,4 +34,4 @@ Make ``migrate`` faster by removing operations from your Django migration histor
 Documentation
 -------------
 
-Please see https://django-compact-migrations.readthedocs.io/.
+See https://django-compact-migrations.readthedocs.io/.

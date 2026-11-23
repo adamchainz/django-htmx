@@ -9,8 +9,7 @@ django-compact-migrations documentation
 
 ----
 
-Welcome to the documentation for django-compact-migrations.
-This package provides a management command that rewrites your migration history so that ``migrate`` runs faster on fresh databases, such as in your test suite.
+django-compact-migrations provides a management command that rewrites your migration history, so ``migrate`` runs faster on fresh databases, such as your test database.
 It removes operations that cancel out, merges operations into earlier ones, and can delete migrations left empty.
 
 .. toctree::

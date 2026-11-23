@@ -1,7 +1,6 @@
 Benchmarks
 ==========
 
-How much faster does ``migrate`` get?
 On nine open source Django projects, compacting made migrating a fresh database 20% to 52% faster with the default options, and 22% to 71% faster with ``--noop-data --prune``.
 In every case, the compacted history created the same database as the original, apart from :ref:`what may change <what-may-change>`.
 
@@ -85,8 +84,7 @@ Time for ``migrate`` to create a fresh database, in seconds:
      - 138.8
      - −45%
 
-What the command changed to get there.
-*Removed* and *folded* count operations, and *deleted* counts migration files, which only ``--prune`` deletes:
+What the command changed to get there, where *removed* and *folded* count operations, and *deleted* counts migration files (only ``--prune`` deletes them):
 
 .. list-table::
    :header-rows: 2
@@ -184,7 +182,7 @@ Each time is the median of three runs of ``migrate`` on a new, empty database (t
 Runs of the original and the two compacted histories were interleaved, one at a time, on an otherwise idle machine.
 
 *Correctness.*
-For each compacted history, a fresh database was compared with one made by the original history:
+Each compacted history’s fresh database was compared with one made by the original history:
 
 * the schema dump (``pg_dump --schema-only``, or a dump of ``sqlite_master`` for SQLite), ignoring the order of columns within a table,
 * the content types and permissions, by app label, model and codename rather than by id,
