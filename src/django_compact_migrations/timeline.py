@@ -574,9 +574,7 @@ class Timeline:
         element.refs.append(life)
         life.referenced_by.append(element)
 
-    def _model(
-        self, app_label: str, name: str, rec: OpRecord, ctx: Element | None
-    ) -> ModelLife:
+    def _model(self, app_label: str, name: str, rec: OpRecord) -> ModelLife:
         life = self.models.get((app_label, name.lower()))
         if life is None:
             # Django's own state replay would fail on it right after.
@@ -817,7 +815,7 @@ class Timeline:
     def _on_DeleteModel(
         self, rec: OpRecord, op: m.DeleteModel, app_label: str, ctx: Element | None
     ) -> None:
-        model = self._model(app_label, op.name, rec, ctx)
+        model = self._model(app_label, op.name, rec)
         self._element(rec, None, model, ctx, "ended")
         model.end = rec
         del self.models[model.key]
@@ -827,7 +825,7 @@ class Timeline:
     def _on_RenameModel(
         self, rec: OpRecord, op: m.RenameModel, app_label: str, ctx: Element | None
     ) -> None:
-        model = self._model(app_label, op.old_name, rec, ctx)
+        model = self._model(app_label, op.old_name, rec)
         self._element(rec, None, model, ctx)
         old_key = model.key
         del self.models[old_key]
@@ -846,7 +844,7 @@ class Timeline:
     def _model_op(
         self, rec: OpRecord, op: Any, app_label: str, ctx: Element | None
     ) -> tuple[ModelLife, Element]:
-        model = self._model(app_label, op.name, rec, ctx)
+        model = self._model(app_label, op.name, rec)
         return model, self._element(rec, None, model, ctx)
 
     def _on_AlterModelTable(
@@ -906,7 +904,7 @@ class Timeline:
     ) -> None:
         # Inside an opaque op only the together entries are touched (and
         # poisoned below), not the model's other options.
-        model = self._model(app_label, op.name, rec, ctx)
+        model = self._model(app_label, op.name, rec)
         element = self._element(rec, None, model if ctx is None else None, ctx)
         option = op.option_name
         assert option is not None
@@ -964,7 +962,7 @@ class Timeline:
     def _on_AddField(
         self, rec: OpRecord, op: m.AddField, app_label: str, ctx: Element | None
     ) -> None:
-        model = self._model(app_label, op.model_name, rec, ctx)
+        model = self._model(app_label, op.model_name, rec)
         life = FieldLife(model, op.name)
         old = model.fields.get(op.name)
         if old is not None:
@@ -980,7 +978,7 @@ class Timeline:
     def _on_RemoveField(
         self, rec: OpRecord, op: m.RemoveField, app_label: str, ctx: Element | None
     ) -> None:
-        model = self._model(app_label, op.model_name, rec, ctx)
+        model = self._model(app_label, op.model_name, rec)
         life = self._field(model, op.name, rec)
         self._element(rec, None, life, ctx, "ended")
         del model.fields[op.name]
@@ -989,7 +987,7 @@ class Timeline:
     def _on_AlterField(
         self, rec: OpRecord, op: m.AlterField, app_label: str, ctx: Element | None
     ) -> None:
-        model = self._model(app_label, op.model_name, rec, ctx)
+        model = self._model(app_label, op.model_name, rec)
         life = self._field(model, op.name, rec)
         element = self._element(rec, None, life, ctx)
         self._field_def(element, model, life, op.field)
@@ -997,7 +995,7 @@ class Timeline:
     def _on_RenameField(
         self, rec: OpRecord, op: m.RenameField, app_label: str, ctx: Element | None
     ) -> None:
-        model = self._model(app_label, op.model_name, rec, ctx)
+        model = self._model(app_label, op.model_name, rec)
         life = self._field(model, op.old_name, rec)
         element = self._element(rec, None, life, ctx)
         if element is not ctx:
@@ -1014,7 +1012,7 @@ class Timeline:
     def _on_AddIndex(
         self, rec: OpRecord, op: m.AddIndex, app_label: str, ctx: Element | None
     ) -> None:
-        model = self._model(app_label, op.model_name, rec, ctx)
+        model = self._model(app_label, op.model_name, rec)
         life = IndexLife(model, op.index.name)
         element = self._element(rec, None, None, ctx)
         self._attach(element, life, ctx)
@@ -1030,7 +1028,7 @@ class Timeline:
     def _on_RemoveIndex(
         self, rec: OpRecord, op: m.RemoveIndex, app_label: str, ctx: Element | None
     ) -> None:
-        model = self._model(app_label, op.model_name, rec, ctx)
+        model = self._model(app_label, op.model_name, rec)
         life = model.indexes.pop(op.name, None)
         if life is None:
             model.poison(f"unknown index {op.name!r} in {rec.describe()}")
@@ -1042,7 +1040,7 @@ class Timeline:
     def _on_RenameIndex(
         self, rec: OpRecord, op: m.RenameIndex, app_label: str, ctx: Element | None
     ) -> None:
-        model = self._model(app_label, op.model_name, rec, ctx)
+        model = self._model(app_label, op.model_name, rec)
         life: Life | None
         if op.old_fields:
             flives = self._field_lives(model, tuple(op.old_fields))
@@ -1080,7 +1078,7 @@ class Timeline:
     def _on_AddConstraint(
         self, rec: OpRecord, op: m.AddConstraint, app_label: str, ctx: Element | None
     ) -> None:
-        model = self._model(app_label, op.model_name, rec, ctx)
+        model = self._model(app_label, op.model_name, rec)
         name = op.constraint.name
         life = ConstraintLife(model, name)
         element = self._element(rec, None, None, ctx)
@@ -1101,7 +1099,7 @@ class Timeline:
         app_label: str,
         ctx: Element | None,
     ) -> None:
-        model = self._model(app_label, op.model_name, rec, ctx)
+        model = self._model(app_label, op.model_name, rec)
         life = model.constraints.pop(op.name, None)
         if life is None:
             model.poison(f"unknown constraint {op.name!r} in {rec.describe()}")
@@ -1117,7 +1115,7 @@ class Timeline:
         app_label: str,
         ctx: Element | None,
     ) -> None:
-        model = self._model(app_label, op.model_name, rec, ctx)
+        model = self._model(app_label, op.model_name, rec)
         life = model.constraints.get(op.name)
         if life is None:
             model.poison(f"unknown constraint {op.name!r} in {rec.describe()}")
@@ -1134,7 +1132,7 @@ class Timeline:
     def _on_ValidateConstraint(
         self, rec: OpRecord, op: Any, app_label: str, ctx: Element | None
     ) -> None:
-        model = self._model(app_label, op.model_name, rec, ctx)
+        model = self._model(app_label, op.model_name, rec)
         life = model.constraints.get(op.name)
         self._element(rec, None, life if life is not None else model, ctx)
 

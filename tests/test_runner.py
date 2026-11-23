@@ -21,7 +21,7 @@ class RunnerTests(ProjectTestCase):
         history.purge()
         hooked: list[tuple[str, str]] = []
 
-        def hook(key: Any, index: int, op: Any, forwards: Any) -> Any:
+        def hook(key: Any, op: Any, forwards: Any) -> Any:
             hooked.append(key)
             return forwards
 
@@ -90,7 +90,7 @@ class RunnerTests(ProjectTestCase):
         self.project.activate()
         hooked: list[str] = []
 
-        def hook(key: Any, index: int, op: Any, forwards: Any) -> Any:
+        def hook(key: Any, op: Any, forwards: Any) -> Any:
             hooked.append(f"{key[1]} {type(op).__name__}")
             return forwards
 

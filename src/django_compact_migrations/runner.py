@@ -36,12 +36,12 @@ from django_compact_migrations.prune import (
 )
 
 DatabaseForwards = Callable[..., Any]
-OpHook = Callable[[Key, int, Operation, DatabaseForwards], DatabaseForwards]
-"""Given (migration, index, operation, database_forwards), return a wrapper."""
+OpHook = Callable[[Key, Operation, DatabaseForwards], DatabaseForwards]
+"""Given (migration, operation, database_forwards), return a wrapper."""
 
-Progress = Callable[[str, Key | None, int, int], None]
-"""Called with ("migration", key, done, total) before each migration and
-("done", None, done, total) at the end."""
+Progress = Callable[[Key | None, int, int], None]
+"""Called with (key, done, total) before each migration and (None, done,
+total) at the end."""
 
 
 def _announced(
@@ -97,7 +97,7 @@ def run_history(
             key = (migration.app_label, migration.name)
             current[0] = key
             if progress is not None:
-                progress("migration", key, done[0], len(plan))
+                progress(key, done[0], len(plan))
         elif action == "apply_success":  # nothing is ever unapplied
             current[0] = None
             done[0] += 1
@@ -130,11 +130,11 @@ def run_history(
     seen: set[int] = set()
     if hook is not None:
         for key in plan:
-            for index, op in enumerate(graph.nodes[key].operations):
+            for op in graph.nodes[key].operations:
                 if id(op) in seen:
                     continue
                 seen.add(id(op))
-                op.database_forwards = hook(key, index, op, op.database_forwards)
+                op.database_forwards = hook(key, op, op.database_forwards)
                 patched.append(op)
     if starting is not None:
         for key in plan:
@@ -175,7 +175,7 @@ def run_history(
             op.__dict__.pop("database_forwards", None)
             op.__dict__.pop("state_forwards", None)
         if progress is not None:
-            progress("done", None, done[0], len(plan))
+            progress(None, done[0], len(plan))
     try:
         emit_post_migrate_signal(
             0,

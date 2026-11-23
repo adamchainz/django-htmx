@@ -216,7 +216,7 @@ class Trial:
         harvest = operations is not None
         begin = time.perf_counter()
 
-        def on_progress(event: str, key: Key | None, done: int, total: int) -> None:
+        def on_progress(key: Key | None, done: int, total: int) -> None:
             if key is not None:
                 elapsed = time.perf_counter() - begin
                 say(
@@ -267,11 +267,11 @@ class Trial:
         current: list[tuple[Key, Operation] | None],
         harvest: bool,
         observations: dict[int, Observation] | None = None,
-    ) -> Callable[[Key, int, Operation, DatabaseForwards], DatabaseForwards]:
+    ) -> Callable[[Key, Operation, DatabaseForwards], DatabaseForwards]:
         history = self.analysis.history
 
         def hook(
-            key: Key, index: int, op: Operation, forwards: DatabaseForwards
+            key: Key, op: Operation, forwards: DatabaseForwards
         ) -> DatabaseForwards:
             rec = self.records.get(id(op))
             opaque = self.opaque.get(rec.seq) if rec is not None else None
@@ -496,7 +496,7 @@ class Trial:
                 aggressive=True, trial_blocked=trial_blocked, base=static
             )
             built = build(self.analysis, solution)
-            outcome = self._candidate(solution, built, reference)
+            outcome = self._candidate(built, reference)
             if outcome is None:
                 result = make_result(self.analysis, solution, built)
                 missing = static_removed - result.removed_positions
@@ -560,7 +560,7 @@ class Trial:
         while True:
             solution = static
             built = build(self.analysis, solution)
-            outcome = self._candidate(solution, built, reference)
+            outcome = self._candidate(built, reference)
             if outcome is None:
                 break
             failures, diffs = outcome
@@ -632,10 +632,9 @@ class Trial:
         return True
 
     def _candidate(
-        self, solution: Solution, built: Built, reference: Snapshot
+        self, built: Built, reference: Snapshot
     ) -> tuple[list[TrialFailure], list[Difference]] | None:
-        """Run a candidate; None if it passes, else failures and differences.
-        (``solution`` is for tests that script the runs.)"""
+        """Run a candidate; None if it passes, else failures and differences."""
         operations = built.operations_by_key(self.analysis.history)
         prune = (
             prune_plan(self.analysis, built)

@@ -300,12 +300,12 @@ class Folder:
             self._fold_named(life, create, IndexLife, "indexes", "index")
             self._fold_named(life, create, ConstraintLife, "constraints", "constraint")
             self._fold_together(life, create)
-            for kind, cls in (
-                ("options", m.AlterModelOptions),
-                ("managers", m.AlterModelManagers),
-                ("comment", m.AlterModelTableComment),
+            for cls in (
+                m.AlterModelOptions,
+                m.AlterModelManagers,
+                m.AlterModelTableComment,
             ):
-                self._fold_model_op(life, create, kind, cls)
+                self._fold_model_op(life, create, cls)
             self._fold_table(life, create)
             self._fold_order_wrt(life, create)
         for life in lives:
@@ -947,7 +947,7 @@ class Folder:
     # Model options, managers, table comment -> CreateModel
 
     def _fold_model_op(
-        self, model: ModelLife, create: Element, kind: str, cls: type[Operation]
+        self, model: ModelLife, create: Element, cls: type[Operation]
     ) -> None:
         solver = self.solver
         own = sorted(

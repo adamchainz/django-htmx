@@ -6,7 +6,7 @@ requires = [
 
 [project]
 name = "django-compact-migrations"
-version = "1.0.0"
+version = "0.0.0"
 description = "Compact your Django migration history by removing operations that cancel out."
 readme = "README.rst"
 keywords = [

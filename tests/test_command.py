@@ -408,7 +408,7 @@ class CommandTests(ProjectTestCase):
     def test_trial_fallback_report(self):
         history = shop_history(self.project)
 
-        def candidate(self: Any, solution: Any, built: Any, reference: Any) -> Any:
+        def candidate(self: Any, built: Any, reference: Any) -> Any:
             self.passes += 1
             return None if self.passes > 1 else ([], [])
 
@@ -420,7 +420,7 @@ class CommandTests(ProjectTestCase):
     def test_trial_failure_writes_nothing(self):
         history = shop_history(self.project)
 
-        def candidate(self: Any, solution: Any, built: Any, reference: Any) -> Any:
+        def candidate(self: Any, built: Any, reference: Any) -> Any:
             self.passes += 1
             return ([FAILURE], [])
 

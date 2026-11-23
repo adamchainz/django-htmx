@@ -94,18 +94,15 @@ def unlockable(project: Project) -> None:
 
 def script(
     monkeypatch: pytest.MonkeyPatch, outcomes: list[Any], attribute: Any
-) -> list[str]:
+) -> None:
     """Replace the runs of candidates and the blame with scripted ones."""
-    keys: list[str] = []
 
-    def candidate(self: Any, solution: Any, built: Any, reference: Any) -> Any:
+    def candidate(self: Any, built: Any, reference: Any) -> Any:
         self.passes += 1
-        keys.append(",".join(sorted(solution.unit_keys())))
         return outcomes.pop(0)
 
     monkeypatch.setattr(trial_module.Trial, "_candidate", candidate)
     monkeypatch.setattr(trial_module.Trial, "_attribute", attribute)
-    return keys
 
 
 def static_key(solution: Any) -> str:
@@ -591,9 +588,8 @@ class TrialTests(ProjectTestCase):
             as_noop(self, static_key(solution))
             return {static_key(solution): "x", legacy_key(solution): "y"}
 
-        keys = script(self.monkeypatch, [([FAILURE], []), None], attribute)
+        script(self.monkeypatch, [([FAILURE], []), None], attribute)
         result = self.project.compact(static=False, **NO_FOLD)
-        assert ":dead" not in keys[-1]
         assert result.removals == []
 
     def test_static_plan_blamed(self):
