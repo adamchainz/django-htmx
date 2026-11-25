@@ -218,7 +218,7 @@ class CommandTests(ProjectTestCase):
         with redirect_stdout(StringIO()) as stdout:
             history.command()
         out = stdout.getvalue()
-        assert "{plan,apply,scratch}" in out
+        assert "{plan,apply}" in out
         assert history.files() == before
 
     def test_options_after_subcommand(self):

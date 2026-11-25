@@ -1,5 +1,5 @@
 """What gets edited, and how files are written: the project root, Git, file
-modes, and recovering from an interrupted write."""
+modes, and restoring files when the result doesn't verify."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from unittest_parametrize import parametrize
 from django_compact_migrations import core, worktree, writer
 from django_compact_migrations.core import CompactError
 from django_compact_migrations.verify import VerificationError
-from django_compact_migrations.writer import Journal, Planned, WriteError
+from django_compact_migrations.writer import WriteError
 from tests.project import ITEM, Project, ProjectTestCase
 
 LEGACY = 'migrations.AddField("item", "legacy", models.IntegerField(default=0)),'
@@ -56,21 +56,6 @@ def committed(project: Project) -> None:
 
 
 # Interrupted writes
-
-
-def interrupted(project: Project, after: int) -> list[Planned]:
-    """What a write killed after ``after`` files leaves behind."""
-    result = project.compact(prune=True)
-    planned = [
-        Planned(c.path, None if c.deleted else c.new.encode()) for c in result.files
-    ]
-    Journal.start(planned)
-    for p in planned[:after]:
-        if p.new is None:
-            p.path.unlink()
-        else:
-            p.path.write_bytes(p.new)
-    return planned
 
 
 class WriterTests(ProjectTestCase):
@@ -162,7 +147,6 @@ class WriterTests(ProjectTestCase):
             result.write()
         for path in deleted:
             assert stat.S_IMODE(path.stat().st_mode) == 0o640
-        assert not writer.journal_dir().exists()
 
     def test_written_files_keep_their_mode(self):
         dead_field(self.project)
@@ -171,37 +155,7 @@ class WriterTests(ProjectTestCase):
         self.project.compact().write()
         assert stat.S_IMODE(path.stat().st_mode) == 0o640
 
-    def test_interrupted_write_recovered(self):
-        dead_field(self.project)
-        before = self.project.files()
-        interrupted(self.project, after=2)
-        assert self.project.files() != before
-        out, err = self.project.command("plan", "--static")
-        assert "Restored" in err
-        assert self.project.files() == before
-        assert "Removed" not in out and "Would remove" in out
-        assert not writer.journal_dir().exists()
-
-    def test_interrupted_write_changed_since(self):
-        dead_field(self.project)
-        planned = interrupted(self.project, after=1)
-        planned[0].path.write_text("# edited by hand\n")
-        messages = writer.recover()
-        assert "changed since the interrupted apply" in messages[0]
-        assert "Remove" in messages[-1]
-        assert writer.journal_dir().exists()
-        with pytest.raises(WriteError, match="an earlier apply was interrupted"):
-            Journal.start(planned)
-
-    def test_unreadable_journal(self):
-        dead_field(self.project)
-        directory = writer.journal_dir()
-        directory.mkdir()
-        (directory / "journal.json").write_text("{not json")
-        with pytest.raises(CommandError, match="can't be read"):
-            self.project.command("plan", "--static")
-
-    def test_restore_failure_keeps_journal(self):
+    def test_restore_failure_reported(self):
         dead_field(self.project)
         result = self.project.compact()
 
@@ -209,6 +163,5 @@ class WriterTests(ProjectTestCase):
             raise OSError("disk full")
 
         self.monkeypatch.setattr(writer, "_replace", fail)
-        with pytest.raises(CompactError, match="originals are in"):
+        with pytest.raises(CompactError, match="Restore them with Git"):
             result.write()
-        assert writer.journal_dir().exists()

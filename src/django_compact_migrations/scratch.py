@@ -238,7 +238,7 @@ def _exit_on_termination() -> Callable[[], None]:
     """
     Turn SIGTERM/SIGHUP into SystemExit while a scratch database exists, so
     the cleanup above still runs when the process is asked to stop (only
-    SIGKILL and the like can leave one behind; see list_leftovers()).
+    SIGKILL and the like can leave one behind).
     """
     if threading.current_thread() is not threading.main_thread():
         return lambda: None
@@ -257,40 +257,3 @@ def _exit_on_termination() -> Callable[[], None]:
             signal.signal(signum, old)
 
     return restore
-
-
-def list_leftovers(alias: str = "default") -> list[str]:
-    """Scratch databases (or SQLite directories) left by killed runs."""
-    connection = connections[alias]
-    if connection.vendor == "sqlite":
-        return sorted(str(p) for p in Path(tempfile.gettempdir()).glob(f"{PREFIX}*"))
-    if connection.vendor not in _CREATE_DATABASE_VENDORS:
-        raise ScratchDatabaseError(
-            f"Scratch databases aren't supported for the {connection.vendor!r} backend."
-        )
-    query = (
-        "SELECT datname FROM pg_database WHERE datname LIKE %s"
-        if connection.vendor == "postgresql"
-        else "SELECT schema_name FROM information_schema.schemata"
-        " WHERE schema_name LIKE %s"
-    )
-    creation: Any = connection.creation
-    with creation._nodb_cursor() as cursor:
-        cursor.execute(query, [PREFIX.replace("_", "\\_") + "%"])
-        return sorted(row[0] for row in cursor.fetchall())
-
-
-def drop_leftover(name: str, alias: str = "default") -> None:
-    """Drop one scratch database (or SQLite directory) by name."""
-    connection = connections[alias]
-    if connection.vendor == "sqlite":
-        path = Path(name)
-        if not path.name.startswith(PREFIX) or path.parent != Path(
-            tempfile.gettempdir()
-        ):
-            raise ScratchDatabaseError(f"{name!r} is not a scratch directory.")
-        shutil.rmtree(path, ignore_errors=True)
-        return
-    if not name.startswith(PREFIX) or name == connection.settings_dict["NAME"]:
-        raise ScratchDatabaseError(f"{name!r} is not a scratch database.")
-    _drop(connection, name)

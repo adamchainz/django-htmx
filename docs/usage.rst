@@ -1,11 +1,10 @@
 Usage
 =====
 
-django-compact-migrations adds a management command, ``compact_migrations``, with three subcommands:
+django-compact-migrations adds a management command, ``compact_migrations``, with two subcommands:
 
 * ``compact_migrations plan`` reports what can be removed, and can save the plan to a file.
 * ``compact_migrations apply`` edits the migration files, from a saved plan or after making one.
-* ``compact_migrations scratch`` lists or drops scratch databases left behind by killed runs.
 
 The command reads your whole migration history and removes operations that cancel each other out, such as a model that is created and later deleted.
 It also *folds* operations: it merges an operation into the earlier one that created what it changes.
@@ -291,16 +290,14 @@ Otherwise, mark the restored migrations as applied with ``./manage.py migrate --
 
 ``apply`` checks that it can write every file before it writes any.
 It keeps the originals until the result is verified, and restores them on failure.
-If it is killed in between, the next run restores them.
+If it is killed in between, restore the files with Git.
 
-``scratch``
-~~~~~~~~~~~
+Scratch databases
+~~~~~~~~~~~~~~~~~
 
 Trial runs drop their scratch databases when they end, even on Ctrl+C.
-Only a hard kill can leave one behind.
-``compact_migrations scratch`` lists them, on the server of ``--database`` (or, for SQLite, in the temporary directory).
-``--drop NAME`` or ``--drop-all`` drops them.
-Other trials against the same server use scratch databases too, so only drop those you know are left over.
+Only a hard kill can leave one behind: a database named ``compactmig_…`` on the same server (or, for SQLite, a directory of that name in the temporary directory).
+Drop it by hand.
 
 Full help
 ---------
@@ -458,51 +455,6 @@ The full help for each subcommand:
                             nothing on a fresh database, as a trial run observes
                             them (not with --static). Their reverse code and any
                             effect outside the database are lost.
-      -v, --verbosity {0,1,2,3}
-                            Verbosity level; 0=minimal output, 1=normal output,
-                            2=verbose output, 3=very verbose output
-      --traceback           Display a full stack trace on CommandError exceptions.
-      --no-color            Don't colorize the command output.
-      --force-color         Force colorization of the command output.
-      --skip-checks         Skip system checks.
-      --settings SETTINGS   The Python path to a settings module, e.g.
-                            "myproject.settings.main". If this isn't provided, the
-                            DJANGO_SETTINGS_MODULE environment variable will be
-                            used.
-      --pythonpath PYTHONPATH
-                            A directory to add to the Python path, e.g.
-                            "/home/djangoprojects/myproject".
-
-.. [[[end]]]
-
-``scratch``
-~~~~~~~~~~~
-
-.. [[[cog
-.. show_help("scratch")
-.. ]]]
-
-.. code-block:: console
-
-    usage: manage.py compact_migrations scratch [-h] [--database DATABASE]
-                                                [--drop NAME] [--drop-all]
-                                                [-v {0,1,2,3}] [--traceback]
-                                                [--no-color] [--force-color]
-                                                [--skip-checks]
-                                                [--settings SETTINGS]
-                                                [--pythonpath PYTHONPATH]
-
-    Trial runs drop their scratch databases (named compactmig_...) when they end,
-    even on Ctrl+C or SIGTERM. A killed process can leave one behind: list them,
-    and drop those that no running command is using.
-
-    options:
-      -h, --help            show this help message and exit
-      --database DATABASE   Database alias whose server to look on (default:
-                            'default').
-      --drop NAME           Drop this scratch database (repeatable).
-      --drop-all            Drop every scratch database found. Only when no other
-                            trial run is going on against this server.
       -v, --verbosity {0,1,2,3}
                             Verbosity level; 0=minimal output, 1=normal output,
                             2=verbose output, 3=very verbose output

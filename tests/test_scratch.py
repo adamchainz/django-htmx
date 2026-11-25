@@ -10,7 +10,7 @@ from typing import Any
 
 import psycopg
 import pytest
-from django.core.management import CommandError, call_command
+from django.core.management import call_command
 from django.db import connections
 from django.db.utils import ConnectionHandler
 
@@ -18,8 +18,6 @@ from django_compact_migrations import scratch as scratch_module
 from django_compact_migrations import trial as trial_module
 from django_compact_migrations.scratch import (
     ScratchDatabaseError,
-    drop_leftover,
-    list_leftovers,
     scratch_database,
 )
 from tests.project import SERVERS, ProjectTestCase
@@ -108,23 +106,6 @@ class ScratchTests(ProjectTestCase):
         with pytest.raises(ScratchDatabaseError, match="no database alias 'nope'"):
             scratch_database("nope").__enter__()
 
-    def test_listing(self):
-        self.project.migration("shop", "0001_initial", "")
-        temp = self.tmp_path / "temp"
-        temp.mkdir()
-        self.monkeypatch.setattr(tempfile, "tempdir", str(temp))
-        out, _ = self.project.command_db("scratch")
-        assert out == "No scratch databases found.\n"
-        leftover = temp / "compactmig_dead"
-        leftover.mkdir()
-        out, _ = self.project.command_db("scratch")
-        assert out == f"{leftover}\n"
-        with pytest.raises(CommandError, match="is not a scratch"):
-            self.project.command_db("scratch", "--drop", str(self.tmp_path / "other"))
-        out, _ = self.project.command_db("scratch", "--drop-all")
-        assert out == f"Dropped {leftover}.\n"
-        assert not leftover.exists()
-
     def test_every_alias_retargeted(self):
         with self.db_blocker.unblock():
             every_alias_retargeted(self.tmp_path, self.monkeypatch)
@@ -148,11 +129,6 @@ class ScratchTests(ProjectTestCase):
         with pytest.raises(ScratchDatabaseError, match="dummy backend"):
             scratch_database("default").__enter__()
 
-    def test_leftovers_unsupported(self):
-        self.monkeypatch.setattr(connections["default"], "vendor", "oracle")
-        with pytest.raises(ScratchDatabaseError, match="aren't supported"):
-            list_leftovers()
-
     def test_postgres_drop_forced(self):
         pg = self.server("pg")
 
@@ -171,7 +147,10 @@ class ScratchTests(ProjectTestCase):
         with pytest.raises(psycopg.OperationalError):
             other.execute("SELECT 1")
         other.close()
-        assert name not in list_leftovers(pg)
+        creation: Any = connections[pg].creation
+        with creation._nodb_cursor() as cursor:
+            cursor.execute("SELECT datname FROM pg_database")
+            assert name not in [row[0] for row in cursor.fetchall()]
 
     def test_postgres_scratch_name_taken(self):
         pg = self.server("pg")
@@ -241,19 +220,6 @@ class ScratchTests(ProjectTestCase):
             scratch_module._drop(Connection(), "compactmig_x")
         with pytest.raises(ScratchDatabaseError, match="Could not create"):
             scratch_module._create(Connection(), "compactmig_x")
-
-    def test_postgres_leftovers(self):
-        pg = self.server("pg")
-        connection = connections[pg]
-        name = scratch_module._scratch_name("leftover", 63)
-        scratch_module._create(connection, name)
-        try:
-            assert name in list_leftovers(pg)
-        finally:
-            drop_leftover(name, pg)
-        assert name not in list_leftovers(pg)
-        with pytest.raises(ScratchDatabaseError, match="not a scratch database"):
-            drop_leftover("postgres", pg)
 
     def test_postgres_drop_failure_reported(self):
         pg = self.server("pg")

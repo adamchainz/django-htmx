@@ -12,7 +12,6 @@ from typing import Any
 from unittest_parametrize import parametrize
 
 from django_compact_migrations.scratch import (
-    list_leftovers,
     scratch_database,
 )
 from django_compact_migrations.snapshot import Mask, Snapshot, _value, take_snapshot
@@ -226,9 +225,6 @@ class SnapshotTests(ProjectTestCase):
             "n",
         ]
         assert sum(snapshot.data["t"].values()) == 1
-        assert list_leftovers(pg) == [] or all(
-            name.startswith("compactmig_") for name in list_leftovers(pg)
-        )
 
     @parametrize("server", [("mysql",), ("mariadb",)])
     def test_mysql_snapshot(self, server):

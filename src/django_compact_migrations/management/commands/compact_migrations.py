@@ -24,13 +24,7 @@ from django_compact_migrations.core import (
     plan,
 )
 from django_compact_migrations.planfile import load_plan, save_plan
-from django_compact_migrations.scratch import (
-    ScratchDatabaseError,
-    drop_leftover,
-    list_leftovers,
-)
 from django_compact_migrations.solver import KINDS
-from django_compact_migrations.writer import journal_dir, recover
 
 KIND_STYLES = {
     "model": "red",
@@ -65,7 +59,7 @@ class Command(RichCommand):
     def add_arguments(self, parser: ArgumentParser) -> None:
         subparsers = parser.add_subparsers(
             dest="subcommand",
-            metavar="{plan,apply,scratch}",
+            metavar="{plan,apply}",
             title="subcommands",
         )
         plan_parser = subparsers.add_parser(
@@ -118,33 +112,6 @@ class Command(RichCommand):
         _add_selection_arguments(apply_parser)
         _add_trial_arguments(apply_parser)
         _add_common_arguments(apply_parser, parser)
-        scratch_parser = subparsers.add_parser(
-            "scratch",
-            help="List (or drop) scratch databases left by interrupted runs.",
-            description="Trial runs drop their scratch databases"
-            " (named compactmig_...) when they end, even on Ctrl+C or SIGTERM."
-            " A killed process can leave one behind: list them, and drop those"
-            " that no running command is using.",
-        )
-        scratch_parser.add_argument(
-            "--database",
-            default="default",
-            help="Database alias whose server to look on (default: 'default').",
-        )
-        scratch_parser.add_argument(
-            "--drop",
-            action="append",
-            default=[],
-            metavar="NAME",
-            help="Drop this scratch database (repeatable).",
-        )
-        scratch_parser.add_argument(
-            "--drop-all",
-            action="store_true",
-            help="Drop every scratch database found. Only when no other"
-            " trial run is going on against this server.",
-        )
-        _add_common_arguments(scratch_parser, parser)
 
     def handle(self, *args: Any, **options: Any) -> None:
         try:
@@ -166,21 +133,6 @@ class Command(RichCommand):
             self.print_help("manage.py", "compact_migrations")
             return
         verbosity: int = options["verbosity"]
-        if subcommand == "scratch":
-            self._scratch(options)
-            return
-        # A write that was killed half-way is undone before anything else.
-        try:
-            restored = recover()
-        except (OSError, ValueError, KeyError) as exc:
-            raise CommandError(
-                f"An interrupted apply left {journal_dir()}, which can't be"
-                f" read ({exc}); restore its files by hand."
-            ) from None
-        for message in restored:
-            self._stderr_console(options).print(
-                message, style="yellow", soft_wrap=True, highlight=False
-            )
         show_blocked = verbosity >= 2
         if subcommand == "apply" and options["plan_file"]:
             if _has_selection(options):
@@ -239,23 +191,6 @@ class Command(RichCommand):
             raise CommandError(str(exc)) from None
         if verbosity > 0:
             self._print(Text(summary(result, True), style="bold green"))
-
-    def _scratch(self, options: dict[str, Any]) -> None:
-        alias = options["database"]
-        try:
-            found = list_leftovers(alias)
-            names = found if options["drop_all"] else options["drop"]
-            for name in names:
-                drop_leftover(name, alias)
-                self._print(f"Dropped {name}.")
-        except ScratchDatabaseError as exc:
-            raise CommandError(str(exc)) from None
-        if not names:
-            if found:
-                for name in found:
-                    self._print(name)
-            else:
-                self._print("No scratch databases found.")
 
     def _analyse(self, options: dict[str, Any], verbosity: int) -> Result:
         if verbosity > 0 and not options["static"]:
