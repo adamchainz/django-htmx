@@ -296,8 +296,10 @@ Scratch databases
 ~~~~~~~~~~~~~~~~~
 
 Trial runs drop their scratch databases when they end, even on Ctrl+C.
-Only a hard kill can leave one behind: a database named ``compactmig_…`` on the same server (or, for SQLite, a directory of that name in the temporary directory).
-Drop it by hand.
+A scratch database is named like Django’s test databases, but with its own prefix: ``compactmig_<name>``.
+Only a hard kill can leave one behind, and the next trial replaces it.
+So don’t run two trials for the same database at the same time.
+For SQLite, a scratch database is a file in a ``compactmig_…`` directory in the temporary directory.
 
 Full help
 ---------

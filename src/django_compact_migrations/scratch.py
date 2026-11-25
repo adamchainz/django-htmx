@@ -11,7 +11,6 @@ other database gets its own empty one. Only the chosen alias is migrated.
 
 from __future__ import annotations
 
-import secrets
 import shutil
 import signal
 import tempfile
@@ -36,10 +35,9 @@ class ScratchDatabaseError(Exception):
 
 
 def _scratch_name(real_name: str, max_length: int) -> str:
-    # A distinct prefix (not Django's "test_") so a test database kept with
-    # --keepdb is never clobbered; a random part so runs never collide.
-    name = f"{PREFIX}{secrets.token_hex(4)}_{real_name}"
-    return name[:max_length]
+    # As Django's test runner names test databases, but with a prefix of our
+    # own, so a test database kept with --keepdb is never clobbered.
+    return f"{PREFIX}{real_name}"[:max_length]
 
 
 @dataclass
@@ -207,6 +205,9 @@ def _create(connection: Any, name: str) -> None:
     }
     try:
         with creation._nodb_cursor() as cursor:
+            # One left behind by a killed run is replaced, as the test runner
+            # replaces an old test database.
+            cursor.execute("DROP DATABASE IF EXISTS {dbname}".format(**params))
             cursor.execute("CREATE DATABASE {dbname} {suffix}".format(**params))
     except Exception as exc:
         raise ScratchDatabaseError(

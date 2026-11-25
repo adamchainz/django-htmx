@@ -184,11 +184,12 @@ Scratch databases
 
 A scratch database uses the backend and settings of the ``--database`` alias.
 For SQLite it is a temporary file.
-For PostgreSQL and MySQL it is a new database named ``compactmig_<random>_<name>`` on the same server.
+For PostgreSQL and MySQL it is a new database on the same server, named like Django’s test databases but with its own prefix: ``compactmig_<name>``.
 While migrating, every configured alias is pointed at a scratch database, as Django’s test runner does, so code that uses Django’s connections can’t reach a real database.
 Each run happens in its own child process where ``os.fork()`` exists.
 Every scratch database is dropped when the run ends, also on errors, Ctrl+C and ``SIGTERM``.
-If a killed process leaves one behind, drop it by hand.
+If a killed process leaves one behind, the next trial replaces it.
+So don’t run two trials for the same database at once.
 
 No-op data migrations
 ---------------------

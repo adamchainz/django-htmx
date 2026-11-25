@@ -152,6 +152,19 @@ class ScratchTests(ProjectTestCase):
             cursor.execute("SELECT datname FROM pg_database")
             assert name not in [row[0] for row in cursor.fetchall()]
 
+    def test_postgres_leftover_replaced(self):
+        pg = self.server("pg")
+        real = connections[pg].settings_dict["NAME"]
+        name = f"compactmig_{real}"
+        scratch_module._create(connections[pg], name)
+        # What a killed run left behind doesn't stop the next one.
+        with scratch_database(pg) as connection:
+            assert connection.settings_dict["NAME"] == name
+        creation: Any = connections[pg].creation
+        with creation._nodb_cursor() as cursor:
+            cursor.execute("SELECT datname FROM pg_database")
+            assert name not in [row[0] for row in cursor.fetchall()]
+
     def test_postgres_scratch_name_taken(self):
         pg = self.server("pg")
         self.monkeypatch.setattr(
