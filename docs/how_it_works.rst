@@ -120,6 +120,11 @@ Django renames the table only, so its constraints, sequences, indexes and many-t
 
 Every fold must keep each database object’s name, and must not make anything exist earlier, or go later, in a way that could collide or break a reference.
 For example, a field that gains ``unique=True`` from an ``AlterField`` gets a ``..._uniq`` constraint named by Django, while a unique column created with the table gets a name chosen by the database, so that ``AlterField`` isn’t folded.
+Timing matters too.
+Django creates the indexes, foreign keys and ``unique_together`` constraints of a new table or column at the end of its migration, named after what the table and columns are called by then.
+So an ``AlterField`` that drops or retargets them in that same migration leaves them in place, and isn’t folded or superseded.
+Nor is anything folded when a rename follows it in its migration.
+PostgreSQL keeps only one of several unique constraints on the same columns in one ``CREATE TABLE``, so a ``UniqueConstraint`` isn’t folded into a ``CreateModel`` that already makes those fields unique.
 Opaque operations in between must pass the name scan, or the trial.
 The folded operation must also be one Django’s migration writer can write.
 A folded field, index or constraint goes at the end of the ``CreateModel``’s list, so columns may come out in another order (see :ref:`what-may-change`).
@@ -249,6 +254,9 @@ Limitations
   A rebuild drops indexes or triggers that a ``RunSQL`` created, so removing the operation that caused it leaves them in place.
   A rebuild also renames the indexes Django named after a field or model that was since renamed, so removing it leaves the old index name.
   A trial on SQLite sees both; ``--static`` doesn’t.
+* **A model whose table name another, renamed table once had is left alone.**
+  The renamed table keeps the names of its primary key and sequence, so PostgreSQL numbers the new table’s (``..._pkey1``).
+  Whether it does depends on everything both models go through.
 * **A model whose** ``unique_together`` **or** ``index_together`` **names** ``_order`` **is left alone.**
   The ``_order`` column isn’t tracked as a field, so nothing of such a model is removed or folded.
 * **Existing databases must already be migrated.**

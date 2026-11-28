@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any
 from django.db.migrations import operations as m
 from django.db.migrations.operations.base import Operation
 from django.db.migrations.writer import MigrationWriter
-from django.db.models import NOT_PROVIDED
+from django.db.models import NOT_PROVIDED, UniqueConstraint
 
 from django_compact_migrations import backends
 from django_compact_migrations.locate import normalize_together
@@ -158,6 +158,12 @@ class Folder:
         """
         The folded definition names fields and models as they are at E; they
         must have had the same names at P.
+
+        Nor may one be renamed later in E's migration: Django creates
+        the indexes, foreign keys and unique_together constraints of new
+        tables and columns at the end of the migration, named after what the
+        tables and columns are called by then, but those of other operations
+        at once.
         """
         for life in lives:
             for el in life.elements:
@@ -167,11 +173,11 @@ class Folder:
                     m.RenameModel,
                     m.AlterModelTable,
                 )
-                if (
-                    renames
-                    and not self.solver.removed(el)
-                    and self.solver.between(el.pos, p.pos, e.pos)
-                ):
+                if not renames or self.solver.removed(el):
+                    continue
+                if self.solver.between(el.pos, p.pos, e.pos):
+                    return False
+                if el.pos[0] == e.pos[0] and el.pos[1] > e.pos[1]:
                     return False
         return True
 
@@ -355,6 +361,11 @@ class Folder:
             return
         if occupied(dp) != occupied(de) or not same_named_objects(dp, de):
             return
+        # Django creates a new column's indexes and foreign key at the end
+        # of its migration, whatever an AlterField in that migration says:
+        # one that drops or retargets them leaves the first ones in place.
+        if p.pos[0] == e.pos[0] and created_later(dp) != created_later(de):
+            return
         if solver.backends and not mysql_safe_alters([dp, de], solver.backends):
             return
         # An AlterField changing the type of a field that foreign keys point
@@ -369,7 +380,7 @@ class Folder:
             return
         if not self._requirements(set(e.refs) - set(p.refs), p, model):
             return
-        if not self._stable_names([*e.refs, model], p, e):
+        if not self._stable_names([*e.refs, model, life], p, e):
             return
         if not self._targets_unaltered(set(e.refs) - set(p.refs), p, e):
             return
@@ -469,7 +480,17 @@ class Folder:
                 return False
         if not self._requirements(a.refs, create, model):
             return False
-        if not self._stable_names([*a.refs, model], create, a):
+        if not self._stable_names([*a.refs, model, life], create, a):
+            return False
+        # An AlterField in the AddField's migration that drops or retargets
+        # the column's indexes or foreign key leaves them in place (see
+        # _fold_alter_field): only while the two share a migration.
+        if create.pos[0] != a.pos[0] and any(
+            el is not a
+            and el.pos[0] == a.pos[0]
+            and created_later(definition) != created_later(add.field)
+            for el, definition, _ in life.defs
+        ):
             return False
         own_pk = [f for f in model.children if isinstance(f, FieldLife) and f.ever_pk]
         many_to_many = getattr(add.field, "many_to_many", False)
@@ -564,6 +585,10 @@ class Folder:
             return False
         current = self._current(create)
         assert isinstance(current, m.CreateModel)
+        if isinstance(obj, UniqueConstraint) and frozenset(obj.fields) in _unique_sets(
+            current
+        ):
+            return False
         options = dict(current.options)
         options[option] = [*options.get(option, []), obj]
         return self._commit(create, x, life, _create(current, options=options))
@@ -783,14 +808,20 @@ class Folder:
             return
         if not self.history.ordered(p.pos[0], e.pos[0]):
             return
-        field = life.defs[0][1]  # as created at P
+        # As P creates it now: an AlterField may have been folded into P in
+        # this round.
+        current = self._current(p)
+        if isinstance(current, m.AddField):
+            field = current.field
+        else:
+            assert isinstance(current, m.CreateModel) and p.sub is not None
+            field = dict(current.fields)[p.sub[1]]
         if not _rename_keeps_names(field):
             return
         # Nothing may name the field between P and E (other fields' to_field,
         # indexes, constraints, options), nor any field point at it.
         if referenced_by_fields(life) or not self._no_refs_between(life, p, e):
             return
-        current = self._current(p)
         if type(current) is m.CreateModel and _mentions(
             current.options, rename.old_name
         ):
@@ -1075,6 +1106,33 @@ def _rename_keeps_names(field: Any) -> bool:
         or _check_kind(field) is not None
         or getattr(field, "generated", False)
     )
+
+
+def created_later(field: Any) -> tuple[Any, ...]:
+    """What decides the indexes and foreign key that Django creates for a
+    new column at the end of the migration."""
+    remote = getattr(field, "remote_field", None)
+    return (
+        bool(field.db_index),
+        bool(field.unique),
+        str(remote.model).lower() if remote is not None else None,
+        getattr(field, "db_constraint", None),
+    )
+
+
+def _unique_sets(create: m.CreateModel) -> list[frozenset[str]]:
+    """
+    The sets of fields that the CreateModel makes unique within its CREATE
+    TABLE statement. PostgreSQL keeps only one of several unique constraints
+    on the same columns in one statement, so a fold must not add a second.
+    """
+    sets = [frozenset({n}) for n, f in create.fields if f.unique or f.primary_key]
+    sets += [
+        frozenset(c.fields)
+        for c in create.options.get("constraints", [])
+        if isinstance(c, UniqueConstraint) and c.fields
+    ]
+    return sets
 
 
 def _same_in_database(a: Any, b: Any) -> bool:

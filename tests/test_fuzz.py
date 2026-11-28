@@ -12,9 +12,12 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from django.db import OperationalError
+from django.db import DatabaseError, OperationalError
+from django.db.migrations.executor import MigrationExecutor
 from unittest_parametrize import parametrize
 
+from django_compact_migrations.scratch import scratch_database
+from django_compact_migrations.snapshot import Snapshot, take_snapshot
 from tests.fuzz import Generator
 from tests.project import ProjectTestCase
 
@@ -30,6 +33,29 @@ class FuzzTests(ProjectTestCase):
     def test_static(self, seed):
         Generator(seed, renames_keep_names=True).write(self.project)
         self.project.check_equivalence()
+
+    @parametrize("seed", [(seed,) for seed in SEEDS[::5]])
+    def test_static_postgres(self, seed):
+        # SQLite hides most differences in the names of indexes and
+        # constraints, since Django rebuilds its tables: compare whole
+        # snapshots on PostgreSQL too.
+        pg = self.server("pg")
+        Generator(seed).write(self.project)
+        try:
+            before = self.snapshot(pg)
+        except DatabaseError as exc:  # pragma: no cover
+            # Such as a row written and its table altered in one migration.
+            self.skipTest(f"The history doesn't migrate on PostgreSQL: {exc}")
+        self.project.compact().write()
+        assert before.differences(self.snapshot(pg)) == []
+
+    def snapshot(self, alias: str) -> Snapshot:
+        self.project.activate()
+        self.project.purge()
+        with scratch_database(alias) as connection:
+            executor = MigrationExecutor(connection)
+            executor.migrate(executor.loader.graph.leaf_nodes())
+            return take_snapshot(connection)
 
     def trial(self, seed: int, **options: Any) -> None:
         Generator(seed).write(self.project)

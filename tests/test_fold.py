@@ -1876,10 +1876,8 @@ class OrderWithRespectToTests(ProjectTestCase):
         )
         self.project.migration("shop", "0003_order", self.alter('"parent"'))
         result = self.project.check_equivalence()
-        # Once the field is in the CreateModel, but not across its rename.
-        assert descriptions(result) == [
-            "AddField in 0002_parent folded into CreateModel in 0001_initial",
-        ]
+        # Not across the field's rename.
+        assert descriptions(result) == []
 
     def test_unset_right_away(self):
         self.project.migration(
@@ -2022,3 +2020,185 @@ class OrderWithRespectToTests(ProjectTestCase):
             ],
         )
         assert folds(self.project.compact()) == []
+
+
+class DeferredNamesTests(ProjectTestCase):
+    """
+    Django creates the indexes, foreign keys and unique_together constraints
+    of new tables and columns at the end of their migration. What an
+    operation later in that migration does to them isn't what it would do in
+    another one. (Found by the fuzz tests, on PostgreSQL.)
+    """
+
+    INDEXED = """
+        migrations.CreateModel(
+            name="Item",
+            fields=[
+                ("id", models.AutoField(primary_key=True)),
+                ("qty", models.IntegerField(default=0, db_index=True)),
+            ],
+        ),
+    """
+    UNINDEX = 'migrations.AlterField("item", "qty", models.IntegerField(default=0)),'
+
+    def test_index_dropped_in_the_creating_migration(self):
+        # The index is created after the AlterField: it stays.
+        self.project.migration("shop", "0001_initial", self.INDEXED + self.UNINDEX)
+        assert folds(self.project.compact()) == []
+
+    def test_index_dropped_in_a_later_migration(self):
+        self.project.migration("shop", "0001_initial", self.INDEXED)
+        self.project.migration("shop", "0002_unindex", self.UNINDEX)
+        assert len(folds(self.project.check_equivalence())) == 1
+
+    def test_foreign_key_retargeted_in_the_creating_migration(self):
+        self.project.migration(
+            "shop",
+            "0001_initial",
+            ITEM
+            + """
+            migrations.CreateModel(
+                name="Other",
+                fields=[
+                    ("id", models.AutoField(primary_key=True)),
+                    ("to", models.ForeignKey("shop.Item", models.CASCADE)),
+                ],
+            ),
+            migrations.AlterField("other", "to", models.ForeignKey("shop.Other", models.CASCADE)),
+            """,
+        )
+        assert folds(self.project.compact()) == []
+
+    def test_added_field_unindexed_in_its_migration(self):
+        self.project.migration("shop", "0001_initial", ITEM)
+        self.project.migration(
+            "shop",
+            "0002_qty",
+            'migrations.AddField("item", "qty", models.IntegerField(default=0, db_index=True)),'
+            + self.UNINDEX,
+        )
+        self.project.migration(
+            "shop",
+            "0003_qty",
+            'migrations.AlterField("item", "qty", models.IntegerField(default=1)),',
+        )
+        # Neither moved to another migration, nor dropped for the later one.
+        result = self.project.compact()
+        assert result.removals == []
+
+    @parametrize(
+        "operations",
+        [
+            (
+                'migrations.AddField("item", "qty", models.IntegerField(default=0, db_index=True)),'
+                'migrations.RenameModel("Item", "Thing"),',
+            ),
+            (
+                'migrations.AddField("item", "qty", models.IntegerField(default=0, db_index=True)),'
+                'migrations.RenameField("item", "qty", "quantity"),',
+            ),
+            (
+                'migrations.AlterUniqueTogether("item", {("id", "name")}),'
+                'migrations.RenameModel("Item", "Thing"),',
+            ),
+        ],
+    )
+    def test_renamed_later_in_the_migration(self, operations):
+        self.project.migration("shop", "0001_initial", ITEM)
+        self.project.migration("shop", "0002_change", operations)
+        assert folds(self.project.compact()) == []
+
+    def test_together_set_then_renamed_in_the_creating_migration(self):
+        # Set at once under the first table name, but at the end of the
+        # migration, under the second, from the CreateModel.
+        self.project.migration(
+            "shop",
+            "0001_initial",
+            ITEM
+            + 'migrations.AlterUniqueTogether("item", {("id", "name")}),'
+            + 'migrations.RenameModel("Item", "Thing"),',
+        )
+        assert folds(self.project.compact()) == []
+
+    def test_rename_sees_what_was_folded_this_round(self):
+        self.project.migration(
+            "shop",
+            "0001_initial",
+            """
+            migrations.CreateModel(
+                name="Item",
+                fields=[
+                    ("id", models.AutoField(primary_key=True)),
+                    ("qty", models.IntegerField(default=0)),
+                ],
+            ),
+            """,
+        )
+        self.project.migration(
+            "shop",
+            "0002_index",
+            'migrations.AlterField("item", "qty", models.IntegerField(default=0, db_index=True)),',
+        )
+        self.project.migration(
+            "shop", "0003_rename", 'migrations.RenameField("item", "qty", "quantity"),'
+        )
+        # The index keeps the name it got from "qty".
+        assert descriptions(self.project.check_equivalence()) == [
+            "AlterField in 0002_index folded into CreateModel in 0001_initial"
+        ]
+
+
+class SharedNamesTests(ProjectTestCase):
+    """What PostgreSQL does with names inside and across tables. (Found by
+    the fuzz tests.)"""
+
+    def test_second_unique_constraint_on_the_same_field(self):
+        # In one CREATE TABLE, PostgreSQL keeps only one of the two.
+        self.project.migration(
+            "shop",
+            "0001_initial",
+            """
+            migrations.CreateModel(
+                name="Item",
+                fields=[
+                    ("id", models.AutoField(primary_key=True)),
+                    ("name", models.CharField(max_length=10, unique=True)),
+                ],
+            ),
+            """,
+        )
+        self.project.migration(
+            "shop",
+            "0002_unique",
+            'migrations.AddConstraint("item", models.UniqueConstraint(fields=["name"], name="one_name")),',
+        )
+        assert folds(self.project.compact()) == []
+
+    def test_unique_constraint_on_other_fields_folds(self):
+        self.project.migration("shop", "0001_initial", ITEM)
+        self.project.migration(
+            "shop",
+            "0002_unique",
+            'migrations.AddConstraint("item", models.UniqueConstraint(fields=["name"], name="one_name")),',
+        )
+        assert len(folds(self.project.check_equivalence())) == 1
+
+    def test_table_name_taken_after_a_rename(self):
+        # Thing's primary key and sequence keep "shop_item" in their names,
+        # so PostgreSQL numbers those of the second Item.
+        self.project.migration("shop", "0001_initial", ITEM)
+        self.project.migration(
+            "shop", "0002_rename", 'migrations.RenameModel("Item", "Thing"),'
+        )
+        self.project.migration(
+            "shop",
+            "0003_again",
+            ITEM
+            + 'migrations.AddField("item", "qty", models.IntegerField(default=0)),',
+        )
+        self.project.migration("shop", "0004_drop", 'migrations.DeleteModel("Thing"),')
+        result = self.project.compact()
+        assert result.removals == []
+        assert blocked(result)["shop.Thing"] == (
+            "its table's name was another renamed table's",
+        )

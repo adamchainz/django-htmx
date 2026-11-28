@@ -134,6 +134,12 @@ class ModelLife(Life):
         self.no_ddl: str | None = None
         """Why Django skips this model's schema changes (proxy, swapped)."""
 
+    def table_names(self) -> set[str]:
+        """Every name its table may have had."""
+        return {t.lower() for t in self.tables} | {
+            f"{self._app_label}_{name}".lower() for name in self.names
+        }
+
     def note_managed(self, options: Any) -> None:
         # AlterModelOptions sets every alterable option: no "managed" is True.
         self.managed.add(bool(options.get("managed", True)))
@@ -466,6 +472,26 @@ class Timeline:
             if self.tracker.missing:
                 self.dangling[info.index] = frozenset(self.tracker.missing)
         self._lock_skipped_ddl()
+        self._lock_reused_tables()
+
+    def _lock_reused_tables(self) -> None:
+        """
+        A renamed table keeps the names its primary key, sequence and unique
+        columns got from its first name. When another model takes that name
+        while they exist, PostgreSQL numbers the new table's ones instead
+        ("..._pkey1"): whether it does depends on everything both models go
+        through, so nothing of either is touched.
+        """
+        tables: dict[str, list[ModelLife]] = {}
+        for life in self.lives:
+            if isinstance(life, ModelLife):
+                for table in life.table_names():
+                    tables.setdefault(table, []).append(life)
+        for sharing in tables.values():
+            if len(sharing) > 1 and any(len(m.table_names()) > 1 for m in sharing):
+                for model in sharing:
+                    for life in model.subtree():
+                        life.poison("its table's name was another renamed table's")
 
     def _lock_skipped_ddl(self) -> None:
         """

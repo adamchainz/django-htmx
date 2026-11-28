@@ -14,6 +14,7 @@ from django_compact_migrations.fold import (
     Fold,
     Folder,
     RegenerationCheck,
+    created_later,
     mysql_safe_alters,
     occupied,
     referenced_by_fields,
@@ -685,6 +686,16 @@ class Solver:
             return False
         d0, t0 = before
         d1, t1 = current
+        # In the migration that creates the column, its indexes and foreign
+        # key are still to come: an AlterField there that drops or retargets
+        # them leaves them in place, which no later operation would.
+        creation = life.creation
+        if (
+            creation is not None
+            and creation.pos[0] == e1.pos[0]
+            and created_later(d0) != created_later(d1)
+        ):
+            return False
         d2, t2 = defs.get(id(e2), (None, None))
         refs = {id(fld): set(e.refs) for e, fld, _ in life.defs}
         field_defs = [d for d in (d0, d1, d2) if d is not None]
