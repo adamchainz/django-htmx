@@ -2,8 +2,9 @@
 Random histories of one to three apps (see tests.fuzz): compacting one must never fail, and the
 compacted history must build the same schema as the original.
 
-Each seed is one history. ``COMPACT_FUZZ_SEEDS=5000`` runs more of them, and
-``COMPACT_FUZZ_SEED=1234`` just that one.
+Each seed is one history. ``COMPACT_FUZZ_SEEDS=5000`` runs more of them
+(``COMPACT_FUZZ_FIRST=5000`` starts further on), and ``COMPACT_FUZZ_SEED=1234``
+just that one.
 """
 
 from __future__ import annotations
@@ -20,7 +21,8 @@ from tests.project import ProjectTestCase
 if "COMPACT_FUZZ_SEED" in os.environ:  # pragma: no cover
     SEEDS = [int(os.environ["COMPACT_FUZZ_SEED"])]
 else:
-    SEEDS = list(range(int(os.environ.get("COMPACT_FUZZ_SEEDS", "100"))))
+    FIRST = int(os.environ.get("COMPACT_FUZZ_FIRST", "0"))
+    SEEDS = list(range(FIRST, FIRST + int(os.environ.get("COMPACT_FUZZ_SEEDS", "100"))))
 
 
 class FuzzTests(ProjectTestCase):
