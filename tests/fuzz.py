@@ -72,8 +72,13 @@ def render_field(spec: dict[str, Any]) -> str:
 
 
 class Generator:
-    def __init__(self, seed: int, *, renames_keep_names: bool = False) -> None:
+    def __init__(
+        self, seed: int, *, renames_keep_names: bool = False, text_keys: bool = True
+    ) -> None:
         self.random = Random(seed)
+        self.text_keys = text_keys
+        """Whether indexes and unique_together may cover TextFields, which
+        MySQL and MariaDB refuse."""
         self.renames_keep_names = renames_keep_names
         """Only rename what has no index or constraint that Django names
         after it: on SQLite, a later table rebuild renames those, so their
@@ -95,6 +100,12 @@ class Generator:
         """Likewise, models whose unique_together the migration set."""
 
     # Choosing
+
+    def keyable(self, model: Model) -> list[str]:
+        """The fields an index or unique_together may cover."""
+        return sorted(
+            n for n, s in model.fields.items() if self.text_keys or s["kind"] != "text"
+        )
 
     def labels(self) -> list[str]:
         """Every model of every app, as "app.Name"."""
@@ -159,15 +170,16 @@ class Generator:
         options: list[str] = []
         plain = sorted(n for n, s in model.fields.items() if s["kind"] != "fk")
         index = self.free_object_name()
-        if plain and index and self.random.random() < 0.3:
-            model.indexes[index] = self.random.choice(plain)
+        plain_keys = sorted(set(plain) & set(self.keyable(model)))
+        if plain_keys and index and self.random.random() < 0.3:
+            model.indexes[index] = self.random.choice(plain_keys)
             self.fresh.add(index)
             options.append(
                 f'"indexes": [models.Index(fields=["{model.indexes[index]}"],'
                 f' name="{index}")]'
             )
-        if len(model.fields) >= 2 and self.random.random() < 0.2:
-            pair = tuple(sorted(self.random.sample(sorted(model.fields), 2)))
+        if len(self.keyable(model)) >= 2 and self.random.random() < 0.2:
+            pair = tuple(sorted(self.random.sample(self.keyable(model), 2)))
             model.together.add(pair)  # type: ignore[arg-type]
             self.fresh_together.append(model)
             options.append(f'"unique_together": {{{pair!r}}}')
@@ -285,7 +297,7 @@ class Generator:
         return f'migrations.RenameField("{name}", "{old}", "{new}")'
 
     def add_index(self) -> str | None:
-        candidates = [(n, f) for n, m in self.models.items() for f in m.fields]
+        candidates = [(n, f) for n, m in self.models.items() for f in self.keyable(m)]
         index = self.free_object_name()
         if not candidates or index is None:
             return None
@@ -387,8 +399,8 @@ class Generator:
         model = self.models[name]
         model.together = set()
         self.fresh_together.append(model)
-        if len(model.fields) >= 2 and self.random.random() < 0.7:
-            pair = tuple(sorted(self.random.sample(sorted(model.fields), 2)))
+        if len(self.keyable(model)) >= 2 and self.random.random() < 0.7:
+            pair = tuple(sorted(self.random.sample(self.keyable(model), 2)))
             model.together.add(pair)  # type: ignore[arg-type]
         value = "{" + ", ".join(repr(p) for p in sorted(model.together)) + "}"
         return (

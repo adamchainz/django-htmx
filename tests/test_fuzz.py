@@ -34,20 +34,31 @@ class FuzzTests(ProjectTestCase):
         Generator(seed, renames_keep_names=True).write(self.project)
         self.project.check_equivalence()
 
-    @parametrize("seed", [(seed,) for seed in SEEDS[::5]])
-    def test_static_postgres(self, seed):
+    def on_server(self, server: str, seed: int, **options: bool) -> None:
         # SQLite hides most differences in the names of indexes and
         # constraints, since Django rebuilds its tables: compare whole
-        # snapshots on PostgreSQL too.
-        pg = self.server("pg")
-        Generator(seed).write(self.project)
+        # snapshots on the other backends too.
+        alias = self.server(server)
+        Generator(seed, **options).write(self.project)
         try:
-            before = self.snapshot(pg)
+            before = self.snapshot(alias)
         except DatabaseError as exc:  # pragma: no cover
             # Such as a row written and its table altered in one migration.
-            self.skipTest(f"The history doesn't migrate on PostgreSQL: {exc}")
+            self.skipTest(f"The history doesn't migrate on {server}: {exc}")
         self.project.compact().write()
-        assert before.differences(self.snapshot(pg)) == []
+        assert before.differences(self.snapshot(alias)) == []
+
+    @parametrize("seed", [(seed,) for seed in SEEDS[::5]])
+    def test_static_postgres(self, seed):
+        self.on_server("pg", seed)
+
+    @parametrize("seed", [(seed,) for seed in SEEDS[::10]])
+    def test_static_mysql(self, seed):
+        self.on_server("mysql", seed, text_keys=False)
+
+    @parametrize("seed", [(seed,) for seed in SEEDS[::10]])
+    def test_static_mariadb(self, seed):
+        self.on_server("mariadb", seed, text_keys=False)
 
     def snapshot(self, alias: str) -> Snapshot:
         self.project.activate()
