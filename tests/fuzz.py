@@ -158,15 +158,14 @@ class Generator:
             model.fields[field_name] = self.new_field()
         options: list[str] = []
         plain = sorted(n for n, s in model.fields.items() if s["kind"] != "fk")
-        if plain and self.random.random() < 0.3:
-            index = self.free_object_name()
-            if index:
-                model.indexes[index] = self.random.choice(plain)
-                self.fresh.add(index)
-                options.append(
-                    f'"indexes": [models.Index(fields=["{model.indexes[index]}"],'
-                    f' name="{index}")]'
-                )
+        index = self.free_object_name()
+        if plain and index and self.random.random() < 0.3:
+            model.indexes[index] = self.random.choice(plain)
+            self.fresh.add(index)
+            options.append(
+                f'"indexes": [models.Index(fields=["{model.indexes[index]}"],'
+                f' name="{index}")]'
+            )
         if len(model.fields) >= 2 and self.random.random() < 0.2:
             pair = tuple(sorted(self.random.sample(sorted(model.fields), 2)))
             model.together.add(pair)  # type: ignore[arg-type]

@@ -142,12 +142,13 @@ run.source = [
   "django_compact_migrations",
   "tests",
 ]
-# Functions the no-op scan reads but never runs.
-run.omit = [ "tests/noop_samples.py" ]
+# Functions the no-op scan reads but never runs, and the fuzz tests' random
+# generator: which of its branches run depends on the seeds.
+run.omit = [ "tests/fuzz.py", "tests/noop_samples.py" ]
 run.branch = true
 run.data_file = ".coverage/cov"
 run.parallel = true
-# Trial and profile runs happen in forked children, which end with os._exit().
+# Trial runs happen in forked children, which end with os._exit().
 run.patch = [ "_exit", "fork" ]
 paths.source = [
   "src",
