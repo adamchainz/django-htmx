@@ -1,7 +1,7 @@
 Benchmarks
 ==========
 
-On nine open source Django projects, compacting made migrating a fresh database 20% to 52% faster with the default options, and 22% to 71% faster with ``--noop-data --prune``.
+On nine open source Django projects, compacting made migrating a fresh database 11% to 50% faster with the default options, and 27% to 71% faster with ``--noop-data --prune``.
 In every case, the compacted history created the same database as the original, apart from :ref:`what may change <what-may-change>`.
 
 Results
@@ -23,66 +23,66 @@ Time for ``migrate`` to create a fresh database, in seconds:
    * - `Healthchecks <https://github.com/healthchecks/healthchecks>`__
      - SQLite
      - 3.1
-     - 1.5
-     - −52%
+     - 1.7
+     - −45%
      - 0.9
      - −71%
    * - `pretalx <https://github.com/pretalx/pretalx>`__
      - PostgreSQL
-     - 13.8
-     - 7.8
-     - −43%
-     - 5.4
-     - −61%
+     - 14.2
+     - 7.9
+     - −44%
+     - 5.1
+     - −64%
    * - `pretix <https://github.com/pretix/pretix>`__
      - PostgreSQL
-     - 64.7
-     - 39.3
-     - −39%
-     - 32.1
-     - −50%
+     - 83.3
+     - 55.4
+     - −33%
+     - 46.1
+     - −45%
    * - `Label Studio <https://github.com/HumanSignal/label-studio>`__
      - PostgreSQL
-     - 24.9
-     - 12.1
+     - 27.3
+     - 13.7
+     - −50%
+     - 13.5
      - −51%
-     - 10.9
-     - −56%
    * - `Saleor <https://github.com/saleor/saleor>`__
      - PostgreSQL
-     - 141.4
-     - 103.9
-     - −27%
-     - 79.0
-     - −44%
+     - 173.0
+     - 123.2
+     - −29%
+     - 92.8
+     - −46%
    * - `Wagtail <https://github.com/wagtail/wagtail>`__
      - SQLite
-     - 39.1
-     - 31.2
-     - −20%
-     - 30.4
-     - −22%
+     - 50.3
+     - 44.6
+     - −11%
+     - 36.5
+     - −27%
    * - `Weblate <https://github.com/WeblateOrg/weblate>`__
      - PostgreSQL
-     - 31.3
-     - 18.1
-     - −42%
-     - 14.4
-     - −54%
+     - 41.0
+     - 23.4
+     - −43%
+     - 19.8
+     - −52%
    * - `Zulip <https://github.com/zulip/zulip>`__
      - PostgreSQL
-     - 30.7
-     - 18.3
-     - −40%
-     - 13.6
-     - −56%
+     - 38.0
+     - 22.2
+     - −42%
+     - 18.0
+     - −53%
    * - `NetBox <https://github.com/netbox-community/netbox>`__
      - PostgreSQL
-     - 250.2
-     - 148.3
-     - −41%
-     - 138.8
-     - −45%
+     - 288.4
+     - 151.9
+     - −47%
+     - 147.2
+     - −49%
 
 What the command changed to get there, where *removed* and *folded* count operations, and *deleted* counts migration files (only ``--prune`` deletes them):
 
@@ -113,45 +113,45 @@ What the command changed to get there, where *removed* and *folded* count operat
      - 163
    * - pretalx
      - 263
-     - 62
-     - 270
-     - 135
-     - 268
+     - 63
+     - 269
+     - 134
+     - 269
      - 177
    * - pretix
      - 432
-     - 116
-     - 582
-     - 218
-     - 574
-     - 140
+     - 98
+     - 492
+     - 197
+     - 484
+     - 120
    * - Label Studio
      - 245
-     - 189
-     - 381
-     - 218
-     - 374
-     - 135
+     - 148
+     - 338
+     - 178
+     - 330
+     - 120
    * - Saleor
      - 1454
-     - 553
-     - 683
-     - 881
-     - 704
-     - 705
+     - 567
+     - 650
+     - 906
+     - 657
+     - 697
    * - Wagtail
      - 240
-     - 74
-     - 143
-     - 88
+     - 73
      - 141
+     - 87
+     - 139
      - 86
    * - Weblate
      - 238
      - 89
-     - 285
+     - 284
      - 144
-     - 282
+     - 281
      - 146
    * - Zulip
      - 956
@@ -162,11 +162,11 @@ What the command changed to get there, where *removed* and *folded* count operat
      - 207
    * - NetBox
      - 299
-     - 329
+     - 328
      - 677
-     - 392
-     - 676
-     - 125
+     - 395
+     - 672
+     - 124
 
 The file counts include migrations that a squashed migration replaces and that are still on disk, which the command never edits: 698 of Zulip’s files and 157 of pretix’s.
 
@@ -180,6 +180,7 @@ Each project was compacted twice from a clean checkout: once with the default op
 *Timing.*
 Each time is the median of three runs of ``migrate`` on a new, empty database (two runs for Saleor and NetBox).
 Runs of the original and the two compacted histories were interleaved, one at a time, on an otherwise idle machine.
+Wagtail’s runs varied the most (47 to 56 seconds for the original history), so its figures are the least certain.
 
 *Correctness.*
 Each compacted history’s fresh database was compared with one made by the original history:
@@ -192,7 +193,7 @@ All were identical for all nine projects in both configurations, and ``migrate -
 The order of columns changed in every project, and the ids of content types and permissions changed in one (Zulip): see :ref:`what-may-change`.
 
 *Environment.*
-4 virtual CPUs (Intel Xeon, 2.1GHz), 15GiB of memory, PostgreSQL 16.15 and SQLite 3.53.1 on the same machine, Python 3.13 (3.12 for Saleor).
+4 virtual CPUs (Intel Xeon, 2.3GHz), 15GiB of memory, PostgreSQL 16.15 and SQLite 3.53.1 on the same machine, Python 3.13 (3.12 for Saleor).
 The projects were at their main branches as of November 2026, on the Django versions they pin (5.2, 6.0 or 6.1).
 
 Caveats
