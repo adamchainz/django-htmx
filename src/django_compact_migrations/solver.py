@@ -14,7 +14,6 @@ from django_compact_migrations.fold import (
     Fold,
     Folder,
     RegenerationCheck,
-    created_later,
     mysql_safe_alters,
     occupied,
     referenced_by_fields,
@@ -31,6 +30,7 @@ from django_compact_migrations.timeline import (
     Timeline,
     TogetherLife,
     backs_foreign_key,
+    created_later,
 )
 
 Unit = Life | Element
@@ -684,19 +684,25 @@ class Solver:
             return False
         if any(e.info.get("rename") for e in own[i + 1 : own.index(e2)]):
             return False
-        d0, t0 = before
-        d1, t1 = current
-        # In the migration that creates the column, its indexes and foreign
-        # key are still to come: an AlterField there that drops or retargets
-        # them leaves them in place, which no later operation would.
-        creation = life.creation
-        if (
-            creation is not None
-            and creation.pos[0] == e1.pos[0]
-            and created_later(d0) != created_later(d1)
+        # Nor across a rename of the table: an index or constraint that E1
+        # created would be created by E2, under the new name.
+        if any(
+            type(e.rec.op) in (m.RenameModel, m.AlterModelTable)
+            and not self.removed(e)
+            and self.between(e.pos, e1.pos, e2.pos)
+            for e in life.model.elements
         ):
             return False
+        d0, t0 = before
+        d1, t1 = current
         d2, t2 = defs.get(id(e2), (None, None))
+        # Dropping an index or foreign key and creating it again gives it a
+        # name made from what the table and column are called by then:
+        # without E1, the first one would stay.
+        if d2 is not None and (
+            created_later(d0) != created_later(d1) != created_later(d2)
+        ):
+            return False
         refs = {id(fld): set(e.refs) for e, fld, _ in life.defs}
         field_defs = [d for d in (d0, d1, d2) if d is not None]
         # (Never a primary key: see _superseded_fields.)

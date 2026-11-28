@@ -12,6 +12,7 @@ the same round; the core runs rounds until nothing changes.
 from __future__ import annotations
 
 import re
+import sys
 from collections.abc import Callable, Iterable, Sequence
 from copy import copy
 from dataclasses import dataclass
@@ -158,12 +159,6 @@ class Folder:
         """
         The folded definition names fields and models as they are at E; they
         must have had the same names at P.
-
-        Nor may one be renamed later in E's migration: Django creates
-        the indexes, foreign keys and unique_together constraints of new
-        tables and columns at the end of the migration, named after what the
-        tables and columns are called by then, but those of other operations
-        at once.
         """
         for life in lives:
             for el in life.elements:
@@ -173,11 +168,11 @@ class Folder:
                     m.RenameModel,
                     m.AlterModelTable,
                 )
-                if not renames or self.solver.removed(el):
-                    continue
-                if self.solver.between(el.pos, p.pos, e.pos):
-                    return False
-                if el.pos[0] == e.pos[0] and el.pos[1] > e.pos[1]:
+                if (
+                    renames
+                    and not self.solver.removed(el)
+                    and self.solver.between(el.pos, p.pos, e.pos)
+                ):
                     return False
         return True
 
@@ -361,11 +356,6 @@ class Folder:
             return
         if occupied(dp) != occupied(de) or not same_named_objects(dp, de):
             return
-        # Django creates a new column's indexes and foreign key at the end
-        # of its migration, whatever an AlterField in that migration says:
-        # one that drops or retargets them leaves the first ones in place.
-        if p.pos[0] == e.pos[0] and created_later(dp) != created_later(de):
-            return
         if solver.backends and not mysql_safe_alters([dp, de], solver.backends):
             return
         # An AlterField changing the type of a field that foreign keys point
@@ -482,16 +472,6 @@ class Folder:
             return False
         if not self._stable_names([*a.refs, model, life], create, a):
             return False
-        # An AlterField in the AddField's migration that drops or retargets
-        # the column's indexes or foreign key leaves them in place (see
-        # _fold_alter_field): only while the two share a migration.
-        if create.pos[0] != a.pos[0] and any(
-            el is not a
-            and el.pos[0] == a.pos[0]
-            and created_later(definition) != created_later(add.field)
-            for el, definition, _ in life.defs
-        ):
-            return False
         own_pk = [f for f in model.children if isinstance(f, FieldLife) and f.ever_pk]
         many_to_many = getattr(add.field, "many_to_many", False)
         # The foreign keys of an auto-created through table point at both
@@ -503,6 +483,24 @@ class Folder:
         if not self._no_setup_between(add.field, create, a):
             return False
         if not self._quiet(model.scan_names(), create, a, model):
+            return False
+        # A foreign key constraint is created at the end of the AddField's
+        # migration. From the CreateModel, it exists while the rest of that
+        # migration runs: PostgreSQL refuses to alter a table in the
+        # transaction that wrote a row with such a constraint to check.
+        if (
+            create.pos[0] != a.pos[0]
+            and getattr(add.field, "remote_field", None) is not None
+            and self.solver._opaque_block(
+                model.scan_names(),
+                a.pos,
+                (a.pos[0], sys.maxsize),
+                None,
+                model.start_pos,
+                a,
+            )
+            is not None
+        ):
             return False
         current = self._current(create)
         assert isinstance(current, m.CreateModel)
@@ -1105,18 +1103,6 @@ def _rename_keeps_names(field: Any) -> bool:
         or field.primary_key
         or _check_kind(field) is not None
         or getattr(field, "generated", False)
-    )
-
-
-def created_later(field: Any) -> tuple[Any, ...]:
-    """What decides the indexes and foreign key that Django creates for a
-    new column at the end of the migration."""
-    remote = getattr(field, "remote_field", None)
-    return (
-        bool(field.db_index),
-        bool(field.unique),
-        str(remote.model).lower() if remote is not None else None,
-        getattr(field, "db_constraint", None),
     )
 
 

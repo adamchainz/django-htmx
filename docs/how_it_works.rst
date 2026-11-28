@@ -122,8 +122,8 @@ Every fold must keep each database object’s name, and must not make anything e
 For example, a field that gains ``unique=True`` from an ``AlterField`` gets a ``..._uniq`` constraint named by Django, while a unique column created with the table gets a name chosen by the database, so that ``AlterField`` isn’t folded.
 Timing matters too.
 Django creates the indexes, foreign keys and ``unique_together`` constraints of a new table or column at the end of its migration, named after what the table and columns are called by then.
-So an ``AlterField`` that drops or retargets them in that same migration leaves them in place, and isn’t folded or superseded.
-Nor is anything folded when a rename follows it in its migration.
+So a foreign key isn’t folded out of a migration that goes on to run a data migration naming its model: the constraint would already exist when rows are written.
+An ``AlterField`` isn’t superseded across a rename of its table, nor when it drops an index or foreign key that the next one creates again.
 PostgreSQL keeps only one of several unique constraints on the same columns in one ``CREATE TABLE``, so a ``UniqueConstraint`` isn’t folded into a ``CreateModel`` that already makes those fields unique.
 Opaque operations in between must pass the name scan, or the trial.
 The folded operation must also be one Django’s migration writer can write.
@@ -254,6 +254,8 @@ Limitations
   A rebuild drops indexes or triggers that a ``RunSQL`` created, so removing the operation that caused it leaves them in place.
   A rebuild also renames the indexes Django named after a field or model that was since renamed, so removing it leaves the old index name.
   A trial on SQLite sees both; ``--static`` doesn’t.
+* **A model with a migration that renames or alters what it has just created is left alone.**
+  Within the migration that creates a column with an index, a foreign key or a unique constraint, a rename, or an ``AlterField`` that drops or retargets them, doesn’t do what it does elsewhere: they stay, or come out under the new name, depending on the operations around.
 * **A model whose table name another, renamed table once had is left alone.**
   The renamed table keeps the names of its primary key and sequence, so PostgreSQL numbers the new table’s (``..._pkey1``).
   Whether it does depends on everything both models go through.

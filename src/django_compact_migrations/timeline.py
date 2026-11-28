@@ -302,6 +302,17 @@ class TogetherEvent:
     element: Element | None
 
 
+def created_later(field: Any) -> tuple[Any, ...]:
+    """What decides the indexes and foreign key that Django creates for a
+    new column at the end of the migration (all false or None: none)."""
+    remote = getattr(field, "remote_field", None)
+    return (
+        bool(field.db_index),
+        bool(field.unique) and not field.primary_key,
+        str(remote.model).lower() if remote is not None else None,
+    )
+
+
 def mentioned_names(obj: Any) -> set[str]:
     """
     Every identifier-like string reachable from an index/constraint/expression.
@@ -473,6 +484,58 @@ class Timeline:
                 self.dangling[info.index] = frozenset(self.tracker.missing)
         self._lock_skipped_ddl()
         self._lock_reused_tables()
+        self._lock_names_made_later()
+
+    def _lock_names_made_later(self) -> None:
+        """
+        Django creates the indexes, foreign keys and unique_together
+        constraints of a new table or column at the end of its migration,
+        named after what the table and columns are called by then. What a
+        rename, or an AlterField that drops or retargets them, does to them
+        earlier in that migration isn't what it does anywhere else (they stay,
+        or come out under the new name, depending on the operations around):
+        nothing of a model with such a migration is touched.
+        """
+        for model in self.lives:
+            if isinstance(model, ModelLife) and self._names_made_later(model):
+                for life in model.subtree():
+                    life.poison(
+                        "a migration renames or alters what it has just created"
+                    )
+
+    def _names_made_later(self, model: ModelLife) -> bool:
+        fields = [
+            c
+            for c in model.children
+            if isinstance(c, FieldLife) and c.creation is not None and c.defs
+        ]
+        together = any(model.together_events.values())
+        created = model.creation is not None
+        creations = {
+            f.start_pos for f in fields if any(created_later(f.defs[0][1]))
+        } | ({model.start_pos} if together and created else set())
+        for el in model.elements:
+            if type(el.rec.op) in (m.RenameModel, m.AlterModelTable) and any(
+                pos[0] == el.pos[0] and pos < el.pos for pos in creations
+            ):
+                return True
+        for f in fields:
+            created_in = {f.start_pos[0]} | ({model.start_pos[0]} if created else set())
+            before = None
+            for el, definition, _ in f.defs:
+                if (
+                    before is not None
+                    and el.pos[0] == f.start_pos[0]
+                    and created_later(before) != created_later(definition)
+                ):
+                    return True
+                before = definition
+            named = together or any(any(created_later(d)) for _, d, _ in f.defs)
+            if named and any(
+                el.info.get("rename") and el.pos[0] in created_in for el in f.elements
+            ):
+                return True
+        return False
 
     def _lock_reused_tables(self) -> None:
         """

@@ -8,6 +8,7 @@ from django_compact_migrations.core import Result
 from django_compact_migrations.fold import _mentions
 from tests.project import (
     ITEM,
+    NO_FOLD,
     Project,
     ProjectTestCase,
     blocked,
@@ -2097,10 +2098,6 @@ class DeferredNamesTests(ProjectTestCase):
                 'migrations.AddField("item", "qty", models.IntegerField(default=0, db_index=True)),'
                 'migrations.RenameField("item", "qty", "quantity"),',
             ),
-            (
-                'migrations.AlterUniqueTogether("item", {("id", "name")}),'
-                'migrations.RenameModel("Item", "Thing"),',
-            ),
         ],
     )
     def test_renamed_later_in_the_migration(self, operations):
@@ -2146,6 +2143,93 @@ class DeferredNamesTests(ProjectTestCase):
         assert descriptions(self.project.check_equivalence()) == [
             "AlterField in 0002_index folded into CreateModel in 0001_initial"
         ]
+
+
+class LaterNamesTests(ProjectTestCase):
+    """More that the fuzz tests found on PostgreSQL."""
+
+    FK = 'migrations.AddField("item", "other", models.ForeignKey("shop.Other", models.CASCADE, null=True)),'
+    OTHER = """
+        migrations.CreateModel(
+            name="Other", fields=[("id", models.AutoField(primary_key=True))]
+        ),
+    """
+
+    def test_foreign_key_before_rows_are_written(self):
+        # From the CreateModel, the constraint would exist when the row is
+        # written, and PostgreSQL would refuse the AlterUniqueTogether.
+        self.project.migration("shop", "0001_initial", self.OTHER + ITEM)
+        self.project.migration(
+            "shop",
+            "0002_other",
+            self.FK
+            + """
+            migrations.RunSQL("INSERT INTO shop_item (name) VALUES ('a')"),
+            migrations.AlterUniqueTogether("item", {("name", "other")}),
+            """,
+        )
+        assert folds(self.project.compact()) == []
+
+    def test_foreign_key_alone_in_its_migration(self):
+        self.project.migration("shop", "0001_initial", self.OTHER + ITEM)
+        self.project.migration("shop", "0002_other", self.FK)
+        assert len(folds(self.project.check_equivalence())) == 1
+
+    def alters(self, *definitions: str) -> None:
+        for number, definition in enumerate(definitions, 2):
+            self.project.migration(
+                "shop",
+                f"000{number}_alter",
+                definition
+                if definition.startswith("migrations.")
+                else f'migrations.AlterField("item", "name", models.CharField({definition})),',
+            )
+
+    def test_superseded_across_a_model_rename(self):
+        # The index would be created under the table's second name.
+        self.project.migration("shop", "0001_initial", ITEM)
+        self.alters(
+            "max_length=10, db_index=True",
+            'migrations.RenameModel("Item", "Thing"),',
+        )
+        self.project.migration(
+            "shop",
+            "0004_alter",
+            'migrations.AlterField("thing", "name", models.CharField(max_length=20, db_index=True)),',
+        )
+        assert kinds(self.project.compact(**NO_FOLD)) == []
+
+    def test_index_dropped_and_added_again(self):
+        # Without the middle one, the first index would stay, under the
+        # name it got before the rename.
+        self.project.migration(
+            "shop",
+            "0001_initial",
+            """
+            migrations.CreateModel(
+                name="Item",
+                fields=[
+                    ("id", models.AutoField(primary_key=True)),
+                    ("name", models.CharField(max_length=10, db_index=True)),
+                ],
+            ),
+            migrations.RunSQL("SELECT 1 /* name */"),
+            """,
+        )
+        self.alters(
+            'migrations.RenameField("item", "name", "title"),',
+        )
+        self.project.migration(
+            "shop",
+            "0003_alter",
+            'migrations.AlterField("item", "title", models.CharField(max_length=10)),',
+        )
+        self.project.migration(
+            "shop",
+            "0004_alter",
+            'migrations.AlterField("item", "title", models.CharField(max_length=10, db_index=True)),',
+        )
+        assert kinds(self.project.compact(**NO_FOLD)) == []
 
 
 class SharedNamesTests(ProjectTestCase):
