@@ -1,5 +1,5 @@
 """
-Random, valid migration histories for one app, from a seed.
+Random, valid migration histories for one to three apps, from a seed.
 
 The generator keeps its own model of the schema, and only emits operations
 that Django can apply to it: nothing names a field that is gone, no model is
@@ -16,7 +16,7 @@ from typing import Any
 
 from tests.project import Project
 
-APP = "shop"
+APPS = ["shop", "lib", "blog"]
 MODEL_NAMES = ["Alpha", "Beta", "Gamma", "Delta"]
 FIELD_NAMES = ["a", "b", "c", "d", "e", "f"]
 OBJECT_NAMES = [f"obj_{n}" for n in "klmnop"]
@@ -58,7 +58,7 @@ class Model:
 def render_field(spec: dict[str, Any]) -> str:
     kind = spec["kind"]
     if kind == "fk":
-        return f'models.ForeignKey("{APP}.{spec["to"]}", models.CASCADE, null=True)'
+        return f'models.ForeignKey("{spec["to"]}", models.CASCADE, null=True)'
     options = dict(spec["options"])
     arguments = ", ".join(f"{k}={v!r}" for k, v in options.items())
     cls = {
@@ -79,7 +79,13 @@ class Generator:
         after it: on SQLite, a later table rebuild renames those, so their
         names depend on rebuilds that compacting may remove. A static plan
         can't see that (a trial can)."""
-        self.models: dict[str, Model] = {}
+        self.apps = APPS[: self.random.randint(1, 3)]
+        self.every: dict[str, dict[str, Model]] = {app: {} for app in self.apps}
+        self.app = self.apps[0]
+        """The app of the migration being written."""
+        self.models = self.every[self.app]
+        """Its models, by name."""
+        self.last: dict[str, str] = {}
         self.functions: list[str] = []
         self.counter = 0
         self.fresh: set[str] = set()
@@ -90,16 +96,22 @@ class Generator:
 
     # Choosing
 
+    def labels(self) -> list[str]:
+        """Every model of every app, as "app.Name"."""
+        return [
+            f"{app}.{name}" for app, models in self.every.items() for name in models
+        ]
+
     def pick(self, items: Any) -> Any:
         return self.random.choice(sorted(items))
 
     def new_field(self, *, relation: bool = True) -> dict[str, Any]:
         kinds = ["int", "int", "char", "char", "bool", "text"]
-        if relation and self.models:
+        if relation and self.labels():
             kinds += ["fk", "fk"]
         kind = self.random.choice(kinds)
         if kind == "fk":
-            return {"kind": "fk", "to": self.pick(self.models)}
+            return {"kind": "fk", "to": self.pick(self.labels())}
         options: dict[str, Any] = {}
         if kind == "int":
             options["default"] = self.random.randint(0, 5)
@@ -117,14 +129,20 @@ class Generator:
         return {"kind": kind, "options": options}
 
     def free_object_name(self) -> str | None:
-        used = {n for m in self.models.values() for n in [*m.indexes, *m.constraints]}
+        used = {
+            n
+            for models in self.every.values()
+            for m in models.values()
+            for n in [*m.indexes, *m.constraints]
+        }
         free = sorted(set(OBJECT_NAMES) - used)
         return self.random.choice(free) if free else None
 
     def referenced(self, name: str) -> bool:
         return any(
-            spec.get("to") == name
-            for other in self.models.values()
+            spec.get("to") == f"{self.app}.{name}"
+            for models in self.every.values()
+            for other in models.values()
             for spec in other.fields.values()
         )
 
@@ -186,10 +204,11 @@ class Generator:
             return None
         old, new = self.pick(candidates), self.random.choice(free)
         self.models[new] = self.models.pop(old)
-        for model in self.models.values():
-            for spec in model.fields.values():
-                if spec.get("to") == old:
-                    spec["to"] = new
+        for models in self.every.values():
+            for model in models.values():
+                for spec in model.fields.values():
+                    if spec.get("to") == f"{self.app}.{old}":
+                        spec["to"] = f"{self.app}.{new}"
         return f'migrations.RenameModel("{old}", "{new}")'
 
     def add_field(self) -> str | None:
@@ -219,7 +238,7 @@ class Generator:
         name, field_name = self.pick(candidates)
         spec = self.models[name].fields[field_name]
         if spec["kind"] == "fk":
-            spec["to"] = self.pick(self.models)
+            spec["to"] = self.pick(self.labels())
         else:
             options = spec["options"]
             change = self.random.choice(
@@ -419,7 +438,7 @@ class Generator:
             return None
         name, field_name = self.pick(candidates)
         return self.run_python(
-            f'apps.get_model("{APP}", "{name}").objects.using(alias)'
+            f'apps.get_model("{self.app}", "{name}").objects.using(alias)'
             f".exclude({field_name}=None).count()"
         )
 
@@ -430,7 +449,7 @@ class Generator:
         name = self.pick(candidates)
         self.models[name].has_row = True
         return self.run_python(
-            f'apps.get_model("{APP}", "{name}").objects.using(alias).create()'
+            f'apps.get_model("{self.app}", "{name}").objects.using(alias).create()'
         )
 
     def run_python(self, body: str) -> str:
@@ -474,11 +493,13 @@ class Generator:
 
     def write(self, project: Project) -> None:
         for number in range(1, self.random.randint(4, 20) + 1):
+            self.app = self.random.choice(self.apps)
+            self.models = self.every[self.app]
             operations: list[str] = []
             self.functions = []
             self.fresh = set()
             self.fresh_together = []
-            if number == 1:
+            if not self.models:
                 created = self.create_model()
                 assert created is not None
                 operations.append(created)
@@ -486,9 +507,14 @@ class Generator:
                 source = self.operation()
                 if source is not None:
                     operations.append(source)
+            name = f"{number:04}_step"
             project.migration(
-                APP,
-                f"{number:04}_step",
+                self.app,
+                name,
                 "".join(f"{op},\n" for op in operations),
+                # After everything written so far: the generator's model of
+                # the schema follows the order it writes migrations in.
+                extra_deps=[(a, n) for a, n in self.last.items() if a != self.app],
                 extra="\n\n".join(self.functions),
             )
+            self.last[self.app] = name

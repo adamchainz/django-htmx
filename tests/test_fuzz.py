@@ -1,5 +1,5 @@
 """
-Random histories (see tests.fuzz): compacting one must never fail, and the
+Random histories of one to three apps (see tests.fuzz): compacting one must never fail, and the
 compacted history must build the same schema as the original.
 
 Each seed is one history. ``COMPACT_FUZZ_SEEDS=5000`` runs more of them, and
