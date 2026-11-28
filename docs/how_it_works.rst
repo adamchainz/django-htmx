@@ -244,10 +244,11 @@ Limitations
   With ``--static``, verification compares Django’s model of your schema, not the schema itself, which can miss a ``RunSQL`` side effect or database-specific details.
   A trial compares the schema itself, but only on one backend.
   Diff the schema before and after, as shown in :ref:`verifying-your-schema`.
-* **On SQLite, a static plan can keep what a table rebuild used to drop.**
-  Django rebuilds SQLite tables for most changes, dropping indexes or triggers that a ``RunSQL`` created.
-  Removing the operation that caused a rebuild leaves them in place.
-  A trial on SQLite sees this; ``--static`` doesn’t.
+* **On SQLite, a static plan can’t see what table rebuilds change.**
+  Django rebuilds SQLite tables for most changes.
+  A rebuild drops indexes or triggers that a ``RunSQL`` created, so removing the operation that caused it leaves them in place.
+  A rebuild also renames the indexes Django named after a field or model that was since renamed, so removing it leaves the old index name.
+  A trial on SQLite sees both; ``--static`` doesn’t.
 * **A model whose** ``unique_together`` **or** ``index_together`` **names** ``_order`` **is left alone.**
   The ``_order`` column isn’t tracked as a field, so nothing of such a model is removed or folded.
 * **Existing databases must already be migrated.**
